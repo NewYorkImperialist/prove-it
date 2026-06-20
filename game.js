@@ -101,6 +101,7 @@ function beginMatch() {
   feed.innerHTML = "";
   input.disabled = false; sendBtn.disabled = false;
   $("endBtn").style.display = "inline-block";
+  $("catBtn").style.display = "inline-block";
   const goal = targetScore === Infinity ? "endless" : `first to ${targetScore}`;
   add(`Game on! Categories: ${enabledGroups.join(", ")}. Timer: ${timerLength}s · ${goal}.`, "system");
   add("Throw out a number to start. We go back and forth raising till someone calls it, then you back it up. Fair warning, I bluff. 😏", "bot", "Bot");
@@ -118,10 +119,45 @@ function returnToMenu() {
   setTurn(null);
   input.disabled = true; sendBtn.disabled = true; input.value = "";
   $("endBtn").style.display = "none";
+  $("catBtn").style.display = "none";
+  toggleCatMenu(false);
   catNameEl.textContent = "—";
   $("catLabel").textContent = "Category";
   claimLineEl.textContent = "";
   $("overlay").style.display = "grid";
+}
+
+// ---------- In-game category switcher (top-bar dropdown) ----------
+function buildCatMenu() {
+  const box = $("catMenuChecks");
+  box.innerHTML = "";
+  Object.entries(CATEGORY_GROUPS).forEach(([key, g]) => {
+    const on = enabledGroups.includes(key);
+    const label = document.createElement("label");
+    label.className = "check" + (on ? " on" : "");
+    label.innerHTML = `<input type="checkbox" value="${key}" ${on ? "checked" : ""}>
+      <span class="emoji">${g.emoji}</span><span>${key}</span>`;
+    const cb = label.querySelector("input");
+    cb.addEventListener("change", () => {
+      if (![...box.querySelectorAll("input:checked")].length) { cb.checked = true; return; }  // keep ≥1
+      label.classList.toggle("on", cb.checked);
+      applyCatMenu();
+    });
+    box.appendChild(label);
+  });
+}
+
+// Rebuild the pool from the menu selection — takes effect from the next round.
+function applyCatMenu() {
+  enabledGroups = [...$("catMenuChecks").querySelectorAll("input:checked")].map(c => c.value);
+  pool = enabledGroups.flatMap(k => CATEGORY_GROUPS[k].cats.map(c => buildCategory(c, k, CATEGORY_GROUPS[k].emoji)));
+}
+
+function toggleCatMenu(show) {
+  const m = $("catMenu");
+  const open = show === undefined ? m.style.display === "none" : show;
+  if (open) { buildCatMenu(); m.style.display = "block"; }
+  else { m.style.display = "none"; }
 }
 
 // ---------- Feed / UI helpers ----------
@@ -469,6 +505,8 @@ function showWin() {
   setTurn(null);
   input.disabled = true; sendBtn.disabled = true;
   $("endBtn").style.display = "none";
+  $("catBtn").style.display = "none";
+  toggleCatMenu(false);
   let title;
   if (scoreMe > scoreBot) title = "🏆 You win!";
   else if (scoreBot > scoreMe) title = "🤖 Bot wins!";
@@ -532,3 +570,8 @@ $("logo").onclick = returnToMenu;
 $("againBtn").onclick = beginMatch;
 $("lobbyBtn").onclick = () => { $("winOverlay").style.display = "none"; returnToMenu(); };
 $("endBtn").onclick = endMatch;
+$("catBtn").onclick = (e) => { e.stopPropagation(); toggleCatMenu(); };
+document.addEventListener("click", (e) => {
+  const m = $("catMenu");
+  if (m.style.display !== "none" && !m.contains(e.target) && e.target !== $("catBtn")) toggleCatMenu(false);
+});

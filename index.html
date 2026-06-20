@@ -37,6 +37,7 @@
   }
   #topbar {
     grid-area: top;
+    position: relative;
     display: flex;
     align-items: center;
     gap: 18px;
@@ -47,11 +48,20 @@
   #topbar .logo { font-size: 18px; font-weight: 800; letter-spacing: 0.5px; }
   #topbar .room { color: var(--muted); font-size: 13px; padding: 4px 10px; background: var(--panel2); border-radius: 8px; }
   #topbar .spacer { flex: 1; }
-  #endBtn {
+  #endBtn, #catBtn {
     background: var(--panel2); color: var(--muted); border: 1px solid var(--line);
     border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 700; cursor: pointer; transition: .12s;
   }
   #endBtn:hover { background: var(--bad); border-color: var(--bad); color: #fff; }
+  #catBtn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  /* In-game category switcher dropdown */
+  #catMenu {
+    position: absolute; top: 52px; right: 16px; width: 232px; z-index: 5;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px; box-shadow: 0 16px 40px rgba(0,0,0,.5);
+  }
+  #catMenu .title { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 2px 4px 8px; }
+  #catMenuChecks { display: grid; gap: 6px; max-height: 280px; overflow-y: auto; }
   /* Reaction / prove timer — sits just above the input box. Hidden when empty. */
   #timer {
     font-variant-numeric: tabular-nums; font-weight: 800; font-size: 16px;
@@ -219,7 +229,12 @@
     <span class="logo" id="logo" title="Back to lobby" style="cursor:pointer">🎯 Prove It!</span>
     <span class="room" id="roomName">Lobby</span>
     <span class="spacer"></span>
+    <button id="catBtn" style="display:none">Categories ▾</button>
     <button id="endBtn" style="display:none">End game</button>
+    <div id="catMenu" style="display:none">
+      <div class="title">Categories (applies next round)</div>
+      <div id="catMenuChecks"></div>
+    </div>
   </div>
 
   <div id="main">

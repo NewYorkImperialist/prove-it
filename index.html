@@ -128,6 +128,9 @@
   .player .pts { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 16px; color: var(--gold); }
   .player.turn { background: rgba(91,140,255,.08); }
   #side .note { margin-top: auto; padding: 14px 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
+  .note a, .credit a { color: var(--accent); text-decoration: none; font-weight: 600; }
+  .note a:hover, .credit a:hover { text-decoration: underline; }
+  .credit { text-align: center; margin: 16px 0 0; font-size: 12px; color: var(--muted); }
 
   /* ---------- Setup overlay ---------- */
   #overlay, #winOverlay {
@@ -246,7 +249,7 @@
       <div class="name">Bot</div>
       <div class="pts" id="scoreBot">0</div>
     </div>
-    <div class="note">Single-player vs. a bot that always folds. Rooms &amp; live opponents coming soon.</div>
+    <div class="note">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></div>
   </div>
 </div>
 
@@ -269,6 +272,8 @@
       <button id="startBtn">🎮 Singleplayer</button>
       <button id="mpBtn" disabled>👥 Multiplayer <span class="wip">WIP</span></button>
     </div>
+
+    <p class="credit">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></p>
   </div>
 </div>
 

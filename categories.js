@@ -210,7 +210,7 @@ const CATEGORY_GROUPS = {
     { name: "Major Rivers", items: [
       "Nile", ["Amazon","amazon","amazon river"], ["Yangtze","yangtze","yangtze river"],
       ["Mississippi","mississippi","mississippi river"], "Danube","Volga","Ganges","Mekong","Congo","Rhine","Niger",
-      "Yellow River", ["Yenisei","yenisei","yenisey"], "Ob", ["Paraná","parana"], "Amur","Lena","Murray","Indus",
+      ["Yellow River", "yellow", "huang", "huanghe"], ["Yenisei","yenisei","yenisey"], "Ob", ["Paraná","parana"], "Amur","Lena","Murray","Indus",
       "Brahmaputra","Euphrates","Tigris","Zambezi","Colorado","Rio Grande","Seine","Thames","Tiber","Po","Yukon",
     ]},
     { name: "Famous Mountains", items: [

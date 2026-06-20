@@ -103,7 +103,7 @@ function beginMatch() {
   $("endBtn").style.display = "inline-block";
   const goal = targetScore === Infinity ? "endless" : `first to ${targetScore}`;
   add(`Game on! Categories: ${enabledGroups.join(", ")}. Timer: ${timerLength}s · ${goal}.`, "system");
-  add("Open with a number — then we trade raises. Either of us can call Prove It!; whoever made the last claim has to back it up. Careful, I bluff. 😏", "bot", "Bot");
+  add("Throw out a number to start. We go back and forth raising till someone calls it, then you back it up. Fair warning, I bluff. 😏", "bot", "Bot");
   setTimeout(newRound, 500);
 }
 
@@ -144,6 +144,9 @@ function scrollFeed() {
   feed.scrollTop = feed.scrollHeight;
   requestAnimationFrame(() => { feed.scrollTop = feed.scrollHeight; });
 }
+
+// Pick a random line (keeps the bot's chatter from sounding canned).
+function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 
 function setActions(btns) {
   actions.innerHTML = "";
@@ -212,8 +215,12 @@ function newRound() {
   catNameEl.textContent = c.name;
   $("catLabel").textContent = `${c.emoji} ${c.group}`;
   claimLineEl.textContent = "";
-  add(`New round — ${c.group}: ${c.name}`, "system");
-  add(`How many ${c.name} can you name? You've got 10s to open with a number.`, "bot", "Bot");
+  add(`New round · ${c.group}: ${c.name}`, "system");
+  add(pick([
+    `${c.name}. How many you got?`,
+    `Alright, ${c.name}. How many can you name?`,
+    `${c.name}. Give me a number.`,
+  ]), "bot", "Bot");
   setActions([]);
   setTurn("me");
   input.placeholder = "Type a number to open…";
@@ -254,7 +261,7 @@ function humanChallengeBot() {
 }
 
 function setClaimLine() {
-  claimLineEl.textContent = `Standing claim: ${claim} — ${holder === "me" ? "You" : "Bot"}`;
+  claimLineEl.textContent = `Standing claim: ${claim} (${holder === "me" ? "You" : "Bot"})`;
 }
 
 // ---------- 10s turn timer (drives your opening + your raise turns) ----------
@@ -281,10 +288,10 @@ function onTurnTimeout() {
     state = "thinking";
     timerEl.textContent = "";
     setTurn("bot");
-    add("Too slow — no claim made. 😎", "bot", "Bot");
-    endRound(false, "You didn't react in time —", { skipCount: true });
+    add("Too slow. 😎", "bot", "Bot");
+    endRound(false, "Ran out of time.", { skipCount: true });
   } else if (state === "myturn") {
-    add("(time's up — you call it)", "system");
+    add("(time's up, you call it)", "system");
     humanChallengeBot();  // stalling = you challenge the bot's claim
   }
 }
@@ -313,11 +320,17 @@ function botDecide() {
   if (canRaise && wantRaise) {
     claim += 1;
     holder = "bot";
-    add(`Make it ${claim}.`, "bot", "Bot");
+    add(pick([`${claim}.`, `Make it ${claim}.`, `Easy. ${claim}.`, `Pfft. ${claim}.`, `${claim}, then.`]), "bot", "Bot");
     setClaimLine();
     myTurn();
   } else {
-    add(`Prove it! 😏 Name ${claim} — clock's running.`, "bot", "Bot");
+    add(pick([
+      `Prove it. Let's see all ${claim}. 😏`,
+      `Yeah right, prove it.`,
+      `Doubt it. Name ${claim}.`,
+      `No chance you've got ${claim}. Go on.`,
+      `Prove it then. ${claim}, let's hear em.`,
+    ]), "bot", "Bot");
     startProving();  // you must back up your standing claim
   }
 }
@@ -351,10 +364,10 @@ function botProve() {
       i++;
       setTimeout(tick, 550);
     } else if (success) {
-      endRound(false, `Bot named ${claim}/${claim}.`, { skipCount: true });
+      endRound(false, pick(["Told you.", "All day.", `That's ${claim}.`]), { skipCount: true });
     } else {
-      add("…uh, that's all I've got. 😬", "bot");
-      endRound(true, `Bot only managed ${botMax}/${claim}.`, { skipCount: true });
+      add(pick(["uh… that's all I got. 😬", "wait, hold on… nope. 😬", "ok I might've oversold that."]), "bot");
+      endRound(true, `Only got ${botMax} of ${claim}.`, { skipCount: true });
     }
   };
   setTimeout(tick, 700);
@@ -394,7 +407,7 @@ function submitAnswer(p) {
   if (!entry) {
     add(`${p} ✗ not on my list`, "bad", "You");
   } else if (proven.includes(entry.id)) {
-    add(`"${p}" — already counted (${entry.display})`, "bad", "You");
+    add(`already got ${entry.display}`, "bad", "You");
   } else {
     proven.push(entry.id);
     add(`${entry.display} ✓ (${proven.length}/${claim})`, "ok", "You");
@@ -460,9 +473,8 @@ function showWin() {
   if (scoreMe > scoreBot) title = "🏆 You win!";
   else if (scoreBot > scoreMe) title = "🤖 Bot wins!";
   else title = "🤝 It's a tie!";
-  const goal = targetScore === Infinity ? "endless" : `first to ${targetScore}`;
   $("winTitle").textContent = title;
-  $("winScore").textContent = `Final — You ${scoreMe} · Bot ${scoreBot} (${goal})`;
+  $("winScore").textContent = `Final score: You ${scoreMe}, Bot ${scoreBot}`;
   $("winOverlay").style.display = "grid";
 }
 
@@ -476,11 +488,11 @@ function handleInput() {
     const n = parseInt(raw, 10);
     const max = current.entries.length;
     if (isNaN(n) || n < 1) {
-      rejectInput(raw, "Enter a whole number ≥ 1 to open.");
+      rejectInput(raw, "Gotta be a number (1 or more).");
     } else if (n > max) {
       rejectInput(raw, current.exact
-        ? `Easy 😅 — there are only ${max} ${current.name}. Try again.`
-        : `That's a lot of ${current.name}! Try a smaller number.`);
+        ? `Easy 😅 there's only ${max} ${current.name}. Try again.`
+        : `That's a lot of ${current.name}. Try a smaller number.`);
     } else {
       open(n);
     }
@@ -488,13 +500,13 @@ function handleInput() {
     const n = parseInt(raw, 10);
     const max = current.entries.length;
     if (isNaN(n)) {
-      rejectInput(raw, "Type a higher number to raise, or use the buttons.");
+      rejectInput(raw, "Type a higher number, or use the buttons.");
     } else if (n <= claim) {
-      rejectInput(raw, `You have to raise above ${claim}.`);
+      rejectInput(raw, `You gotta go higher than ${claim}.`);
     } else if (n > max) {
       rejectInput(raw, current.exact
-        ? `Easy 😅 — there are only ${max} ${current.name}. Try again.`
-        : `That's a lot of ${current.name}! Try a smaller number.`);
+        ? `Easy 😅 there's only ${max} ${current.name}. Try again.`
+        : `That's a lot of ${current.name}. Try a smaller number.`);
     } else {
       clearInterval(reactId);
       claim = n; holder = "me";

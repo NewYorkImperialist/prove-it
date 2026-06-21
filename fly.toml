@@ -1,0 +1,18 @@
+# Fly.io config for Prove It! (Node + Socket.IO).
+app = "proveit"
+primary_region = "ewr"
+
+[build]
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  # scale-to-zero: sleeps when idle (~free), wakes in ~1-3s on a request.
+  # for always-on (no cold start), set auto_stop_machines = "off" and min_machines_running = 1.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"

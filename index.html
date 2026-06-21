@@ -152,6 +152,8 @@
     border-radius: 16px; padding: 26px; box-shadow: 0 24px 70px rgba(0,0,0,.6);
   }
   #setup h1 { margin: 0 0 4px; font-size: 24px; }
+  .mplink { display: inline-block; font-size: 12px; color: var(--muted); text-decoration: none; margin-bottom: 10px; }
+  .mplink:hover { color: var(--accent); }
   #setup p.sub { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
   #setup .group-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 18px 0 8px; }
   .checks {
@@ -183,9 +185,9 @@
   #startBtn:disabled { opacity: .4; cursor: not-allowed; }
   #lobbyBtn { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
   #mpBtn {
-    background: var(--panel2); color: var(--muted); border: 1px solid var(--line);
-    cursor: not-allowed; display: flex; align-items: center; justify-content: center; gap: 8px;
+    background: var(--panel2); color: var(--text); border: 1px solid var(--line); cursor: pointer;
   }
+  #mpBtn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
   .wip {
     font-size: 10px; font-weight: 800; letter-spacing: .5px;
     background: var(--gold); color: #1a1a1a; padding: 2px 6px; border-radius: 6px;
@@ -271,7 +273,8 @@
 <!-- Setup / lobby -->
 <div id="overlay">
   <div id="setup">
-    <h1>🎯 Prove It!</h1>
+    <a href="mp.html" class="mplink">← Multiplayer</a>
+    <h1>🎯 Prove It! <span style="color:var(--muted);font-weight:600;font-size:16px">Singleplayer</span></h1>
     <p class="sub">How many can you actually name? Say a number, then prove it before the clock runs out.</p>
 
     <div class="group-title">Categories</div>
@@ -284,8 +287,7 @@
     <div class="seg" id="winSeg"></div>
 
     <div class="modes">
-      <button id="startBtn">🎮 Singleplayer</button>
-      <button id="mpBtn" disabled>👥 Multiplayer <span class="wip">WIP</span></button>
+      <button id="startBtn">🎮 Start Singleplayer</button>
     </div>
 
     <p class="credit">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></p>

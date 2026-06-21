@@ -1,0 +1,14 @@
+{
+  "name": "prove-it",
+  "version": "1.0.0",
+  "description": "Prove It! — multiplayer server (serves the static game + Socket.IO realtime layer)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}

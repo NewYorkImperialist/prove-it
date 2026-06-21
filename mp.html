@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prove It! — Multiplayer</title>
+<style>
+  :root {
+    --bg:#0e1016; --panel:#161a24; --panel2:#1c2130; --line:#262c3b;
+    --accent:#5b8cff; --accent2:#3ecf8e; --bad:#ff5b6e; --gold:#ffcf5b; --text:#e7e9f0; --muted:#888fa3;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; font-family:-apple-system,system-ui,sans-serif; background:var(--bg); color:var(--text);
+         display:grid; place-items:center; padding:16px; }
+  .card { width:min(94vw,460px); max-height:92vh; overflow-y:auto; background:var(--panel); border:1px solid var(--line); border-radius:16px;
+          padding:26px; box-shadow:0 24px 70px rgba(0,0,0,.6); }
+  h1 { margin:0 0 4px; font-size:24px; } h1 .e { }
+  p.sub { margin:0 0 20px; color:var(--muted); font-size:14px; }
+  label { display:block; font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:16px 0 6px; }
+  input { width:100%; background:var(--bg); border:1px solid var(--line); border-radius:10px; color:var(--text);
+          padding:12px 13px; font-size:15px; outline:none; }
+  input:focus { border-color:var(--accent); }
+  input.shake { animation:shake .4s; border-color:var(--bad)!important; }
+  @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 40%{transform:translateX(6px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
+  .row { display:flex; gap:8px; }
+  .row input { flex:1; text-transform:uppercase; letter-spacing:2px; }
+  button { font-family:inherit; border:none; border-radius:10px; padding:13px; font-size:15px; font-weight:800; cursor:pointer; transition:.12s; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  .primary { width:100%; margin-top:20px; background:var(--accent2); color:#08130d; }
+  .secondary { background:var(--panel2); color:var(--text); border:1px solid var(--line); }
+  .ghost { background:transparent; color:var(--muted); border:1px solid var(--line); }
+  .divider { text-align:center; color:var(--muted); font-size:12px; margin:20px 0 4px; }
+  .err { color:var(--bad); font-size:13px; min-height:16px; margin-top:10px; }
+  .code-box { text-align:center; margin:8px 0 18px; }
+  .code-box .code { font-size:42px; font-weight:900; letter-spacing:8px; color:var(--gold); }
+  .code-box .hint { font-size:12px; color:var(--muted); }
+  .players { display:flex; flex-direction:column; gap:8px; margin:8px 0 18px; }
+  .player { display:flex; align-items:center; gap:12px; padding:12px 14px; background:var(--panel2); border:1px solid var(--line); border-radius:10px; }
+  .player .avatar { width:34px; height:34px; border-radius:9px; display:grid; place-items:center; font-weight:900; color:#fff; }
+  .player .name { flex:1; font-weight:700; }
+  .player .tag { font-size:11px; font-weight:800; padding:3px 8px; border-radius:6px; background:var(--gold); color:#1a1a1a; }
+  .player.empty { color:var(--muted); font-style:italic; font-weight:500; border-style:dashed; }
+  .status { text-align:center; color:var(--muted); font-size:13px; margin-top:6px; }
+  .credit { text-align:center; margin:16px 0 0; font-size:12px; color:var(--muted); }
+  .credit a { color:var(--accent); text-decoration:none; font-weight:600; }
+  .credit a:hover { text-decoration:underline; }
+  .hidden { display:none !important; }
+  .conn { position:fixed; bottom:10px; left:14px; font-size:11px; color:var(--muted); z-index:30; }
+  #confirmOverlay { position:fixed; inset:0; z-index:40; display:grid; place-items:center; background:rgba(8,10,15,.7); backdrop-filter:blur(3px); }
+  #confirmOverlay.hidden { display:none !important; }
+  #confirmCard { width:min(90vw,360px); background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:24px; text-align:center; box-shadow:0 24px 70px rgba(0,0,0,.6); }
+  #confirmCard h2 { margin:0 0 8px; font-size:20px; }
+  #confirmCard p { color:var(--muted); font-size:14px; margin:0 0 18px; }
+  #confirmCard .btns { display:flex; flex-direction:column; gap:10px; }
+  #confirmCard button { padding:13px; border-radius:10px; font-weight:800; cursor:pointer; border:none; font-size:15px; }
+  #cfReturn { background:var(--accent2); color:#08130d; }
+  #cfForfeit { background:var(--bad); color:#fff; }
+  .conn.ok::before { content:"● "; color:var(--accent2); }
+  .conn.bad::before { content:"● "; color:var(--bad); }
+
+  /* ---------- game screen (matches index.html: top bar + main + sidebar) ---------- */
+  #game { position:fixed; inset:0; z-index:20; display:grid;
+    grid-template-rows:56px 1fr; grid-template-columns:1fr 300px;
+    grid-template-areas:"top top" "main side"; background:var(--bg); }
+  #topbar { grid-area:top; position:relative; display:flex; align-items:center; gap:18px; padding:0 20px;
+    background:linear-gradient(90deg,#1a2032,#14171f); border-bottom:1px solid var(--line); }
+  #mpCatBtn { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:8px;
+    padding:6px 12px; font-size:13px; font-weight:700; cursor:pointer; transition:.12s; }
+  #mpCatBtn:hover { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #mpCatMenu { position:absolute; top:52px; right:16px; width:232px; z-index:6; background:var(--panel);
+    border:1px solid var(--line); border-radius:12px; padding:10px; box-shadow:0 16px 40px rgba(0,0,0,.5); }
+  #mpCatMenu .title { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:2px 4px 8px; }
+  #mpCatMenuChecks { display:grid; gap:6px; max-height:280px; overflow-y:auto; }
+
+  /* lobby settings (host configures the room) */
+  .group-title { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:18px 0 8px; }
+  .checks { display:grid; grid-template-columns:1fr 1fr; gap:8px; max-height:160px; overflow-y:auto; }
+  .check { display:flex; align-items:center; gap:10px; padding:10px 12px; border:1px solid var(--line); border-radius:10px; cursor:pointer; background:var(--panel2); user-select:none; transition:.12s; }
+  .check:hover { border-color:var(--accent); }
+  .check.on { border-color:var(--accent); background:rgba(91,140,255,.12); }
+  .check input { width:16px; height:16px; padding:0; margin:0; border:none; background:transparent; accent-color:var(--accent); }
+  .check .emoji { font-size:18px; }
+  .check span:last-child { font-size:14px; }
+  .seg { display:flex; gap:8px; }
+  .seg button { flex:1; padding:11px; background:var(--panel2); border:1px solid var(--line); border-radius:10px; color:var(--text); font-weight:700; font-size:14px; cursor:pointer; transition:.12s; }
+  .seg button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #settings.locked { opacity:.55; pointer-events:none; }
+  .lockNote { font-size:12px; color:var(--muted); margin-top:10px; text-align:center; }
+  #topbar .logo { font-size:18px; font-weight:800; letter-spacing:.5px; }
+  #topbar .room { color:var(--muted); font-size:13px; padding:4px 10px; background:var(--panel2); border-radius:8px; }
+  #topbar .spacer { flex:1; }
+  #mpLeave { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:8px;
+    padding:6px 12px; font-size:13px; font-weight:700; cursor:pointer; transition:.12s; }
+  #mpLeave:hover { background:var(--bad); border-color:var(--bad); color:#fff; }
+
+  #main { grid-area:main; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
+  #banner { margin:16px 20px 0; padding:18px 22px; background:linear-gradient(135deg,#232a40,#1a1f2e);
+    border:1px solid var(--line); border-radius:14px; }
+  #banner .label { font-size:12px; text-transform:uppercase; letter-spacing:1.5px; color:var(--muted); }
+  #banner .cat { font-size:26px; font-weight:800; margin-top:4px; }
+  #banner .claim { margin-top:6px; font-size:14px; color:var(--gold); min-height:18px; }
+
+  #feed { flex:1; min-height:0; overflow-y:auto; padding:16px 20px; display:flex; flex-direction:column; gap:9px; }
+  .msg { max-width:78%; padding:9px 13px; border-radius:13px; font-size:14px; line-height:1.4; word-wrap:break-word; animation:pop .14s ease; }
+  @keyframes pop { from { transform:translateY(4px); opacity:0; } to { transform:none; opacity:1; } }
+  .msg.me { align-self:flex-end; background:#2f5fd0; border-bottom-right-radius:4px; }
+  .msg.them { align-self:flex-start; background:var(--panel2); border-bottom-left-radius:4px; }
+  .msg.system { align-self:center; background:transparent; color:var(--muted); font-size:12px; font-style:italic; }
+  .msg.ok { background:rgba(62,207,142,.16); border:1px solid var(--accent2); }
+  .msg.bad { background:rgba(255,91,110,.14); border:1px solid var(--bad); }
+  .msg.pending { background:rgba(255,207,91,.12); border:1px solid var(--gold); }
+  .sender { font-size:11px; color:var(--muted); margin:2px 6px -4px; }
+  .sender.right { align-self:flex-end; } .sender.left { align-self:flex-start; }
+  /* chat messages — visually distinct from game bubbles (Protobowl-style) */
+  .chat { align-self:stretch; font-size:13px; line-height:1.45; padding:4px 8px; border-radius:6px; background:rgba(255,255,255,.035); }
+  .chat .nm { font-weight:700; color:#8ab4ff; }
+  .chat.mine .nm { color:var(--accent2); }
+
+  #timer { font-variant-numeric:tabular-nums; font-weight:800; font-size:16px; color:var(--accent); text-align:center; letter-spacing:.3px; }
+  #timer:empty { display:none; }
+  #timer:not(:empty) { margin:0 20px 8px; padding:8px 12px; background:rgba(91,140,255,.1); border:1px solid var(--line); border-radius:10px; }
+  #timer.danger { color:var(--bad); background:rgba(255,91,110,.1); border-color:rgba(255,91,110,.4); }
+
+  /* judging panel (off-list rulings) */
+  #gpending { display:flex; flex-direction:column; gap:6px; padding:0 20px; }
+  #gpending:empty { display:none; }
+  .prow { display:flex; align-items:center; gap:8px; background:rgba(255,207,91,.12); border:1px solid var(--gold); border-radius:10px; padding:8px 10px; }
+  .prow .ptext { flex:1; font-weight:700; }
+  .prow button { padding:7px 12px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; border:none; }
+  .prow .acc { background:var(--accent2); color:#08130d; }
+  .prow .rej { background:var(--bad); color:#fff; }
+  .rejall { align-self:flex-end; background:transparent; color:var(--muted); border:none; text-decoration:underline; font-size:12px; padding:2px 4px; cursor:pointer; }
+  .pnote { font-size:13px; color:var(--gold); padding:2px; }
+
+  #actions { display:flex; gap:8px; padding:8px 20px 0; }
+  #actions:empty { display:none; }
+  #actions button { flex:1; background:var(--panel2); color:var(--text); border:1px solid var(--line);
+    border-radius:10px; padding:13px; font-size:14px; font-weight:700; cursor:pointer; transition:.12s; }
+  #actions button:hover { background:var(--accent); border-color:var(--accent); }
+  #actions button.raise:hover { background:var(--gold); border-color:var(--gold); color:#1a1a1a; }
+  #actions button.danger:hover { background:var(--bad); border-color:var(--bad); }
+  #actions button.again { background:var(--accent2); color:#08130d; border-color:var(--accent2); }
+  #gstatus { text-align:center; color:var(--muted); font-size:13px; min-height:16px; padding:6px 20px 0; }
+  #gstatus.err { color:var(--bad); }
+
+  #inputbar { display:flex; gap:8px; align-items:center; padding:12px 20px; border-top:1px solid var(--line); background:#12151d; }
+  /* chat mode — pressing "/" turns the input box into a chat box */
+  #inputbar.chat-mode::before { content:"💬 chat"; display:flex; align-items:center; color:var(--accent2); font-weight:800; font-size:13px; white-space:nowrap; }
+  #inputbar.chat-mode #input { border-color:var(--accent2); background:rgba(62,207,142,.07); }
+  #inputbar.chat-mode #send { background:var(--accent2); color:#08130d; }
+  #input { flex:1; background:var(--bg); border:1px solid var(--line); border-radius:10px; color:var(--text); padding:11px 13px; font-size:14px; outline:none; }
+  #input:focus { border-color:var(--accent); }
+  #send { background:var(--accent); color:#fff; border:none; border-radius:10px; padding:0 18px; font-weight:700; cursor:pointer; }
+  #send:disabled { opacity:.4; cursor:not-allowed; }
+
+  /* sidebar */
+  #side { grid-area:side; background:var(--panel); border-left:1px solid var(--line); display:flex; flex-direction:column; min-height:0; overflow-y:auto; }
+  #side h2 { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:0; padding:16px 16px 8px; }
+  #side .player { display:flex; align-items:center; gap:10px; padding:10px 16px; border:none; border-bottom:1px solid var(--line); background:transparent; border-radius:0; }
+  #side .player .avatar { width:30px; height:30px; border-radius:8px; display:grid; place-items:center; font-weight:800; color:#fff; }
+  #side .player .name { flex:1; font-size:14px; font-weight:600; }
+  #side .player .pts { font-variant-numeric:tabular-nums; font-weight:800; font-size:16px; color:var(--gold); }
+  #side .player.turn { background:rgba(91,140,255,.10); }
+  #side .side-foot { margin-top:auto; }
+  #side .conn-side { position:relative; padding:8px 16px 0 16px; font-size:11px; color:var(--muted); }
+  #side .conn-side.ok::before { content:"●"; position:absolute; left:5px; color:var(--accent2); }
+  #side .conn-side.bad::before { content:"●"; position:absolute; left:5px; color:var(--bad); }
+  #side .note { padding:14px 16px; font-size:12px; color:var(--muted); border-top:1px solid var(--line); }
+  #side .note a { color:var(--accent); text-decoration:none; font-weight:600; }
+  #side .note a:hover { text-decoration:underline; }
+
+  /* mobile: stack like index.html */
+  @media (max-width:640px) {
+    #game { grid-template-rows:52px auto 1fr; grid-template-columns:1fr; grid-template-areas:"top" "side" "main"; }
+    #topbar { padding:0 12px; gap:10px; } #topbar .room { display:none; }
+    #side { flex-direction:row; border-left:none; border-bottom:1px solid var(--line); overflow-y:hidden; }
+    #side h2, #side .side-foot { display:none; }
+    #side .player { flex:1; border-bottom:none; border-right:1px solid var(--line); }
+    #side .player:last-child { border-right:none; }
+    #banner { margin:10px 12px 0; padding:12px 14px; } #banner .cat { font-size:20px; }
+    #feed { padding:12px; } .msg { max-width:88%; }
+    #actions, #gpending, #gstatus { padding-left:12px; padding-right:12px; }
+    #timer:not(:empty) { margin:0 12px 8px; }
+    #inputbar { padding:10px 12px; } #input { font-size:16px; }
+  }
+</style>
+</head>
+<body>
+  <div class="conn" id="conn">connecting…</div>
+
+  <!-- Home -->
+  <div class="card" id="home">
+    <h1>🎯 Prove It! <span class="e">Multiplayer</span></h1>
+    <p class="sub">Play head-to-head with a friend. Create a room and share the code, or join theirs.</p>
+
+    <label for="name">Your name</label>
+    <input id="name" maxlength="20" placeholder="e.g. Jayden" autocomplete="off">
+
+    <button class="primary" id="createBtn">Create a room</button>
+
+    <div class="divider">— or join one —</div>
+    <label for="joinCode">Room code</label>
+    <div class="row">
+      <input id="joinCode" maxlength="4" placeholder="ABCD" autocomplete="off">
+      <button class="secondary" id="joinBtn">Join</button>
+    </div>
+    <div class="err" id="homeErr"></div>
+
+    <div class="divider">— or —</div>
+    <button class="ghost" id="spBtn" style="width:100%">🎮 Play Singleplayer</button>
+    <p class="credit">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></p>
+  </div>
+
+  <!-- Waiting room -->
+  <div class="card hidden" id="room">
+    <h1>Waiting room</h1>
+    <p class="sub">Share this code with your friend so they can join.</p>
+    <div class="code-box">
+      <div class="code" id="roomCode">----</div>
+      <div class="hint">room code</div>
+    </div>
+    <div class="players" id="players"></div>
+
+    <div id="settings">
+      <div class="group-title">Categories</div>
+      <div class="checks" id="catChecks"></div>
+      <div class="group-title">Timer</div>
+      <div class="seg" id="timerSeg"></div>
+      <div class="group-title">Win at</div>
+      <div class="seg" id="winSeg"></div>
+    </div>
+    <div class="lockNote hidden" id="lockNote">Only the host can change settings.</div>
+
+    <button class="primary hidden" id="startBtn">Start game</button>
+    <div class="status" id="roomStatus"></div>
+    <button class="ghost" id="leaveBtn" style="width:100%;margin-top:14px;">Leave room</button>
+  </div>
+
+  <!-- Game (full screen, matches index.html) -->
+  <div class="hidden" id="game">
+    <div id="topbar">
+      <span class="logo" id="mpLogo" style="cursor:pointer" title="Leave game">🎯 Prove It!</span>
+      <span class="room" id="gRoom"></span>
+      <span class="spacer"></span>
+      <button id="mpCatBtn" style="display:none">Categories ▾</button>
+      <button id="mpLeave">Leave</button>
+      <div id="mpCatMenu" style="display:none">
+        <div class="title">Categories (applies next round)</div>
+        <div id="mpCatMenuChecks"></div>
+      </div>
+    </div>
+    <div id="main">
+      <div id="banner">
+        <div class="label" id="catLabel">Category</div>
+        <div class="cat" id="catName">—</div>
+        <div class="claim" id="claimLine"></div>
+      </div>
+      <div id="feed"></div>
+      <div id="gpending"></div>
+      <div id="timer"></div>
+      <div id="actions"></div>
+      <div id="gstatus"></div>
+      <div id="inputbar">
+        <input id="input" autocomplete="off" placeholder="…" disabled>
+        <button id="send" disabled>Send</button>
+      </div>
+    </div>
+    <div id="side">
+      <h2>Players</h2>
+      <div id="sidePlayers"></div>
+      <div class="side-foot">
+        <div class="conn-side" id="connSide">connecting…</div>
+        <div class="note">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm leaving a game -->
+  <div id="confirmOverlay" class="hidden">
+    <div id="confirmCard">
+      <h2>Leave the game?</h2>
+      <p>If you forfeit, your opponent wins this match.</p>
+      <div class="btns">
+        <button id="cfReturn">↩︎ Return to your game</button>
+        <button id="cfForfeit">🏳️ Forfeit</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="categories.js"></script>
+  <script src="mp.js"></script>
+</body>
+</html>

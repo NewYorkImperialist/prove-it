@@ -664,4 +664,15 @@ const CATEGORY_GROUPS = {
       "Atlassian", "Huawei",
     ]},
   ]},
+  // 🤫 Personal category — OFF by default (defaultOff). Friends guess facts about you.
+  // Replace the placeholders below with real answers. Each item is one accepted answer;
+  // use ["Canonical","alias"] for nicknames/alt spellings.
+  Secret: { emoji: "🤫", defaultOff: true, cats: [
+    { name: "Jayden Lin's Hobbies", items: [
+      "running", "coding", "singing", "rubiks cube"
+    ]},
+  ]},
 };
+
+// Allow the Node server to load this same data (harmless/ignored in the browser).
+if (typeof module !== "undefined" && module.exports) module.exports = CATEGORY_GROUPS;

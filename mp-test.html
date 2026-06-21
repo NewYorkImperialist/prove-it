@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Prove It! — connection test</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; background: #0e1016; color: #e7e9f0; padding: 28px; }
+  h1 { font-size: 20px; }
+  #status { font-size: 18px; font-weight: 700; }
+  .ok { color: #3ecf8e; } .bad { color: #ff5b6e; } .wait { color: #ffcf5b; }
+  pre { background: #161a24; border: 1px solid #262c3b; border-radius: 10px; padding: 14px; font-size: 13px; }
+</style>
+</head>
+<body>
+  <h1>🎯 Socket.IO connection test (Phase 0)</h1>
+  <p>Status: <span id="status" class="wait">connecting…</span></p>
+  <pre id="log"></pre>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const statusEl = document.getElementById("status");
+    const logEl = document.getElementById("log");
+    const log = (m) => { logEl.textContent += m + "\n"; console.log(m); };
+
+    const socket = io();
+    socket.on("connect", () => {
+      statusEl.textContent = "connected ✅ (" + socket.id + ")";
+      statusEl.className = "ok";
+      log("connected as " + socket.id);
+    });
+    socket.on("welcome", (data) => log("server → " + JSON.stringify(data)));
+    socket.on("disconnect", () => { statusEl.textContent = "disconnected"; statusEl.className = "bad"; log("disconnected"); });
+    socket.on("connect_error", (err) => { statusEl.textContent = "connection error"; statusEl.className = "bad"; log("connect_error: " + err.message); });
+  </script>
+</body>
+</html>

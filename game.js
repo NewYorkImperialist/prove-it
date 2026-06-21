@@ -36,9 +36,10 @@ function buildSetup() {
   const checks = $("catChecks");
   checks.innerHTML = "";
   Object.entries(CATEGORY_GROUPS).forEach(([key, g]) => {
+    const on = !g.defaultOff; // some groups (e.g. Secret) start unchecked
     const label = document.createElement("label");
-    label.className = "check on";
-    label.innerHTML = `<input type="checkbox" value="${key}" checked>
+    label.className = "check" + (on ? " on" : "");
+    label.innerHTML = `<input type="checkbox" value="${key}" ${on ? "checked" : ""}>
       <span class="emoji">${g.emoji}</span><span>${key}</span>`;
     const cb = label.querySelector("input");
     cb.addEventListener("change", () => {

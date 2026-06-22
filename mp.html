@@ -109,6 +109,8 @@
   #mpLeave { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:8px;
     padding:6px 12px; font-size:13px; font-weight:700; cursor:pointer; transition:.12s; }
   #mpLeave:hover { background:var(--bad); border-color:var(--bad); color:#fff; }
+  #muteBtn { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:14px; cursor:pointer; transition:.12s; }
+  #muteBtn:hover { border-color:var(--accent); }
   #crownGame { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:14px; cursor:pointer; opacity:.5; transition:.12s; }
   #crownGame.on { opacity:1; background:rgba(255,211,77,.18); border-color:var(--gold); }
   /* chess.com-style flair tile around the crown so it reads as a badge, not a stray emoji */
@@ -298,6 +300,7 @@
       <span class="room" id="gRoom"></span>
       <span class="spacer"></span>
       <button id="mpCatBtn" style="display:none">Categories ▾</button>
+      <button id="muteBtn" title="Sound on">🔊</button>
       <button id="crownGame" class="hidden" title="Toggle your crown">👑</button>
       <button id="mpLeave">Leave</button>
       <div id="mpCatMenu" style="display:none">

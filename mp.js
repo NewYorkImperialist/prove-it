@@ -65,6 +65,48 @@ function maybeAutoJoinInvite() {
   });
 }
 
+// ---------- sound effects (synthesized with Web Audio — no audio files) ----------
+let audioCtx = null;
+let muted = localStorage.getItem("muted") === "1";
+function actx() {
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+// Browsers block audio until a user gesture — resume the context on the first interaction.
+["click", "keydown", "touchstart"].forEach((ev) => document.addEventListener(ev, () => actx(), { once: true }));
+function tone(freq, dur, { type = "sine", gain = 0.2, delay = 0, sweep = 0 } = {}) {
+  if (muted) return;
+  const ctx = actx(); if (!ctx) return;
+  const t0 = ctx.currentTime + delay;
+  const osc = ctx.createOscillator(), g = ctx.createGain();
+  osc.type = type; osc.frequency.setValueAtTime(freq, t0);
+  if (sweep) osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq + sweep), t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(g).connect(ctx.destination);
+  osc.start(t0); osc.stop(t0 + dur + 0.03);
+}
+const sfx = {
+  tick:    () => tone(820, 0.05, { type: "square", gain: 0.07 }),
+  tickHot: () => tone(1280, 0.07, { type: "square", gain: 0.11 }),
+  ding:    () => { tone(880, 0.12, { gain: 0.2 }); tone(1320, 0.16, { gain: 0.14, delay: 0.05 }); },
+  buzz:    () => tone(170, 0.22, { type: "sawtooth", gain: 0.16, sweep: -70 }),
+  pop:     () => tone(520, 0.07, { type: "triangle", gain: 0.11 }),
+  roundWin:  () => [523, 659, 784].forEach((f, i) => tone(f, 0.18, { type: "triangle", gain: 0.16, delay: i * 0.08 })),
+  roundLose: () => [392, 311].forEach((f, i) => tone(f, 0.24, { gain: 0.16, delay: i * 0.11 })),
+  fanfare: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.3, { type: "square", gain: 0.15, delay: i * 0.12 })),
+  sparkle: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.14, { type: "triangle", gain: 0.14, delay: i * 0.06 })),
+};
+function setMuted(m) {
+  muted = m; localStorage.setItem("muted", m ? "1" : "0");
+  $("muteBtn").textContent = m ? "🔇" : "🔊";
+  $("muteBtn").title = m ? "Sound off" : "Sound on";
+}
+$("muteBtn").onclick = () => { setMuted(!muted); if (!muted) sfx.pop(); };
+setMuted(muted);
+
 // ---------- connection indicator + auto-resume ----------
 // Two indicators: the floating one (lobby) and the sidebar one (in game).
 function setConn(text, cls) {
@@ -250,6 +292,7 @@ function syncSettings(s) {
 socket.on("gameStarted", () => { $("feed").innerHTML = ""; show("game"); });
 
 socket.on("log", ({ by, name, text, kind }) => {
+  if (kind === "ok") sfx.ding(); else if (kind === "bad") sfx.buzz(); else if (kind === "pending") sfx.pop();
   const feed = $("feed");
   const side = by === "system" ? "system" : by === myId ? "me" : "them";
   if (name && side !== "system") {
@@ -283,11 +326,25 @@ socket.on("opponentLeft", ({ name }) => {
   show("room");
 });
 
-socket.on("gameState", (state) => { gs = state; render(); });
+let prevPhase = null, prevTurnMine = false;
+socket.on("gameState", (state) => {
+  const phaseChanged = state.phase !== prevPhase;
+  const turnMine = state.turnId === myId && !state.paused &&
+    (state.phase === "proving" || state.phase === "opening" || state.phase === "bidding");
+  gs = state; render();
+  if (phaseChanged) {
+    if (state.phase === "matchover") sfx.fanfare();
+    else if (state.phase === "roundover" && prevPhase) sfx[(state.lastResult && state.lastResult.winnerId === myId) ? "roundWin" : "roundLose"]();
+    prevPhase = state.phase;
+  }
+  if (turnMine && !prevTurnMine) sfx.pop(); // a soft cue when it becomes your turn
+  prevTurnMine = turnMine;
+});
 
 // 🎯 Easter egg: someone answered "Prove It!" in the Video Games round → +5 + a party for everyone.
 socket.on("easterEgg", ({ name, phrase, fx }) => {
   confettiBurst();
+  sfx.sparkle();
   const restart = (el) => { if (!el) return; el.classList.remove("party"); void el.offsetWidth; el.classList.add("party"); };
   if (fx === "crown") document.querySelectorAll(".crown").forEach(restart); // "Jayden Lin" → only the crown reacts
   else restart($("mpLogo"));                                                // "Prove It!" → only the logo reacts
@@ -681,4 +738,8 @@ setInterval(() => {
   t.textContent = "⏱ " + left + "s";
   const danger = gs.phase === "proving" ? left <= 10 : left <= 3;
   t.classList.toggle("danger", danger);
+  // audio: tick the final 5 seconds (hotter in the last 3)
+  if (left <= 5 && left >= 1 && left !== lastTickSec) { lastTickSec = left; (left <= 3 ? sfx.tickHot : sfx.tick)(); }
+  else if (left > 5) lastTickSec = null;
 }, 250);
+let lastTickSec = null;

@@ -111,7 +111,11 @@
   #mpLeave:hover { background:var(--bad); border-color:var(--bad); color:#fff; }
   #crownGame { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:14px; cursor:pointer; opacity:.5; transition:.12s; }
   #crownGame.on { opacity:1; background:rgba(255,211,77,.18); border-color:var(--gold); }
-  .crown { margin-left:5px; display:inline-block; cursor:help; }
+  /* chess.com-style flair tile around the crown so it reads as a badge, not a stray emoji */
+  .crown { display:inline-flex; align-items:center; justify-content:center; width:23px; height:23px; margin-left:7px;
+    vertical-align:middle; border-radius:6px; font-size:13px; line-height:1; cursor:help;
+    background:linear-gradient(150deg,#ffe9a8 0%,#f5c542 45%,#d99a16 100%); border:1px solid #a9760c;
+    box-shadow:0 1px 2px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.65), inset 0 -1px 2px rgba(120,80,0,.4); }
   .crown.party { animation:crownParty 1s ease; }
   @keyframes crownParty {
     0%{transform:scale(1) rotate(0)} 20%{transform:scale(1.9) rotate(-12deg)} 40%{transform:scale(1.7) rotate(12deg)}

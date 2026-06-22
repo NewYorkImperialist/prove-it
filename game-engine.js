@@ -265,9 +265,13 @@ function handleAnswer(io, room, socket, text, ack) {
       const isEgg = (g.current.name === "Video Games" && entry.display === "Prove It!")
                  || (g.current.name === "Famous Mathematicians" && entry.display === "Jayden Lin");
       if (isEgg) {
-        g.scores[socket.data.playerId] = (g.scores[socket.data.playerId] || 0) + 5;
+        const pid = socket.data.playerId;
+        g.scores[pid] = (g.scores[pid] || 0) + 5;
         log(io, room, "system", null, `🎯 ${me} said the magic words — +5 bonus points!`);
-        io.to(room.code).emit("easterEgg", { kind: "proveit", name: me, phrase: entry.display });
+        // fx: "logo" → the Prove It! logo reacts; "crown" → the creator's crown reacts.
+        io.to(room.code).emit("easterEgg", { name: me, phrase: entry.display, fx: entry.display === "Jayden Lin" ? "crown" : "logo" });
+        // The bonus can win the match outright (it's only otherwise checked at round end).
+        if (g.target !== Infinity && g.scores[pid] >= g.target) { ack?.({ ok: true }); return matchOver(io, room, pid); }
       }
       if (total(g) >= g.claim) { ack?.({ ok: true }); return roundOver(io, room, socket.data.playerId, "Nailed it!"); }
     }

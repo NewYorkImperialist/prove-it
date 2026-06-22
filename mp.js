@@ -286,14 +286,11 @@ socket.on("opponentLeft", ({ name }) => {
 socket.on("gameState", (state) => { gs = state; render(); });
 
 // 🎯 Easter egg: someone answered "Prove It!" in the Video Games round → +5 + a party for everyone.
-socket.on("easterEgg", ({ kind, name, phrase }) => {
-  if (kind !== "proveit") return;
+socket.on("easterEgg", ({ name, phrase, fx }) => {
   confettiBurst();
-  const logo = $("mpLogo");
-  logo.classList.remove("party"); void logo.offsetWidth; logo.classList.add("party"); // restart the animation
-  document.querySelectorAll(".crown").forEach((c) => { // make any crown pulse + grow too
-    c.classList.remove("party"); void c.offsetWidth; c.classList.add("party");
-  });
+  const restart = (el) => { if (!el) return; el.classList.remove("party"); void el.offsetWidth; el.classList.add("party"); };
+  if (fx === "crown") document.querySelectorAll(".crown").forEach(restart); // "Jayden Lin" → only the crown reacts
+  else restart($("mpLogo"));                                                // "Prove It!" → only the logo reacts
   flashStatus(`🎯 ${name} said "${phrase || "the magic words"}" — +5 bonus points!`);
 });
 $("mpLogo").addEventListener("animationend", () => $("mpLogo").classList.remove("party"));

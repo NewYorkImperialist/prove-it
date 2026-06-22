@@ -18,6 +18,23 @@ let myRoom = isReload ? (sessionStorage.getItem("room") || null) : null;
 if (!isReload) sessionStorage.removeItem("room");
 function setRoom(code) { myRoom = code; code ? sessionStorage.setItem("room", code) : sessionStorage.removeItem("room"); }
 
+// Remember the player's name across visits, and accept ?room=CODE invite links.
+const savedName = localStorage.getItem("pi_name");
+if (savedName) $("name").value = savedName;
+function rememberName(n) { if (n) localStorage.setItem("pi_name", n); }
+const inviteCode = (new URLSearchParams(location.search).get("room") || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
+if (inviteCode) $("joinCode").value = inviteCode;
+let triedInvite = false;
+function maybeAutoJoinInvite() {
+  if (triedInvite || !inviteCode || myRoom) return;
+  triedInvite = true;
+  socket.emit("joinRoom", { code: inviteCode, name: nameValue(), playerId }, (res) => {
+    if (!res?.ok) return; // room gone/full → leave them on home with the code prefilled
+    myId = res.you; setRoom(res.code); rememberName(nameValue()); show("room");
+    history.replaceState({}, "", location.pathname); // clean URL so a refresh resumes normally
+  });
+}
+
 // ---------- connection indicator + auto-resume ----------
 // Two indicators: the floating one (lobby) and the sidebar one (in game).
 function setConn(text, cls) {
@@ -28,8 +45,10 @@ socket.on("connect", () => {
   setConn("connected", "ok");
   if (myRoom) {
     socket.emit("resume", { code: myRoom, playerId }, (res) => {
-      if (!res?.ok) { setRoom(null); show("home"); } // room gone → back to start
+      if (!res?.ok) { setRoom(null); show("home"); maybeAutoJoinInvite(); } // room gone → back to start
     });
+  } else {
+    maybeAutoJoinInvite();
   }
 });
 socket.on("disconnect", () => setConn("reconnecting…", "bad"));
@@ -52,7 +71,7 @@ $("createBtn").onclick = () => {
   $("homeErr").textContent = "";
   socket.emit("createRoom", { name: nameValue(), playerId }, (res) => {
     if (!res?.ok) return ($("homeErr").textContent = res?.error || "Could not create room.");
-    myId = res.you; setRoom(res.code); show("room");
+    myId = res.you; setRoom(res.code); rememberName(nameValue()); show("room");
   });
 };
 $("joinBtn").onclick = () => {
@@ -61,12 +80,47 @@ $("joinBtn").onclick = () => {
   if (code.length < 4) return ($("homeErr").textContent = "Enter the 4-letter room code.");
   socket.emit("joinRoom", { code, name: nameValue(), playerId }, (res) => {
     if (!res?.ok) return ($("homeErr").textContent = res?.error || "Could not join room.");
-    myId = res.you; setRoom(res.code); show("room");
+    myId = res.you; setRoom(res.code); rememberName(nameValue()); show("room");
   });
 };
 $("spBtn").onclick = () => { location.href = "index.html"; };
 $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("createBtn").click(); });
+$("name").addEventListener("change", () => rememberName(nameValue()));
 $("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("joinBtn").click(); });
+
+// ---------- copy code / invite link ----------
+function copyText(str) {
+  if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(str).catch(() => fallbackCopy(str));
+  return fallbackCopy(str);
+}
+function fallbackCopy(str) {
+  const t = document.createElement("textarea");
+  t.value = str; t.style.position = "fixed"; t.style.opacity = "0";
+  document.body.appendChild(t); t.select();
+  try { document.execCommand("copy"); } catch {}
+  document.body.removeChild(t);
+  return Promise.resolve();
+}
+function flashHint(msg) {
+  const h = $("codeHint"); h.textContent = msg;
+  clearTimeout(flashHint._t); flashHint._t = setTimeout(() => { h.textContent = "tap the code to copy"; }, 1400);
+}
+$("roomCode").onclick = () => { if (myRoom) copyText(myRoom).then(() => flashHint("✓ Code copied!")); };
+$("copyInvite").onclick = () => {
+  if (!myRoom) return;
+  copyText(location.origin + location.pathname + "?room=" + myRoom).then(() => {
+    const b = $("copyInvite"), orig = "🔗 Copy invite link";
+    b.textContent = "✓ Invite link copied!";
+    clearTimeout(b._t); b._t = setTimeout(() => { b.textContent = orig; }, 1500);
+  });
+};
+// Rename yourself in the lobby (commits on blur / Enter).
+$("lobbyName").addEventListener("change", () => {
+  const n = $("lobbyName").value.trim();
+  rememberName(n);
+  socket.emit("setName", { name: n });
+});
+$("lobbyName").addEventListener("keydown", (e) => { if (e.key === "Enter") $("lobbyName").blur(); });
 
 // ---------- waiting room ----------
 $("startBtn").onclick = () => socket.emit("startMatch", {}, (r) => { if (!r?.ok) $("roomStatus").textContent = r?.error || "Could not start."; });
@@ -77,6 +131,8 @@ socket.on("roomState", (room) => {
   iAmHost = room.hostId === myId;
   if (room.status === "waiting") show("room");
   $("roomCode").textContent = room.code;
+  const me = room.players.find((p) => p.id === myId);
+  if (me && document.activeElement !== $("lobbyName")) $("lobbyName").value = me.name; // reflect current name, don't clobber typing
   const list = $("players");
   list.innerHTML = "";
   room.players.forEach((p, i) => {
@@ -235,7 +291,7 @@ function render() {
   const myTurn = gs.turnId === myId;
 
   if (gs.phase === "opening") {
-    if (myTurn) { enable = true; placeholder = "Type a number to open…"; }
+    if (myTurn) { enable = true; placeholder = "👉 Your turn — type a number to open!"; statusText = "👉 You're opening — how many can you name?"; }
     else statusText = `Waiting for ${nameOf(gs.turnId)} to open…`;
   } else if (gs.phase === "bidding") {
     if (myTurn) {
@@ -300,7 +356,14 @@ function render() {
     if (enable) input.focus();
   }
   status.textContent = statusText;
+
+  // Unmissable cue for whoever's opening: red glow on the box + a shake when it becomes their turn.
+  const iAmOpening = gs.phase === "opening" && gs.turnId === myId && !chatMode;
+  input.classList.toggle("opening-cue", iAmOpening);
+  if (iAmOpening && !wasMyOpen) shakeInput();
+  wasMyOpen = iAmOpening;
 }
+let wasMyOpen = false;
 
 function addBtn(parent, label, cls, onClick) {
   const b = document.createElement("button");

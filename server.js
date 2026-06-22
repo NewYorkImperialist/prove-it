@@ -137,6 +137,16 @@ io.on("connection", (socket) => {
     doResume(room, playerId, ack);
   });
 
+  // Change your display name while in the waiting room.
+  socket.on("setName", ({ name } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    if (!room || room.status !== "waiting") return;
+    const p = room.players.get(socket.data.playerId);
+    if (!p) return;
+    p.name = cleanName(name);
+    broadcast(room);
+  });
+
   // Host configures the room before starting.
   socket.on("setSettings", ({ groups, timer, target, autoAdvance } = {}) => {
     const room = rooms.get(socket.data.roomCode);

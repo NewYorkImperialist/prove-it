@@ -11,7 +11,7 @@ const JUDGE_MS_PER = 5_000;   // forced end-of-round ruling: seconds per remaini
 const ANSWER_COOLDOWN_MS = 350; // min gap between a prover's submissions (anti-spam)
 const MAX_PENDING = 3;          // max off-list answers awaiting a ruling at once
 const MAX_OFFLIST = 8;          // max off-list answers a prover can queue per round
-const DEFAULTS = { timer: 30, target: 5 }; // prove seconds, points to win
+const DEFAULTS = { timer: 30, target: 5, autoAdvance: true }; // prove seconds, points to win, auto next round
 
 // ---------- matching helpers (mirror the client) ----------
 function norm(s) {
@@ -74,21 +74,35 @@ function resumeGame(io, room) {
   emit(io, room); // push current state to (re)connected clients
 }
 
-// Manual intermission pause — only valid between rounds, never mid-round.
+// Manual intermission pause — only valid between rounds while auto-advance is on.
 function handlePauseRound(io, room, socket) {
   const g = room.game;
-  if (!g || g.phase !== "roundover" || g.intermission) return;
+  if (!g || g.phase !== "roundover" || g.intermission || !g.autoAdvance) return;
   clearTimer(room); // cancel the auto-advance to the next round
   g.intermission = true;
   log(io, room, "system", null, `${g.names[socket.data.playerId]} paused the game.`);
   emit(io, room);
 }
-function handleResumeRound(io, room, socket) {
+// Either player advances to the next round (manual auto-advance-off mode, or resume from pause).
+function handleNextRound(io, room, socket) {
   const g = room.game;
-  if (!g || !g.intermission) return;
-  g.intermission = false;
-  log(io, room, "system", null, `${g.names[socket.data.playerId]} resumed.`);
+  if (!g || g.phase !== "roundover") return;
   beginRound(io, room);
+}
+// Vote to skip the current category — needs both players to agree. Only before the duel starts.
+function handleVoteSkip(io, room, socket) {
+  const g = room.game;
+  if (!g || (g.phase !== "opening" && g.phase !== "bidding")) return;
+  const pid = socket.data.playerId;
+  if (!g.skipVotes) g.skipVotes = new Set();
+  if (g.skipVotes.has(pid)) return; // one vote per player
+  g.skipVotes.add(pid);
+  if (g.skipVotes.size >= 2) {
+    log(io, room, "system", null, "Both players skipped — new category.");
+    return beginRound(io, room); // fresh category, no points awarded
+  }
+  log(io, room, "system", null, `${g.names[pid]} wants to skip this category (1/2).`);
+  emit(io, room);
 }
 
 // ---------- emit ----------
@@ -108,6 +122,8 @@ function snapshot(room) {
     matchWinnerId: g.matchWinnerId || null,
     paused: !!g.paused,
     intermission: !!g.intermission,
+    autoAdvance: g.autoAdvance !== false,
+    skipVotes: g.skipVotes ? g.skipVotes.size : 0,
     groups: g.groups || [],
   };
 }
@@ -123,6 +139,7 @@ function startMatch(io, room) {
     order, names, pool: buildPool(room.settings), groups: (room.settings?.groups || []).slice(),
     scores: { [order[0]]: 0, [order[1]]: 0 },
     timer: s.timer, target: s.target == null ? Infinity : s.target, // null settings → endless
+    autoAdvance: s.autoAdvance !== false, skipVotes: new Set(),
     round: 0, usedNames: [], lastCatName: null,
     claim: 0, holderId: null, turnId: null, proven: [], current: null,
     phase: "starting", deadline: null, timeout: null,
@@ -140,7 +157,7 @@ function beginRound(io, room) {
   const c = avail[Math.floor(Math.random() * avail.length)];
   g.usedNames.push(c.name); g.lastCatName = c.name; g.current = c;
   g.claim = 0; g.holderId = null; g.proven = []; g.lastResult = null; g.challengerId = null;
-  g.intermission = false;
+  g.intermission = false; g.skipVotes = new Set();
 
   const opener = g.order[(g.round - 1) % 2];
   g.turnId = opener; g.phase = "opening";
@@ -342,10 +359,15 @@ function roundOver(io, room, winnerId, reason) {
   g.scores[winnerId] = (g.scores[winnerId] || 0) + 1;
   g.phase = "roundover"; g.deadline = null;
   g.lastResult = { winnerId, winnerName: g.names[winnerId], reason, claim: g.claim, proven: g.proven.length };
+  g.intermission = false;
   log(io, room, "system", null, `${reason} — point ${g.names[winnerId]} (${g.scores[g.order[0]]}–${g.scores[g.order[1]]})`);
-  emit(io, room);
   if (g.target !== Infinity && g.scores[winnerId] >= g.target) return matchOver(io, room, winnerId);
-  setTimer(room, ROUNDOVER_MS, () => beginRound(io, room), { deadline: false });
+  if (g.autoAdvance) {
+    setTimer(room, ROUNDOVER_MS, () => beginRound(io, room), { deadline: false });
+  } else {
+    g.intermission = true; // auto-advance off → wait for a player to press P / tap Next round
+  }
+  emit(io, room);
 }
 
 function matchOver(io, room, winnerId) {
@@ -386,5 +408,5 @@ function endGameForLeaver(io, room, leaverId) {
 }
 
 module.exports = {
-  startMatch, handleOpen, handleRaise, handleProveIt, handleAnswer, handleJudge, handleRejectAll, handleGiveUp, handleRematch, endGameForLeaver, pauseGame, resumeGame, setGroups, handlePauseRound, handleResumeRound,
+  startMatch, handleOpen, handleRaise, handleProveIt, handleAnswer, handleJudge, handleRejectAll, handleGiveUp, handleRematch, endGameForLeaver, pauseGame, resumeGame, setGroups, handlePauseRound, handleNextRound, handleVoteSkip,
 };

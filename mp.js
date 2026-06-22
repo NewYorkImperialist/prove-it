@@ -131,6 +131,9 @@ function buildLobbySettings() {
     b.onclick = () => iAmHost && socket.emit("setSettings", { target: w === "∞" ? null : w });
     $("winSeg").appendChild(b);
   });
+  $("advanceSeg").querySelectorAll("button").forEach((b) => {
+    b.onclick = () => iAmHost && socket.emit("setSettings", { autoAdvance: b.dataset.auto === "1" });
+  });
 }
 
 function onCatChange() {
@@ -150,6 +153,8 @@ function syncSettings(s) {
   $("timerSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.timer === s.timer));
   $("winSeg").querySelectorAll("button").forEach((b) =>
     b.classList.toggle("on", b.dataset.win === "∞" ? s.target == null : +b.dataset.win === s.target));
+  $("advanceSeg").querySelectorAll("button").forEach((b) =>
+    b.classList.toggle("on", (b.dataset.auto === "1") === (s.autoAdvance !== false)));
   $("settings").classList.toggle("locked", !iAmHost);
   $("lockNote").classList.toggle("hidden", iAmHost);
 }
@@ -240,6 +245,15 @@ function render() {
       addBtn(actions, "🗣️ Prove It!", "danger", () => socket.emit("proveIt", {}, ackErr));
     } else statusText = `${nameOf(gs.turnId)} is deciding — raise or call Prove It!`;
   } else if (gs.phase === "proving") {
+    // (proving handled below)
+  }
+
+  // Either player can propose skipping the category before the duel starts.
+  if (gs.phase === "opening" || gs.phase === "bidding") {
+    addBtn(actions, gs.skipVotes ? `🔁 Skip category (${gs.skipVotes}/2)` : "🔁 Skip category", "", () => socket.emit("voteSkip"));
+  }
+
+  if (gs.phase === "proving") {
     if (myTurn) {
       enable = true; placeholder = `Name a ${gs.category.name}…`;
       addBtn(actions, "🏳️ Give up", "danger", () => socket.emit("giveUp"));
@@ -253,8 +267,9 @@ function render() {
       : `${nameOf(gs.holderId)}'s off-list answers are being ruled on…`;
   } else if (gs.phase === "roundover") {
     if (gs.intermission) {
-      statusText = "⏸ Paused";
-      addBtn(actions, "▶️ Resume", "again", () => socket.emit("resumeRound"));
+      // Waiting for a player to advance (auto-advance off, or paused).
+      statusText = gs.autoAdvance ? "⏸ Paused — press P or tap for the next round" : "Press P or tap for the next round";
+      addBtn(actions, "▶️ Next round (P)", "again", () => socket.emit("nextRound"));
     } else {
       statusText = "Next round coming up…";
       addBtn(actions, "⏸ Pause", "", () => socket.emit("pauseRound"));
@@ -427,6 +442,16 @@ document.addEventListener("keydown", (e) => {
   if (document.activeElement === inp && inp.value.trim() !== "") return; // don't clobber a half-typed answer
   e.preventDefault();
   enterChat();
+});
+
+// "P" between rounds advances to the next round (when auto-advance is off, or paused).
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "p" && e.key !== "P") return;
+  if (chatMode || $("game").classList.contains("hidden")) return;
+  if (document.activeElement === $("input") && $("input").value.trim() !== "") return; // not while typing
+  if (!gs || gs.phase !== "roundover" || !gs.intermission || gs.paused) return;
+  e.preventDefault();
+  socket.emit("nextRound");
 });
 $("mpLeave").onclick = () => { socket.emit("leaveRoom"); setRoom(null); show("home"); };
 

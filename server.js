@@ -102,7 +102,7 @@ io.on("connection", (socket) => {
     const code = makeCode();
     const pid = playerId || genId();
     const room = { code, hostId: pid, status: "waiting",
-      settings: { groups: [...DEFAULT_GROUPS], timer: 30, target: 5 },
+      settings: { groups: [...DEFAULT_GROUPS], timer: 30, target: 5, autoAdvance: true },
       players: new Map(), graceTimeout: null };
     room.players.set(pid, { id: pid, name: cleanName(name), socketId: socket.id, connected: true });
     rooms.set(code, room);
@@ -138,7 +138,7 @@ io.on("connection", (socket) => {
   });
 
   // Host configures the room before starting.
-  socket.on("setSettings", ({ groups, timer, target } = {}) => {
+  socket.on("setSettings", ({ groups, timer, target, autoAdvance } = {}) => {
     const room = rooms.get(socket.data.roomCode);
     if (!room || room.hostId !== socket.data.playerId || room.status !== "waiting") return;
     const s = room.settings;
@@ -148,6 +148,7 @@ io.on("connection", (socket) => {
     }
     if (TIMERS.includes(timer)) s.timer = timer;
     if (target === null || TARGETS.includes(target)) s.target = target;
+    if (typeof autoAdvance === "boolean") s.autoAdvance = autoAdvance;
     broadcast(room);
   });
 
@@ -182,7 +183,8 @@ io.on("connection", (socket) => {
   socket.on("rejectAll", withGame((room) => engine.handleRejectAll(io, room, socket)));
   socket.on("giveUp", withGame((room) => engine.handleGiveUp(io, room, socket)));
   socket.on("pauseRound", withGame((room) => engine.handlePauseRound(io, room, socket)));
-  socket.on("resumeRound", withGame((room) => engine.handleResumeRound(io, room, socket)));
+  socket.on("nextRound", withGame((room) => engine.handleNextRound(io, room, socket)));
+  socket.on("voteSkip", withGame((room) => engine.handleVoteSkip(io, room, socket)));
 
   // Chat — works any time you're in a room (lightly rate-limited; rendered separately from game messages).
   socket.on("chat", ({ text } = {}) => {

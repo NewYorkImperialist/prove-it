@@ -38,6 +38,18 @@
 
 const CATEGORY_GROUPS = {
   Sports: { emoji: "⚽", cats: [
+    { name: "Tennis Players", items: [
+      ["Roger Federer","federer"], ["Rafael Nadal","nadal","rafa"], ["Novak Djokovic","djokovic","nole"], ["Andy Murray","murray"],
+      ["Pete Sampras","sampras"], ["Andre Agassi","agassi"], ["Serena Williams","serena","serena williams"], ["Venus Williams","venus","venus williams"],
+      ["Steffi Graf","graf"], ["Martina Navratilova","navratilova"], ["Maria Sharapova","sharapova"], ["Björn Borg","borg","bjorn borg"],
+      ["John McEnroe","mcenroe"], ["Jimmy Connors","connors"], ["Ivan Lendl","lendl"], ["Boris Becker","becker"], ["Stefan Edberg","edberg"],
+      ["Carlos Alcaraz","alcaraz"], ["Daniil Medvedev","medvedev"], ["Alexander Zverev","zverev"], ["Stefanos Tsitsipas","tsitsipas"],
+      ["Jannik Sinner","sinner"], ["Casper Ruud","ruud"], ["Naomi Osaka","osaka"], ["Iga Świątek","swiatek","iga swiatek"],
+      ["Ashleigh Barty","barty"], ["Simona Halep","halep"], ["Caroline Wozniacki","wozniacki"], ["Victoria Azarenka","azarenka"],
+      ["Kim Clijsters","clijsters"], ["Justine Henin","henin"], ["Monica Seles","seles"], ["Chris Evert","evert"],
+      ["Billie Jean King","billie jean king"], ["Rod Laver","laver"], ["Andy Roddick","roddick"], ["Lleyton Hewitt","hewitt"],
+      ["Juan Martín del Potro","del potro"], ["Stan Wawrinka","wawrinka"], ["Coco Gauff","gauff","coco"], ["Aryna Sabalenka","sabalenka"],
+    ]},
     { name: "Football (Soccer) Players", items: [
       ["Lionel Messi","messi","leo messi","la pulga"], ["Cristiano Ronaldo","ronaldo","cristiano","cr7"],
       ["Neymar","neymar jr"], ["Kylian Mbappé","mbappe","kylian"], ["Erling Haaland","haaland","erling"],
@@ -120,6 +132,14 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Geography: { emoji: "🌍", cats: [
+    { name: "Languages of the World", items: [
+      "English", ["Mandarin","mandarin","chinese"], "Spanish", "Hindi", "Arabic", "Bengali", "Portuguese", "Russian",
+      "Japanese", "French", "German", "Korean", "Italian", "Turkish", "Vietnamese", ["Persian","persian","farsi"],
+      "Polish", "Ukrainian", "Dutch", "Greek", "Hebrew", "Thai", "Swahili", "Urdu", "Indonesian", "Malay",
+      ["Tagalog","tagalog","filipino"], "Punjabi", "Tamil", "Telugu", "Marathi", "Gujarati", "Cantonese", "Swedish",
+      "Norwegian", "Danish", "Finnish", "Czech", "Hungarian", "Romanian", "Zulu", "Amharic", "Mongolian", "Hausa",
+      "Yoruba", "Latin", "Hawaiian", "Welsh", ["Irish","irish","gaelic"],
+    ]},
     { name: "Countries in Europe", items: [
       "France","Germany","Spain","Italy","Portugal",
       ["United Kingdom","uk","united kingdom","britain","great britain","england","scotland","wales"],
@@ -245,6 +265,21 @@ const CATEGORY_GROUPS = {
   ]},
   History: { emoji: "🏛️", cats: [
     { name: "US Presidents", items: [
+      ["George Washington","washington"], ["John Adams","john adams"], ["Thomas Jefferson","jefferson"], ["James Madison","madison"],
+      ["James Monroe","monroe"], ["John Quincy Adams","john quincy adams","quincy adams"], ["Andrew Jackson","andrew jackson"],
+      ["Martin Van Buren","van buren"], ["William Henry Harrison","william henry harrison"], ["John Tyler","tyler"], ["James K. Polk","polk"],
+      ["Zachary Taylor","zachary taylor"], ["Millard Fillmore","fillmore"], ["Franklin Pierce","pierce"], ["James Buchanan","buchanan"],
+      ["Abraham Lincoln","lincoln"], ["Andrew Johnson","andrew johnson"], ["Ulysses S. Grant","grant"], ["Rutherford B. Hayes","hayes"],
+      ["James A. Garfield","garfield"], ["Chester A. Arthur","chester arthur"], ["Grover Cleveland","cleveland"],
+      ["Benjamin Harrison","benjamin harrison"], ["William McKinley","mckinley"], ["Theodore Roosevelt","teddy roosevelt","theodore roosevelt"],
+      ["William Howard Taft","taft"], ["Woodrow Wilson","wilson"], ["Warren G. Harding","harding"], ["Calvin Coolidge","coolidge"],
+      ["Herbert Hoover","hoover"], ["Franklin D. Roosevelt","fdr","franklin roosevelt"], ["Harry S. Truman","truman"],
+      ["Dwight D. Eisenhower","eisenhower","ike"], ["John F. Kennedy","jfk","kennedy"], ["Lyndon B. Johnson","lbj","lyndon johnson"],
+      ["Richard Nixon","nixon"], ["Gerald Ford","ford"], ["Jimmy Carter","carter"], ["Ronald Reagan","reagan"],
+      ["George H. W. Bush","george h w bush","george bush sr","hw bush"], ["Bill Clinton","clinton"],
+      ["George W. Bush","george w bush","george bush jr","w bush"], ["Barack Obama","obama"], ["Donald Trump","trump"], ["Joe Biden","biden"],
+    ]},
+    { name: "US Presidents", items: [
       ["George Washington","george washington","washington"], ["John Adams","john adams","adams"],
       ["Thomas Jefferson","thomas jefferson","jefferson"], ["James Madison","james madison","madison"],
       ["James Monroe","james monroe","monroe"], ["Andrew Jackson","andrew jackson","jackson"],
@@ -328,6 +363,17 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Entertainment: { emoji: "🎬", cats: [
+    { name: "Superheroes", items: [
+      "Superman", "Batman", ["Spider-Man","spider-man","spiderman"], ["Iron Man","iron man"], ["Captain America","captain america"],
+      "Thor", "Hulk", ["Wonder Woman","wonder woman"], ["The Flash","flash","the flash"], "Aquaman", ["Green Lantern","green lantern"],
+      ["Black Widow","black widow"], "Hawkeye", ["Black Panther","black panther"], ["Doctor Strange","doctor strange","dr strange"],
+      "Wolverine", "Deadpool", "Cyclops", "Storm", ["Jean Grey","jean grey"], ["Professor X","professor x","professor xavier"],
+      ["Captain Marvel","captain marvel"], ["Ant-Man","ant-man","ant man"], ["Scarlet Witch","scarlet witch"], "Vision",
+      ["Star-Lord","star-lord","star lord"], "Groot", ["Rocket Raccoon","rocket raccoon","rocket"], "Gamora", "Daredevil",
+      ["The Punisher","punisher","the punisher"], ["Green Arrow","green arrow"], "Cyborg", "Shazam", "Nightwing", "Robin",
+      "Supergirl", "Batgirl", ["Falcon","falcon"], ["Winter Soldier","winter soldier","bucky"], ["Silver Surfer","silver surfer"],
+      ["Mister Fantastic","mister fantastic","mr fantastic"], ["Invisible Woman","invisible woman"], ["Human Torch","human torch"], ["The Thing","the thing"],
+    ]},
     { name: "Disney / Pixar Movies", items: [
       ["Snow White and the Seven Dwarfs","snow white"], "Pinocchio", "Fantasia", "Dumbo", "Bambi", "Cinderella",
       ["Alice in Wonderland","alice"], "Peter Pan", "Lady and the Tramp", ["Sleeping Beauty","aurora"],
@@ -463,6 +509,13 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Food: { emoji: "🍕", cats: [
+    { name: "Fruits", items: [
+      "Apple", "Banana", "Orange", "Grape", "Strawberry", "Blueberry", "Raspberry", "Blackberry", "Pineapple", "Mango",
+      "Watermelon", "Cantaloupe", "Honeydew", "Peach", "Pear", "Plum", "Cherry", "Apricot", "Kiwi", "Lemon", "Lime",
+      "Grapefruit", "Pomegranate", "Papaya", "Guava", "Lychee", "Coconut", "Fig", "Date", "Cranberry",
+      ["Passion Fruit","passion fruit"], ["Dragon Fruit","dragon fruit","pitaya"], "Persimmon", "Nectarine", "Tangerine",
+      "Clementine", "Avocado", "Jackfruit", ["Star Fruit","star fruit","carambola"], "Mulberry", "Currant", "Gooseberry",
+    ]},
     { name: "Pizza Toppings", items: [
       ["Pepperoni","pepperoni","pepperonis"], "Cheese", ["Mushroom","mushroom","mushrooms"], ["Onion","onion","onions"],
       "Sausage", "Bacon", "Ham", "Pineapple", ["Olives","olives","olive","black olives"],
@@ -543,6 +596,17 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Animals: { emoji: "🐾", cats: [
+    { name: "Dog Breeds", items: [
+      ["Labrador Retriever","labrador","lab"], ["Golden Retriever","golden retriever","golden"], ["German Shepherd","german shepherd","gsd"],
+      "Bulldog", "Poodle", "Beagle", "Rottweiler", "Dachshund", ["Yorkshire Terrier","yorkshire terrier","yorkie"], "Boxer",
+      ["Siberian Husky","husky","siberian husky"], "Great Dane", ["Doberman","doberman","doberman pinscher"], "Chihuahua",
+      "Shih Tzu", "Pomeranian", ["Border Collie","border collie"], ["Australian Shepherd","australian shepherd","aussie"],
+      ["Corgi","corgi","pembroke welsh corgi"], "Pug", ["Cocker Spaniel","cocker spaniel"], ["French Bulldog","french bulldog","frenchie"],
+      ["Bernese Mountain Dog","bernese mountain dog","bernese"], ["Saint Bernard","saint bernard","st bernard"], "Mastiff", "Akita",
+      ["Shiba Inu","shiba inu","shiba"], "Maltese", ["Bichon Frise","bichon frise","bichon"], ["Pit Bull","pit bull","pitbull"],
+      "Greyhound", "Whippet", "Dalmatian", "Bloodhound", ["Basset Hound","basset hound"], ["Jack Russell Terrier","jack russell"],
+      "Newfoundland", "Samoyed", ["Chow Chow","chow chow","chow"], "Weimaraner", "Vizsla", "Schnauzer",
+    ]},
     { name: "Wild Animals", items: [
       ["Lion","lion","lions"], ["Tiger","tiger","tigers"], ["Elephant","elephant","elephants"], ["Giraffe","giraffe","giraffes"],
       ["Zebra","zebra","zebras"], ["Cheetah","cheetah","cheetahs"], ["Leopard","leopard","leopards"],
@@ -593,6 +657,13 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Music: { emoji: "🎵", cats: [
+    { name: "Musical Instruments", items: [
+      "Piano", "Guitar", "Violin", "Cello", "Viola", ["Double Bass","double bass","upright bass"], "Flute", "Clarinet", "Oboe",
+      "Bassoon", "Trumpet", "Trombone", ["French Horn","french horn"], "Tuba", "Saxophone", "Drums", "Harp", "Accordion",
+      "Harmonica", "Ukulele", "Banjo", "Mandolin", "Cymbals", "Xylophone", "Piccolo", "Bagpipes", "Organ", "Synthesizer",
+      ["Bass Guitar","bass guitar","bass"], "Tambourine", "Triangle", ["Snare Drum","snare drum","snare"], "Timpani", "Recorder",
+      "Sitar", "Maracas", "Bongos", "Congas", "Marimba", "Keyboard",
+    ]},
     { name: "Rappers", items: [
       "Drake", ["Kendrick Lamar","kendrick","kendrick lamar","k dot","kdot"], ["Kanye West","kanye","ye","kanye west"], "Eminem",
       ["Jay-Z","jay z","jayz","jigga","hova"], ["Lil Wayne","lil wayne","weezy","wayne"], ["Nicki Minaj","nicki minaj","nicki","minaj"],
@@ -643,6 +714,14 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Brands: { emoji: "🏷️", cats: [
+    { name: "Clothing Brands", items: [
+      "Nike", "Adidas", "Puma", "Reebok", ["Under Armour","under armour"], "Gucci", ["Louis Vuitton","louis vuitton","lv"], "Prada",
+      "Versace", "Chanel", "Dior", "Balenciaga", "Hermès", "Burberry", ["Levi's","levi's","levis"], ["Calvin Klein","calvin klein","ck"],
+      ["Tommy Hilfiger","tommy hilfiger","tommy"], ["Ralph Lauren","ralph lauren","polo"], "Lacoste", "Zara", ["H&M","h&m","hm"],
+      "Uniqlo", "Gap", ["Old Navy","old navy"], ["Forever 21","forever 21"], "Supreme", ["The North Face","north face","the north face"],
+      "Patagonia", "Columbia", "Vans", "Converse", ["New Balance","new balance"], "Fila", "Champion", ["Hugo Boss","hugo boss"],
+      "Armani", "Lululemon", ["Abercrombie & Fitch","abercrombie","abercrombie & fitch"], "Hollister", ["American Eagle","american eagle"],
+    ]},
     { name: "Car Brands", items: [
       "Toyota", "Honda", "Ford", ["Chevrolet","chevrolet","chevy"], ["Mercedes-Benz","mercedes-benz","mercedes","benz"],
       ["BMW","bmw","bimmer","beemer"], "Audi", ["Volkswagen","volkswagen","vw"], "Nissan", "Hyundai", "Kia", "Mazda", "Subaru",
@@ -665,6 +744,13 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   "Computer Science": { emoji: "💻", cats: [
+    { name: "Operating Systems", items: [
+      "Windows", ["macOS","macos","mac os","osx","os x"], "Linux", "Ubuntu", "Debian", "Fedora", ["Red Hat","red hat","rhel"],
+      "CentOS", ["Arch Linux","arch linux","arch"], "Android", "iOS", ["Chrome OS","chrome os","chromeos"], "Unix", "MS-DOS",
+      ["Windows 11","windows 11"], ["Windows 10","windows 10"], ["Windows XP","windows xp"], ["Windows 7","windows 7"],
+      ["Windows 95","windows 95"], ["Kali Linux","kali linux","kali"], ["Linux Mint","linux mint","mint"], "Solaris", "FreeBSD",
+      "watchOS", "tvOS", "iPadOS", "Manjaro", "Gentoo", "openSUSE", ["Pop!_OS","pop os","pop!_os"], ["Raspberry Pi OS","raspberry pi os","raspbian"],
+    ]},
     { name: "Programming Languages", items: [
       "Python", "Java", ["JavaScript","javascript","js"], ["TypeScript","typescript","ts"], "C",
       ["C++","c++","cpp","cplusplus"], ["C#","c#","c sharp","csharp"], ["Go","go","golang"], "Rust", "Ruby",
@@ -725,6 +811,16 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Math: { emoji: "➗", cats: [
+    { name: "Types of Numbers", items: [
+      ["Natural Numbers","natural numbers","naturals"], ["Whole Numbers","whole numbers"], ["Integers","integers"],
+      ["Rational Numbers","rational numbers","rationals"], ["Irrational Numbers","irrational numbers","irrationals"],
+      ["Real Numbers","real numbers","reals"], ["Complex Numbers","complex numbers"], ["Imaginary Numbers","imaginary numbers"],
+      ["Prime Numbers","prime numbers","primes"], ["Composite Numbers","composite numbers"], ["Even Numbers","even numbers","evens"],
+      ["Odd Numbers","odd numbers","odds"], ["Perfect Numbers","perfect numbers"], ["Square Numbers","square numbers","perfect squares"],
+      ["Cube Numbers","cube numbers","perfect cubes"], ["Triangular Numbers","triangular numbers"], ["Fibonacci Numbers","fibonacci numbers","fibonacci"],
+      ["Negative Numbers","negative numbers"], ["Positive Numbers","positive numbers"], ["Decimals","decimals"], ["Fractions","fractions"],
+      ["Transcendental Numbers","transcendental numbers"], ["Algebraic Numbers","algebraic numbers"], ["Counting Numbers","counting numbers"],
+    ]},
     { name: "Famous Mathematicians", items: [
       ["Isaac Newton","newton"], ["Carl Friedrich Gauss","gauss"], ["Leonhard Euler","euler"], "Archimedes",
       "Pythagoras", "Euclid", ["Pierre de Fermat","fermat"], ["Blaise Pascal","pascal"], ["Gottfried Leibniz","leibniz"],
@@ -770,6 +866,13 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Science: { emoji: "🔬", cats: [
+    { name: "Human Body Organs", items: [
+      "Heart", "Brain", "Lungs", "Liver", ["Kidneys","kidneys","kidney"], "Stomach", "Pancreas", "Spleen",
+      ["Small Intestine","small intestine"], ["Large Intestine","large intestine"], ["Bladder","bladder"], "Skin", "Esophagus",
+      "Gallbladder", "Thyroid", "Appendix", "Trachea", "Diaphragm", ["Eyes","eyes","eye"], ["Ears","ears","ear"], "Tongue",
+      ["Bone Marrow","bone marrow"], ["Adrenal Glands","adrenal glands","adrenal gland"], ["Pituitary Gland","pituitary gland","pituitary"],
+      "Thymus", "Larynx", "Colon", "Rectum", "Prostate", "Uterus", "Ovaries", ["Bronchi","bronchi","bronchus"],
+    ]},
     { name: "Famous Scientists", items: [
       ["Albert Einstein","einstein"], ["Isaac Newton","newton"], ["Charles Darwin","darwin"], ["Galileo Galilei","galileo"],
       ["Nikola Tesla","tesla"], ["Marie Curie","marie curie","curie"], ["Stephen Hawking","hawking"],
@@ -821,6 +924,13 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Art: { emoji: "🎨", cats: [
+    { name: "Art Mediums", items: [
+      ["Oil Paint","oil paint","oils"], ["Acrylic Paint","acrylic paint","acrylics"], ["Watercolor","watercolor","watercolour"],
+      "Charcoal", "Pencil", "Pastel", "Ink", "Gouache", "Tempera", "Pen", "Crayon", "Marker", "Clay", "Bronze", "Marble", "Chalk",
+      "Collage", "Pottery", "Sculpture", "Photography", "Printmaking", "Etching", "Mosaic", ["Stained Glass","stained glass"],
+      "Fresco", ["Digital Art","digital art"], ["Spray Paint","spray paint"], "Graphite", ["Colored Pencil","colored pencil"],
+      "Wood", "Glass", "Sand",
+    ]},
     { name: "Colors", items: [
       "Red", "Orange", "Yellow", "Green", "Blue", "Indigo", "Violet", "Purple", "Pink", "Brown", "Black", "White",
       ["Gray","gray","grey"], "Cyan", "Magenta", "Maroon", "Navy", "Teal", "Turquoise", "Beige", "Tan", "Gold",
@@ -871,6 +981,19 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   "Pop Culture": { emoji: "🍿", cats: [
+    { name: "Popular Anime", items: [
+      "Naruto", ["One Piece","one piece"], ["Dragon Ball","dragon ball","dragon ball z","dbz"], ["Attack on Titan","attack on titan","aot"],
+      ["Death Note","death note"], ["My Hero Academia","my hero academia","mha"], ["Demon Slayer","demon slayer"],
+      ["Jujutsu Kaisen","jujutsu kaisen","jjk"], "Bleach", ["Fullmetal Alchemist","fullmetal alchemist","fma"],
+      ["Hunter x Hunter","hunter x hunter","hxh"], ["Pokémon","pokemon"], ["Sword Art Online","sword art online","sao"],
+      ["Tokyo Ghoul","tokyo ghoul"], ["One Punch Man","one punch man"], ["Fairy Tail","fairy tail"], ["Sailor Moon","sailor moon"],
+      ["Cowboy Bebop","cowboy bebop"], ["Neon Genesis Evangelion","evangelion","neon genesis evangelion"], ["Spy x Family","spy x family"],
+      ["Chainsaw Man","chainsaw man"], ["Black Clover","black clover"], ["Dr. Stone","dr stone","dr. stone"], "Haikyuu",
+      ["Mob Psycho 100","mob psycho","mob psycho 100"], ["JoJo's Bizarre Adventure","jojo","jojo's bizarre adventure"],
+      ["Code Geass","code geass"], ["Steins;Gate","steins gate","steins;gate"], ["Re:Zero","re zero","re:zero"],
+      ["Vinland Saga","vinland saga"], "Berserk", "Inuyasha", ["Yu-Gi-Oh","yu-gi-oh","yugioh"], "Digimon", "Gintama", "Overlord",
+      "Konosuba", ["Made in Abyss","made in abyss"],
+    ]},
     { name: "Internet Memes", items: [
       ["67","67","six seven","6 7","sixty seven"], ["Skibidi Toilet","skibidi toilet","skibidi"],
       ["Tung Tung Tung Sahur","tung tung tung sahur","tung tung sahur"], "Doge",
@@ -926,8 +1049,24 @@ const CATEGORY_GROUPS = {
   // use ["Canonical","alias"] for nicknames/alt spellings.
   Secret: { emoji: "🤫", defaultOff: true, cats: [
     { name: "Jayden Lin's Hobbies", items: [
-      "running", "coding", "singing", "rubiks cube"
+      "running", ["coding", "programming"], "singing", "rubiks cube", "violin", ["doing math", "math"]
     ]},
+    { name: "Countries that Jayden Lin has been to", items: [ 
+      ["United States of America", "United States", "usa", "united states of america", "united states", "us", "america"], "Canada", "Mexico", "Dominican Republic",
+      "China", "Germany", "Luxembourg", "Hungary", "Switzerland"
+    ]},
+    { name: "US States that Jayden Lin has been to", items: [
+      ["Connecticut", "ct"], ["New York", "ny"], ["Pennsylvania", "pa"], ["Vermont", "vt"], ["New Hampshire", "nh"], ["Massachusetts", "mass", "ma"], ["New Jersey", "nj"],
+      ["Rhode Island", "ri"], ["Maryland", "md"], ["Virginia", "va"], ["Washington", "wa"], ["Florida", "fl"]
+    ]},
+    { name: "University level math classes that Jayden Lin has taken", items: [
+     ["Calculus 1", "calc 1"], ["Calculus 2","calc 2"], ["Calculus 3", "multi", "multivariable calculus", "calc 3"], ["Differential Equations", "diff eq"],
+      ["Advanced Linear Algebra", "lin alg", "adv lin alg"], ["Advanced Group Theory", "group theory"], ["Number Theory 1", "number theory"], 
+      ["Intensive Math Reasoning", "math reasoning", "proofs", "discrete math"], ["Advanced Probability and Statistics", "prob and stats", "probability"], 
+      ["Exploration of Modern Mathematics", "dialogue", "modern math"]
+      
+    ]},
+
   ]},
 };
 

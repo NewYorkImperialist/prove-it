@@ -235,6 +235,7 @@ socket.on("log", ({ by, name, text, kind }) => {
 });
 
 socket.on("chat", ({ id, name, text }) => {
+  $("typing").classList.add("hidden"); $("typing").textContent = ""; // they sent it → no longer typing
   const feed = $("feed");
   const div = document.createElement("div");
   div.className = "chat" + (id === myId ? " mine" : "");
@@ -432,6 +433,7 @@ function flashStatus(msg) { const s = $("gstatus"); s.textContent = msg; s.class
 function gameSend() {
   if (chatMode) { // we're in chat mode — send the message, no "/" needed
     const msg = $("input").value.trim();
+    $("input").value = "";  // clear first so exitChat saves an empty draft
     exitChat();
     if (msg) socket.emit("chat", { text: msg });
     return;
@@ -482,25 +484,60 @@ $("input").addEventListener("keydown", (e) => {
   else if (e.key === "Escape" && chatMode) exitChat();
 });
 
-// ---------- chat mode (press "/" to turn the box into a chat box) ----------
+// ---------- chat mode (press "/" or tap 💬 to turn the box into a chat box) ----------
 let chatMode = false;
+let chatDraft = "";          // unsent message, preserved across Esc / "/" toggles
 function enterChat() {
   chatMode = true;
   $("inputbar").classList.add("chat-mode");
-  $("input").value = "";                 // the "/" disappears
-  $("input").placeholder = "Message…  (Enter to send, Esc to cancel)";
+  $("input").value = chatDraft;          // restore any saved draft
+  $("input").placeholder = "Message…  (Enter to send, Esc or / to close)";
   $("input").focus();
+  if (chatDraft) signalTyping();         // resume the typing indicator if there's a draft
 }
 function exitChat() {
+  chatDraft = $("input").value;          // keep the draft so re-opening restores it
   chatMode = false;
+  stopTyping();
   $("inputbar").classList.remove("chat-mode");
   $("input").value = "";
   if (gs) render(); // restore the normal game placeholder/state
 }
-// "/" anywhere in a game flips into chat mode (unless mid-typing a game entry).
+function toggleChat() { chatMode ? exitChat() : enterChat(); }
+$("chatToggle").onclick = toggleChat;
+
+// ---------- typing indicator ----------
+let typingActive = false, typingTimer = null, typingHideTimer = null;
+function signalTyping() {
+  if (!chatMode) return;
+  if (!typingActive) { typingActive = true; socket.emit("typing", { typing: true }); }
+  clearTimeout(typingTimer);
+  typingTimer = setTimeout(stopTyping, 1500); // idle → stop
+}
+function stopTyping() {
+  clearTimeout(typingTimer);
+  if (typingActive) { typingActive = false; socket.emit("typing", { typing: false }); }
+}
+$("input").addEventListener("input", () => { if (chatMode) signalTyping(); });
+socket.on("typing", ({ name, typing }) => {
+  const el = $("typing");
+  clearTimeout(typingHideTimer);
+  if (!typing) { el.classList.add("hidden"); el.textContent = ""; return; }
+  el.textContent = `${name} is typing`;
+  for (let i = 0; i < 3; i++) {
+    const d = document.createElement("span");
+    d.className = "dot"; d.textContent = "."; d.style.animationDelay = i * 0.2 + "s";
+    el.appendChild(d);
+  }
+  el.classList.remove("hidden");
+  typingHideTimer = setTimeout(() => { el.classList.add("hidden"); el.textContent = ""; }, 4000); // safety auto-hide
+});
+
+// "/" anywhere in a game toggles chat on/off (saving the draft); ignores a half-typed game entry.
 document.addEventListener("keydown", (e) => {
-  if (e.key !== "/" || chatMode) return;
+  if (e.key !== "/") return;
   if ($("game").classList.contains("hidden")) return;
+  if (chatMode) { e.preventDefault(); exitChat(); return; } // "/" closes chat, keeping the draft
   const inp = $("input");
   if (document.activeElement === inp && inp.value.trim() !== "") return; // don't clobber a half-typed answer
   e.preventDefault();

@@ -153,6 +153,12 @@
   #gstatus { text-align:center; color:var(--muted); font-size:13px; min-height:16px; padding:6px 20px 0; }
   #gstatus.err { color:var(--bad); }
 
+  #typing { padding:1px 20px 3px; min-height:17px; font-size:12px; font-style:italic; color:var(--accent2); }
+  #typing .dot { animation:typingBlink 1.4s infinite both; }
+  @keyframes typingBlink { 0%,60%,100%{opacity:.2} 30%{opacity:1} }
+  #chatToggle { flex:0 0 auto; background:var(--panel2); color:var(--text); border:1px solid var(--line); padding:0 13px; font-size:18px; }
+  #chatToggle:hover { background:var(--accent); border-color:var(--accent); }
+  #inputbar.chat-mode #chatToggle { background:var(--accent2); color:#08130d; border-color:var(--accent2); }
   #inputbar { display:flex; gap:8px; align-items:center; padding:12px 20px; border-top:1px solid var(--line); background:#12151d; }
   /* chat mode — pressing "/" turns the input box into a chat box */
   #inputbar.chat-mode::before { content:"💬 chat"; display:flex; align-items:center; color:var(--accent2); font-weight:800; font-size:13px; white-space:nowrap; }
@@ -284,7 +290,9 @@
       <div id="timer"></div>
       <div id="actions"></div>
       <div id="gstatus"></div>
+      <div id="typing" class="hidden"></div>
       <div id="inputbar">
+        <button id="chatToggle" title="Chat (or press /)">💬</button>
         <input id="input" autocomplete="off" placeholder="…" disabled>
         <button id="send" disabled>Send</button>
       </div>

@@ -207,6 +207,14 @@ io.on("connection", (socket) => {
     const msg = String(text || "").replace(/\s+/g, " ").trim().slice(0, 200);
     if (msg) io.to(room.code).emit("chat", { id: p.id, name: p.name, text: msg });
   });
+
+  // Typing indicator — relayed to the rest of the room (not echoed back to the sender).
+  socket.on("typing", ({ typing } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    const p = room?.players.get(socket.data.playerId);
+    if (!p) return;
+    socket.to(room.code).emit("typing", { id: p.id, name: p.name, typing: !!typing });
+  });
   socket.on("rematch", (_p, ack) => {
     const room = rooms.get(socket.data.roomCode);
     if (room) engine.handleRematch(io, room, socket, ack);

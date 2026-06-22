@@ -254,6 +254,49 @@ socket.on("opponentLeft", ({ name }) => {
 
 socket.on("gameState", (state) => { gs = state; render(); });
 
+// 🎯 Easter egg: someone answered "Prove It!" in the Video Games round → +5 + a party for everyone.
+socket.on("easterEgg", ({ kind, name }) => {
+  if (kind !== "proveit") return;
+  confettiBurst();
+  const logo = $("mpLogo");
+  logo.classList.remove("party"); void logo.offsetWidth; logo.classList.add("party"); // restart the animation
+  flashStatus(`🎯 ${name} said "Prove It!" — +5 bonus points!`);
+});
+$("mpLogo").addEventListener("animationend", () => $("mpLogo").classList.remove("party"));
+
+// Self-contained canvas confetti — no libraries. Bursts from the top-center and rains down.
+function confettiBurst() {
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:9999";
+  canvas.width = innerWidth; canvas.height = innerHeight;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  const colors = ["#ffd34d", "#3ecf8e", "#5b8cff", "#e5484d", "#b06bff", "#ff8c42"];
+  const parts = Array.from({ length: 180 }, () => ({
+    x: canvas.width / 2 + (Math.random() - 0.5) * 240,
+    y: canvas.height / 3 + (Math.random() - 0.5) * 60,
+    vx: (Math.random() - 0.5) * 14, vy: Math.random() * -13 - 3,
+    size: 6 + Math.random() * 7, color: colors[Math.floor(Math.random() * colors.length)],
+    rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.4,
+  }));
+  let frame = 0;
+  (function tick() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    frame++;
+    let alive = false;
+    for (const p of parts) {
+      p.vy += 0.32; p.x += p.vx; p.y += p.vy; p.rot += p.vr; // gravity + drift
+      if (p.y < canvas.height + 30) alive = true;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.globalAlpha = Math.max(0, 1 - frame / 170); ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+      ctx.restore();
+    }
+    if (alive && frame < 170) requestAnimationFrame(tick);
+    else canvas.remove();
+  })();
+}
+
 function render() {
   if (!gs) return;
   show("game");

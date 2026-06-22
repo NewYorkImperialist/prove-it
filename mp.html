@@ -96,7 +96,14 @@
   .seg button.on { background:var(--accent); border-color:var(--accent); color:#fff; }
   #settings.locked { opacity:.55; pointer-events:none; }
   .lockNote { font-size:12px; color:var(--muted); margin-top:10px; text-align:center; }
-  #topbar .logo { font-size:18px; font-weight:800; letter-spacing:.5px; }
+  #topbar .logo { font-size:18px; font-weight:800; letter-spacing:.5px; transform-origin:left center; }
+  /* 🎯 easter-egg: logo grows + shakes when someone answers "Prove It!" */
+  #mpLogo.party { animation:logoParty .9s ease; display:inline-block; }
+  @keyframes logoParty {
+    0%{transform:scale(1) rotate(0)} 12%{transform:scale(1.7) rotate(-8deg)} 28%{transform:scale(1.7) rotate(8deg)}
+    44%{transform:scale(1.75) rotate(-6deg)} 60%{transform:scale(1.6) rotate(6deg)}
+    76%{transform:scale(1.4) rotate(-4deg)} 100%{transform:scale(1) rotate(0)}
+  }
   #topbar .room { color:var(--muted); font-size:13px; padding:4px 10px; background:var(--panel2); border-radius:8px; }
   #topbar .spacer { flex:1; }
   #mpLeave { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:8px;

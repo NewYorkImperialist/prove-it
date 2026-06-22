@@ -4,10 +4,10 @@
 // render the broadcast snapshots.
 const CATEGORY_GROUPS = require("./categories.js");
 
-const OPEN_MS = 10000;       // time to open with a number
-const TURN_MS = 10000;       // time to raise / call Prove It!
-const ROUNDOVER_MS = 4500;   // pause between rounds
-const JUDGE_MS_PER = 5000;   // forced end-of-round ruling: seconds per remaining off-list answer
+const OPEN_MS = 20_000;       // time to open with a number
+const TURN_MS = 10_000;       // time to raise / call Prove It!
+const ROUNDOVER_MS = 4_500;   // pause between rounds
+const JUDGE_MS_PER = 5_000;   // forced end-of-round ruling: seconds per remaining off-list answer
 const ANSWER_COOLDOWN_MS = 350; // min gap between a prover's submissions (anti-spam)
 const MAX_PENDING = 3;          // max off-list answers awaiting a ruling at once
 const MAX_OFFLIST = 8;          // max off-list answers a prover can queue per round

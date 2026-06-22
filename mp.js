@@ -22,7 +22,7 @@ function setRoom(code) { myRoom = code; code ? sessionStorage.setItem("room", co
 const savedName = localStorage.getItem("pi_name");
 if (savedName) $("name").value = savedName;
 function rememberName(n) { if (n) localStorage.setItem("pi_name", n); }
-const inviteCode = (new URLSearchParams(location.search).get("room") || "").toUpperCase().replace(/[^A-Z]/g, "").slice(0, 4);
+const inviteCode = (new URLSearchParams(location.search).get("room") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
 if (inviteCode) $("joinCode").value = inviteCode;
 let triedInvite = false;
 function maybeAutoJoinInvite() {

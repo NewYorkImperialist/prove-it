@@ -171,7 +171,7 @@ socket.on("roomState", (room) => {
     div.className = "player";
     const tag = p.connected === false ? ' <span style="color:var(--bad)">(reconnecting…)</span>' : (p.isHost ? '<span class="tag">HOST</span>' : "");
     div.innerHTML = `<div class="avatar" style="background:${AV[i % AV.length]}">${p.name[0].toUpperCase()}</div>
-      <div class="name">${p.name}${p.crown ? '<span class="crown" title="Creator">👑</span>' : ""}${p.id === myId ? " (you)" : ""}</div>${tag}`;
+      <div class="name">${p.name}${p.crown ? '<span class="crown">👑</span>' : ""}${p.id === myId ? " (you)" : ""}</div>${tag}`;
     list.appendChild(div);
   });
   if (room.players.length < 2) {
@@ -347,7 +347,7 @@ function render() {
     const d = document.createElement("div");
     d.className = "player" + (live && gs.turnId === p.id ? " turn" : "");
     d.innerHTML = `<div class="avatar" style="background:${colors[i]}">${p.name[0].toUpperCase()}</div>
-      <div class="name">${p.name}${p.crown ? '<span class="crown" title="Creator">👑</span>' : ""}</div><div class="pts">${gs.scores[p.id] ?? 0}</div>`;
+      <div class="name">${p.name}${p.crown ? '<span class="crown">👑</span>' : ""}</div><div class="pts">${gs.scores[p.id] ?? 0}</div>`;
     sidePlayers.appendChild(d);
   });
 

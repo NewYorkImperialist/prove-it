@@ -288,6 +288,14 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   History: { emoji: "🏛️", cats: [
+    { name: "Chinese Dynasties", items: [
+      ["Xia","xia","xia dynasty"], ["Shang","shang","shang dynasty"], ["Zhou","zhou","zhou dynasty"], ["Qin","qin","qin dynasty"],
+      ["Han","han","han dynasty"], ["Xin","xin","xin dynasty"], ["Three Kingdoms","three kingdoms"], ["Jin","jin","jin dynasty"],
+      ["Sui","sui","sui dynasty"], ["Tang","tang","tang dynasty"], ["Song","song","song dynasty"], ["Yuan","yuan","yuan dynasty"],
+      ["Ming","ming","ming dynasty"], ["Qing","qing","qing dynasty","manchu"], ["Liao","liao","liao dynasty"],
+      ["Western Xia","western xia","xixia"], ["Northern and Southern Dynasties","northern and southern dynasties"],
+      ["Five Dynasties and Ten Kingdoms","five dynasties and ten kingdoms","five dynasties"],
+    ]},
     { name: "US Presidents", items: [
       ["George Washington","washington"], ["John Adams","john adams"], ["Thomas Jefferson","jefferson"], ["James Madison","madison"],
       ["James Monroe","monroe"], ["John Quincy Adams","john quincy adams","quincy adams"], ["Andrew Jackson","andrew jackson"],
@@ -715,6 +723,9 @@ const CATEGORY_GROUPS = {
       ["Second Best","second best"], ["While You Were Sleeping","while you were sleeping"], ["Must Be Love","must be love"],
       "Goddess", "Haunted", ["Hi Hello","hi hello"], ["Everything I Know About Love","everything i know about love"],
       "Serendipity", "Dreamer", ["Night Light","night light"], ["Above the Chinese Restaurant","above the chinese restaurant"],
+      ["What Love Will Do to You","what love will do to you"], ["Letter to My 13 Year Old Self","letter to my 13 year old self","letter to my 13-year-old self"],
+      "Misty", ["Nocturne","nocturne","nocturne interlude"], ["Tough Luck","tough luck"], ["Lover Girl","lover girl"],
+      ["Snow White","snow white"], ["A Night to Remember","a night to remember","night to remember"],
     ]},
     { name: "Musical Instruments", items: [
       "Piano", "Guitar", "Violin", "Cello", "Viola", ["Double Bass","double bass","upright bass"], "Flute", "Clarinet", "Oboe",
@@ -769,7 +780,7 @@ const CATEGORY_GROUPS = {
       ["Stevie Wonder","stevie wonder","stevie"], "Prince", "George Michael", "Cher", ["Celine Dion","celine dion","celine"],
       ["Kelly Clarkson","kelly clarkson","kelly"], ["Gwen Stefani","gwen stefani","gwen"], ["Nicki Minaj","nicki minaj","nicki"],
       ["Doja Cat","doja cat","doja"], ["Janet Jackson","janet jackson","janet"], ["Avril Lavigne","avril lavigne","avril"],
-      ["Kesha","kesha","ke$ha"], "Pitbull", "Usher",
+      ["Kesha","kesha","ke$ha"], "Pitbull", "Usher", ["Laufey","laufey"],
     ]},
   ]},
   Brands: { emoji: "🏷️", cats: [
@@ -777,8 +788,8 @@ const CATEGORY_GROUPS = {
       // (yes, this is the troll category 😏)
       ["iPhone 1","iphone 1","iphone one","iphone"], ["iPhone 2","iphone 2","iphone two"], ["iPhone 3","iphone 3","iphone three"],
       ["iPhone 4","iphone 4","iphone four"], ["iPhone 5","iphone 5","iphone five"], ["iPhone 6","iphone 6","iphone six"],
-      ["iPhone 7","iphone 7","iphone seven"], ["iPhone 8","iphone 8","iphone eight"], ["iPhone 9","iphone 9","iphone nine"],
-      ["iPhone 10","iphone 10","iphone ten"], ["iPhone 11","iphone 11","iphone eleven"], ["iPhone 12","iphone 12","iphone twelve"],
+      ["iPhone 7","iphone 7","iphone seven"], ["iPhone 8","iphone 8","iphone eight"],
+      ["iPhone X","iphone x","iphone 10","iphone ten"], ["iPhone 11","iphone 11","iphone eleven"], ["iPhone 12","iphone 12","iphone twelve"],
       ["iPhone 13","iphone 13","iphone thirteen"], ["iPhone 14","iphone 14","iphone fourteen"], ["iPhone 15","iphone 15","iphone fifteen"],
       ["iPhone 16","iphone 16","iphone sixteen"], ["iPhone 17","iphone 17","iphone seventeen"],
     ]},
@@ -879,6 +890,18 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Math: { emoji: "➗", cats: [
+    { name: "Famous Unsolved Problems in Math", items: [
+      ["Riemann Hypothesis","riemann hypothesis","riemann"], ["P versus NP","p versus np","p vs np","p=np","p vs np problem"],
+      ["Goldbach's Conjecture","goldbach's conjecture","goldbach","goldbach conjecture"],
+      ["Twin Prime Conjecture","twin prime conjecture","twin primes"], ["Collatz Conjecture","collatz conjecture","collatz","3n+1"],
+      ["Birch and Swinnerton-Dyer Conjecture","birch and swinnerton-dyer","bsd conjecture","bsd"],
+      ["Hodge Conjecture","hodge conjecture","hodge"], ["Navier–Stokes Existence and Smoothness","navier-stokes","navier stokes"],
+      ["Yang–Mills Existence and Mass Gap","yang-mills","yang mills","mass gap"], ["abc Conjecture","abc conjecture","abc"],
+      ["Hadwiger–Nelson Problem","hadwiger-nelson","hadwiger nelson"], ["Legendre's Conjecture","legendre's conjecture","legendre"],
+      ["Beal Conjecture","beal conjecture","beal"], ["Kissing Number Problem","kissing number","kissing number problem"],
+      ["Erdős–Straus Conjecture","erdos-straus","erdos straus"], ["Lonely Runner Conjecture","lonely runner","lonely runner conjecture"],
+      ["Perfect Cuboid Problem","perfect cuboid"], ["Goldbach's Weak Conjecture","goldbach's weak conjecture","weak goldbach"],
+    ]},
     { name: "Types of Numbers", items: [
       ["Natural Numbers","natural numbers","naturals"], ["Whole Numbers","whole numbers"], ["Integers","integers"],
       ["Rational Numbers","rational numbers","rationals"], ["Irrational Numbers","irrational numbers","irrationals"],

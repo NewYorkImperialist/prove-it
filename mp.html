@@ -111,7 +111,13 @@
   #mpLeave:hover { background:var(--bad); border-color:var(--bad); color:#fff; }
   #crownGame { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:14px; cursor:pointer; opacity:.5; transition:.12s; }
   #crownGame.on { opacity:1; background:rgba(255,211,77,.18); border-color:var(--gold); }
-  .crown { margin-left:5px; }
+  .crown { margin-left:5px; display:inline-block; cursor:help; }
+  .crown.party { animation:crownParty 1s ease; }
+  @keyframes crownParty {
+    0%{transform:scale(1) rotate(0)} 20%{transform:scale(1.9) rotate(-12deg)} 40%{transform:scale(1.7) rotate(12deg)}
+    55%{transform:scale(2) rotate(-8deg)} 70%{transform:scale(1.7) rotate(8deg)} 85%{transform:scale(1.85) rotate(-4deg)}
+    100%{transform:scale(1) rotate(0)}
+  }
 
   #main { grid-area:main; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
   #banner { margin:16px 20px 0; padding:18px 22px; background:linear-gradient(135deg,#232a40,#1a1f2e);

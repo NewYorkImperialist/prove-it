@@ -261,11 +261,13 @@ function handleAnswer(io, room, socket, text, ack) {
     } else {
       g.proven.push(entry.id);
       log(io, room, socket.data.playerId, me, `${entry.display} ✓ (${total(g)}/${g.claim})`, "ok");
-      // 🎯 Easter egg: naming "Prove It!" in the Video Games round = +5 bonus points + a party (just for fun).
-      if (g.current.name === "Video Games" && entry.display === "Prove It!") {
+      // 🎯 Easter eggs: special answers = +5 bonus points + a party (just for fun).
+      const isEgg = (g.current.name === "Video Games" && entry.display === "Prove It!")
+                 || (g.current.name === "Famous Mathematicians" && entry.display === "Jayden Lin");
+      if (isEgg) {
         g.scores[socket.data.playerId] = (g.scores[socket.data.playerId] || 0) + 5;
         log(io, room, "system", null, `🎯 ${me} said the magic words — +5 bonus points!`);
-        io.to(room.code).emit("easterEgg", { kind: "proveit", name: me });
+        io.to(room.code).emit("easterEgg", { kind: "proveit", name: me, phrase: entry.display });
       }
       if (total(g) >= g.claim) { ack?.({ ok: true }); return roundOver(io, room, socket.data.playerId, "Nailed it!"); }
     }

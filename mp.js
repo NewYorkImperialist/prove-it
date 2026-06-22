@@ -171,7 +171,7 @@ socket.on("roomState", (room) => {
     div.className = "player";
     const tag = p.connected === false ? ' <span style="color:var(--bad)">(reconnecting…)</span>' : (p.isHost ? '<span class="tag">HOST</span>' : "");
     div.innerHTML = `<div class="avatar" style="background:${AV[i % AV.length]}">${p.name[0].toUpperCase()}</div>
-      <div class="name">${p.name}${p.crown ? '<span class="crown">👑</span>' : ""}${p.id === myId ? " (you)" : ""}</div>${tag}`;
+      <div class="name">${p.name}${p.crown ? '<span class="crown" title="Creator">👑</span>' : ""}${p.id === myId ? " (you)" : ""}</div>${tag}`;
     list.appendChild(div);
   });
   if (room.players.length < 2) {
@@ -286,12 +286,15 @@ socket.on("opponentLeft", ({ name }) => {
 socket.on("gameState", (state) => { gs = state; render(); });
 
 // 🎯 Easter egg: someone answered "Prove It!" in the Video Games round → +5 + a party for everyone.
-socket.on("easterEgg", ({ kind, name }) => {
+socket.on("easterEgg", ({ kind, name, phrase }) => {
   if (kind !== "proveit") return;
   confettiBurst();
   const logo = $("mpLogo");
   logo.classList.remove("party"); void logo.offsetWidth; logo.classList.add("party"); // restart the animation
-  flashStatus(`🎯 ${name} said "Prove It!" — +5 bonus points!`);
+  document.querySelectorAll(".crown").forEach((c) => { // make any crown pulse + grow too
+    c.classList.remove("party"); void c.offsetWidth; c.classList.add("party");
+  });
+  flashStatus(`🎯 ${name} said "${phrase || "the magic words"}" — +5 bonus points!`);
 });
 $("mpLogo").addEventListener("animationend", () => $("mpLogo").classList.remove("party"));
 
@@ -347,7 +350,7 @@ function render() {
     const d = document.createElement("div");
     d.className = "player" + (live && gs.turnId === p.id ? " turn" : "");
     d.innerHTML = `<div class="avatar" style="background:${colors[i]}">${p.name[0].toUpperCase()}</div>
-      <div class="name">${p.name}${p.crown ? '<span class="crown">👑</span>' : ""}</div><div class="pts">${gs.scores[p.id] ?? 0}</div>`;
+      <div class="name">${p.name}${p.crown ? '<span class="crown" title="Creator">👑</span>' : ""}</div><div class="pts">${gs.scores[p.id] ?? 0}</div>`;
     sidePlayers.appendChild(d);
   });
 

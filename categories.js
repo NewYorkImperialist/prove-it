@@ -739,7 +739,7 @@ const CATEGORY_GROUPS = {
       "Brahmagupta", "Aryabhata", ["Al-Khwarizmi","al-khwarizmi","khwarizmi","alkhwarizmi"],
       ["Daniel Bernoulli","daniel bernoulli","bernoulli"], ["Maryam Mirzakhani","mirzakhani"],
       ["Benoit Mandelbrot","mandelbrot"], ["Alexander Grothendieck","grothendieck"], ["John Conway","conway"],
-      ["G.H. Hardy","hardy","g.h. hardy"],
+      ["G.H. Hardy","hardy","g.h. hardy"], ["Jayden Lin","jayden lin"],
     ]},
     { name: "Branches of Mathematics", items: [
       "Algebra", ["Linear Algebra","linear algebra"], "Geometry", "Trigonometry", "Calculus",

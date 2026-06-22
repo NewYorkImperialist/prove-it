@@ -38,6 +38,20 @@
 
 const CATEGORY_GROUPS = {
   Sports: { emoji: "⚽", cats: [
+    { name: "Famous Runners", items: [
+      ["Usain Bolt","bolt","usain bolt"], ["Carl Lewis","carl lewis"], ["Jesse Owens","jesse owens"], ["Mo Farah","mo farah","farah"],
+      ["Haile Gebrselassie","gebrselassie","haile"], ["Eliud Kipchoge","kipchoge"], ["Kenenisa Bekele","bekele"],
+      ["Michael Johnson","michael johnson"], ["Florence Griffith-Joyner","flo-jo","flojo","griffith-joyner"],
+      ["Allyson Felix","allyson felix","felix"], ["Shelly-Ann Fraser-Pryce","fraser-pryce"], ["Sebastian Coe","seb coe","sebastian coe"],
+      ["Steve Prefontaine","prefontaine","pre"], ["Hicham El Guerrouj","el guerrouj"], ["Roger Bannister","bannister"],
+      ["Paavo Nurmi","nurmi"], ["Emil Zátopek","zatopek"], ["Paula Radcliffe","radcliffe"], ["Tirunesh Dibaba","tirunesh dibaba"],
+      ["Asafa Powell","asafa powell"], ["Yohan Blake","yohan blake"], ["Tyson Gay","tyson gay"], ["Justin Gatlin","gatlin"],
+      ["Noah Lyles","noah lyles","lyles"], ["Sha'Carri Richardson","sha'carri richardson","shacarri"],
+      ["Sydney McLaughlin","mclaughlin","sydney mclaughlin"], ["Galen Rupp","galen rupp"], ["Kelvin Kiptum","kiptum"],
+      ["Jakob Ingebrigtsen","ingebrigtsen"], ["Sifan Hassan","sifan hassan"], ["David Rudisha","rudisha"],
+      ["Kipchoge Keino","kip keino","keino"], ["Frank Shorter","frank shorter"], ["Genzebe Dibaba","genzebe dibaba"],
+      ["Letsile Tebogo","tebogo"], ["Mary Decker","mary decker"],
+    ]},
     { name: "Tennis Players", items: [
       ["Roger Federer","federer"], ["Rafael Nadal","nadal","rafa"], ["Novak Djokovic","djokovic","nole"], ["Andy Murray","murray"],
       ["Pete Sampras","sampras"], ["Andre Agassi","agassi"], ["Serena Williams","serena","serena williams"], ["Venus Williams","venus","venus williams"],
@@ -132,6 +146,16 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Geography: { emoji: "🌍", cats: [
+    { name: "Major American Cities", items: [
+      ["New York City","new york city","new york","nyc"], ["Los Angeles","los angeles","la"], "Chicago", "Houston", "Phoenix",
+      "Philadelphia", ["San Antonio","san antonio"], ["San Diego","san diego"], "Dallas", ["San Jose","san jose"], "Austin",
+      "Jacksonville", ["Fort Worth","fort worth"], "Columbus", "Charlotte", ["San Francisco","san francisco","sf"], "Indianapolis",
+      "Seattle", "Denver", ["Washington","washington dc","washington d.c.","dc"], "Boston", "Nashville", ["El Paso","el paso"],
+      "Detroit", ["Oklahoma City","oklahoma city","okc"], "Portland", ["Las Vegas","las vegas","vegas"], "Memphis", "Louisville",
+      "Baltimore", "Milwaukee", "Albuquerque", "Tucson", "Fresno", "Sacramento", ["Kansas City","kansas city","kc"], "Atlanta",
+      "Miami", "Raleigh", "Omaha", "Minneapolis", "Tulsa", "Cleveland", ["New Orleans","new orleans","nola"], "Tampa", "Honolulu",
+      "Pittsburgh", "Cincinnati", ["St. Louis","st louis","saint louis"], "Orlando",
+    ]},
     { name: "Languages of the World", items: [
       "English", ["Mandarin","mandarin","chinese"], "Spanish", "Hindi", "Arabic", "Bengali", "Portuguese", "Russian",
       "Japanese", "French", "German", "Korean", "Italian", "Turkish", "Vietnamese", ["Persian","persian","farsi"],
@@ -363,6 +387,25 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Entertainment: { emoji: "🎬", cats: [
+    { name: "Breaking Bad Characters", items: [
+      ["Walter White","walter white","heisenberg","walt"], ["Jesse Pinkman","jesse pinkman","jesse"], ["Skyler White","skyler"],
+      ["Hank Schrader","hank"], ["Marie Schrader","marie"], ["Walter White Jr.","walter white jr","walt jr","flynn"],
+      ["Saul Goodman","saul goodman","saul"], ["Mike Ehrmantraut","mike ehrmantraut","mike"], ["Gus Fring","gus fring","gus","gustavo fring"],
+      ["Hector Salamanca","hector salamanca","hector","tio"], ["Tuco Salamanca","tuco"], ["Gale Boetticher","gale"],
+      ["Jane Margolis","jane"], "Badger", ["Skinny Pete","skinny pete"], "Combo", ["Huell","huell"], ["Ted Beneke","ted beneke"],
+      ["Steven Gomez","gomez","steve gomez"], ["Lydia Rodarte-Quayle","lydia"], ["Todd Alquist","todd"], ["Jack Welker","jack welker","uncle jack"],
+      ["Andrea Cantillo","andrea"], "Brock", ["Krazy-8","krazy-8","krazy 8"], "Emilio", "Bogdan", "Wendy",
+      ["Victor","victor"], ["Gretchen Schwartz","gretchen"], ["Elliott Schwartz","elliott"], ["Don Eladio","don eladio","eladio"],
+    ]},
+    { name: "Better Call Saul Characters", items: [
+      ["Jimmy McGill","jimmy mcgill","jimmy","saul goodman","saul"], ["Kim Wexler","kim wexler","kim"], ["Chuck McGill","chuck mcgill","chuck"],
+      ["Howard Hamlin","howard hamlin","howard"], ["Mike Ehrmantraut","mike ehrmantraut","mike"], ["Gus Fring","gus fring","gus"],
+      ["Nacho Varga","nacho","ignacio varga","ignacio"], ["Lalo Salamanca","lalo salamanca","lalo"], ["Hector Salamanca","hector salamanca","hector"],
+      ["Werner Ziegler","werner"], ["Cliff Main","cliff main","cliff"], ["Rich Schweikart","schweikart"], ["Francesca Liddy","francesca"],
+      ["Huell Babineaux","huell"], ["Ernesto","ernie"], ["Gene Takovic","gene","gene takovic"], ["Don Eladio","don eladio","eladio"],
+      ["Lydia Rodarte-Quayle","lydia"], ["Bill Oakley","bill oakley"], ["Suzanne Ericsen","suzanne"], ["Dr. Caldera","caldera"],
+      ["Mrs. Nguyen","mrs nguyen"], ["Kaylee Ehrmantraut","kaylee"],
+    ]},
     { name: "Superheroes", items: [
       "Superman", "Batman", ["Spider-Man","spider-man","spiderman"], ["Iron Man","iron man"], ["Captain America","captain america"],
       "Thor", "Hulk", ["Wonder Woman","wonder woman"], ["The Flash","flash","the flash"], "Aquaman", ["Green Lantern","green lantern"],
@@ -657,6 +700,22 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Music: { emoji: "🎵", cats: [
+    { name: "Classical Composers", items: [
+      ["Bach","bach","johann sebastian bach"], "Beethoven", "Mozart", "Chopin", "Tchaikovsky", "Vivaldi", "Handel", "Brahms",
+      "Schubert", "Wagner", "Liszt", "Haydn", "Debussy", "Ravel", "Stravinsky", "Mahler", ["Dvořák","dvorak"], "Schumann",
+      "Mendelssohn", "Rachmaninoff", "Prokofiev", "Shostakovich", "Verdi", "Puccini", "Rossini", "Bizet", ["Saint-Saëns","saint-saens","saint saens"],
+      "Grieg", "Sibelius", "Elgar", "Holst", "Berlioz", "Paganini", "Pachelbel", "Satie", "Bruckner", ["Strauss","strauss","johann strauss","richard strauss"],
+      "Gershwin", "Copland", "Monteverdi", "Scarlatti", "Telemann", ["Fauré","faure"],
+    ]},
+    { name: "Laufey Songs", items: [
+      ["From the Start","from the start"], "Valentine", ["Falling Behind","falling behind"], ["Like the Movies","like the movies"],
+      ["Let You Break My Heart Again","let you break my heart again"], ["Beautiful Stranger","beautiful stranger"], "Promise",
+      ["Dear Soulmate","dear soulmate"], ["Best Friend","best friend"], "Fragile", ["California and Me","california and me"],
+      "Lovesick", ["I Wish You Love","i wish you love"], ["Street by Street","street by street"], "James", "Bewitched",
+      ["Second Best","second best"], ["While You Were Sleeping","while you were sleeping"], ["Must Be Love","must be love"],
+      "Goddess", "Haunted", ["Hi Hello","hi hello"], ["Everything I Know About Love","everything i know about love"],
+      "Serendipity", "Dreamer", ["Night Light","night light"], ["Above the Chinese Restaurant","above the chinese restaurant"],
+    ]},
     { name: "Musical Instruments", items: [
       "Piano", "Guitar", "Violin", "Cello", "Viola", ["Double Bass","double bass","upright bass"], "Flute", "Clarinet", "Oboe",
       "Bassoon", "Trumpet", "Trombone", ["French Horn","french horn"], "Tuba", "Saxophone", "Drums", "Harp", "Accordion",
@@ -714,6 +773,15 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Brands: { emoji: "🏷️", cats: [
+    { name: "iPhones", items: [
+      // (yes, this is the troll category 😏)
+      ["iPhone 1","iphone 1","iphone one","iphone"], ["iPhone 2","iphone 2","iphone two"], ["iPhone 3","iphone 3","iphone three"],
+      ["iPhone 4","iphone 4","iphone four"], ["iPhone 5","iphone 5","iphone five"], ["iPhone 6","iphone 6","iphone six"],
+      ["iPhone 7","iphone 7","iphone seven"], ["iPhone 8","iphone 8","iphone eight"], ["iPhone 9","iphone 9","iphone nine"],
+      ["iPhone 10","iphone 10","iphone ten"], ["iPhone 11","iphone 11","iphone eleven"], ["iPhone 12","iphone 12","iphone twelve"],
+      ["iPhone 13","iphone 13","iphone thirteen"], ["iPhone 14","iphone 14","iphone fourteen"], ["iPhone 15","iphone 15","iphone fifteen"],
+      ["iPhone 16","iphone 16","iphone sixteen"], ["iPhone 17","iphone 17","iphone seventeen"],
+    ]},
     { name: "Clothing Brands", items: [
       "Nike", "Adidas", "Puma", "Reebok", ["Under Armour","under armour"], "Gucci", ["Louis Vuitton","louis vuitton","lv"], "Prada",
       "Versace", "Chanel", "Dior", "Balenciaga", "Hermès", "Burberry", ["Levi's","levi's","levis"], ["Calvin Klein","calvin klein","ck"],
@@ -820,6 +888,7 @@ const CATEGORY_GROUPS = {
       ["Cube Numbers","cube numbers","perfect cubes"], ["Triangular Numbers","triangular numbers"], ["Fibonacci Numbers","fibonacci numbers","fibonacci"],
       ["Negative Numbers","negative numbers"], ["Positive Numbers","positive numbers"], ["Decimals","decimals"], ["Fractions","fractions"],
       ["Transcendental Numbers","transcendental numbers"], ["Algebraic Numbers","algebraic numbers"], ["Counting Numbers","counting numbers"],
+      ["Quaternions","quaternions","quaternion"],
     ]},
     { name: "Famous Mathematicians", items: [
       ["Isaac Newton","newton"], ["Carl Friedrich Gauss","gauss"], ["Leonhard Euler","euler"], "Archimedes",

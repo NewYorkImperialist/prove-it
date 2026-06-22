@@ -46,7 +46,7 @@ function roomState(room) {
   return {
     code: room.code, hostId: room.hostId, status: room.status, settings: room.settings,
     players: [...room.players.values()].map((p) => ({
-      id: p.id, name: p.name, isHost: p.id === room.hostId, connected: p.connected,
+      id: p.id, name: p.name, isHost: p.id === room.hostId, connected: p.connected, crown: !!p.crown,
     })),
   };
 }
@@ -135,6 +135,18 @@ io.on("connection", (socket) => {
     if (!room || !playerId || !room.players.has(playerId)) return ack?.({ ok: false });
     console.log(`🔄 resumed room ${code}`);
     doResume(room, playerId, ack);
+  });
+
+  // Owner-only vanity crown 👑. Gated by a server-side secret (OWNER_KEY, set as a Fly secret —
+  // never in the repo). Nobody can crown themselves without the key, so it stays exclusive.
+  socket.on("setCrown", ({ on, key } = {}) => {
+    const room = rooms.get(socket.data.roomCode);
+    const p = room?.players.get(socket.data.playerId);
+    if (!p) return;
+    if (!process.env.OWNER_KEY || key !== process.env.OWNER_KEY) return; // wrong/absent key → ignored
+    p.crown = !!on;
+    broadcast(room);
+    engine.resync(io, room); // refresh in-game name labels too
   });
 
   // Change your display name while in the waiting room.

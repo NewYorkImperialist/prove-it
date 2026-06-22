@@ -117,7 +117,7 @@ function snapshot(room) {
     judgeActive: g.judgeActive ? { id: g.judgeActive.id, text: g.judgeActive.text } : null,
     judgeRemaining: g.judgeQueue ? g.judgeQueue.length : 0,
     scores: g.scores, target: g.target === Infinity ? null : g.target,
-    players: g.order.map((id) => ({ id, name: g.names[id] })),
+    players: g.order.map((id) => ({ id, name: g.names[id], crown: !!room.players.get(id)?.crown })),
     lastResult: g.lastResult || null,
     matchWinnerId: g.matchWinnerId || null,
     paused: !!g.paused,
@@ -415,4 +415,5 @@ function endGameForLeaver(io, room, leaverId) {
 
 module.exports = {
   startMatch, handleOpen, handleRaise, handleProveIt, handleAnswer, handleJudge, handleRejectAll, handleGiveUp, handleRematch, endGameForLeaver, pauseGame, resumeGame, setGroups, handlePauseRound, handleNextRound, handleVoteSkip,
+  resync: (io, room) => { if (room.game) emit(io, room); },
 };

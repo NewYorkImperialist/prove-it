@@ -25,12 +25,42 @@ function rememberName(n) { if (n) localStorage.setItem("pi_name", n); }
 const inviteCode = (new URLSearchParams(location.search).get("room") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
 if (inviteCode) $("joinCode").value = inviteCode;
 let triedInvite = false;
+
+// ---------- owner crown 👑 (secret, key-gated server-side) ----------
+// Become the owner once by visiting  ?crown=YOUR_SECRET_KEY  (use ?crown=off to revoke).
+// The key is stored locally and validated by the server on every toggle, so it stays exclusive.
+const crownParam = new URLSearchParams(location.search).get("crown");
+if (crownParam != null) {
+  if (crownParam === "off") { localStorage.removeItem("ownerKey"); localStorage.removeItem("crownOn"); }
+  else { localStorage.setItem("ownerKey", crownParam); localStorage.setItem("crownOn", "1"); }
+  const u = new URL(location.href); u.searchParams.delete("crown"); history.replaceState({}, "", u.pathname + u.search);
+}
+const ownerKey = () => localStorage.getItem("ownerKey");
+const crownOn = () => localStorage.getItem("crownOn") === "1";
+function updateCrownUI() {
+  const has = !!ownerKey();
+  $("crownLobby").classList.toggle("hidden", !has);
+  $("crownGame").classList.toggle("hidden", !has);
+  $("crownLobby").textContent = "👑 Crown: " + (crownOn() ? "on" : "off");
+  $("crownGame").classList.toggle("on", crownOn());
+}
+function applyCrown() { if (ownerKey()) socket.emit("setCrown", { on: crownOn(), key: ownerKey() }); }
+function toggleCrown() {
+  if (!ownerKey()) return;
+  localStorage.setItem("crownOn", crownOn() ? "0" : "1");
+  updateCrownUI();
+  applyCrown();
+}
+$("crownLobby").onclick = toggleCrown;
+$("crownGame").onclick = toggleCrown;
+updateCrownUI();
+
 function maybeAutoJoinInvite() {
   if (triedInvite || !inviteCode || myRoom) return;
   triedInvite = true;
   socket.emit("joinRoom", { code: inviteCode, name: nameValue(), playerId }, (res) => {
     if (!res?.ok) return; // room gone/full → leave them on home with the code prefilled
-    myId = res.you; setRoom(res.code); rememberName(nameValue()); show("room");
+    myId = res.you; setRoom(res.code); rememberName(nameValue()); show("room"); applyCrown();
     history.replaceState({}, "", location.pathname); // clean URL so a refresh resumes normally
   });
 }
@@ -46,6 +76,7 @@ socket.on("connect", () => {
   if (myRoom) {
     socket.emit("resume", { code: myRoom, playerId }, (res) => {
       if (!res?.ok) { setRoom(null); show("home"); maybeAutoJoinInvite(); } // room gone → back to start
+      else applyCrown();
     });
   } else {
     maybeAutoJoinInvite();
@@ -71,7 +102,7 @@ $("createBtn").onclick = () => {
   $("homeErr").textContent = "";
   socket.emit("createRoom", { name: nameValue(), playerId }, (res) => {
     if (!res?.ok) return ($("homeErr").textContent = res?.error || "Could not create room.");
-    myId = res.you; setRoom(res.code); rememberName(nameValue()); show("room");
+    myId = res.you; setRoom(res.code); rememberName(nameValue()); show("room"); applyCrown();
   });
 };
 $("joinBtn").onclick = () => {
@@ -80,7 +111,7 @@ $("joinBtn").onclick = () => {
   if (code.length < 4) return ($("homeErr").textContent = "Enter the 4-letter room code.");
   socket.emit("joinRoom", { code, name: nameValue(), playerId }, (res) => {
     if (!res?.ok) return ($("homeErr").textContent = res?.error || "Could not join room.");
-    myId = res.you; setRoom(res.code); rememberName(nameValue()); show("room");
+    myId = res.you; setRoom(res.code); rememberName(nameValue()); show("room"); applyCrown();
   });
 };
 $("spBtn").onclick = () => { location.href = "index.html"; };
@@ -140,7 +171,7 @@ socket.on("roomState", (room) => {
     div.className = "player";
     const tag = p.connected === false ? ' <span style="color:var(--bad)">(reconnecting…)</span>' : (p.isHost ? '<span class="tag">HOST</span>' : "");
     div.innerHTML = `<div class="avatar" style="background:${AV[i % AV.length]}">${p.name[0].toUpperCase()}</div>
-      <div class="name">${p.name}${p.id === myId ? " (you)" : ""}</div>${tag}`;
+      <div class="name">${p.name}${p.crown ? '<span class="crown">👑</span>' : ""}${p.id === myId ? " (you)" : ""}</div>${tag}`;
     list.appendChild(div);
   });
   if (room.players.length < 2) {
@@ -316,7 +347,7 @@ function render() {
     const d = document.createElement("div");
     d.className = "player" + (live && gs.turnId === p.id ? " turn" : "");
     d.innerHTML = `<div class="avatar" style="background:${colors[i]}">${p.name[0].toUpperCase()}</div>
-      <div class="name">${p.name}</div><div class="pts">${gs.scores[p.id] ?? 0}</div>`;
+      <div class="name">${p.name}${p.crown ? '<span class="crown">👑</span>' : ""}</div><div class="pts">${gs.scores[p.id] ?? 0}</div>`;
     sidePlayers.appendChild(d);
   });
 

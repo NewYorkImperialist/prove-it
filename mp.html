@@ -109,6 +109,9 @@
   #mpLeave { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:8px;
     padding:6px 12px; font-size:13px; font-weight:700; cursor:pointer; transition:.12s; }
   #mpLeave:hover { background:var(--bad); border-color:var(--bad); color:#fff; }
+  #crownGame { background:var(--panel2); border:1px solid var(--line); border-radius:8px; padding:6px 10px; font-size:14px; cursor:pointer; opacity:.5; transition:.12s; }
+  #crownGame.on { opacity:1; background:rgba(255,211,77,.18); border-color:var(--gold); }
+  .crown { margin-left:5px; }
 
   #main { grid-area:main; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
   #banner { margin:16px 20px 0; padding:18px 22px; background:linear-gradient(135deg,#232a40,#1a1f2e);
@@ -252,6 +255,7 @@
       <label for="lobbyName">Your name</label>
       <input id="lobbyName" maxlength="20" placeholder="e.g. Jayden" autocomplete="off">
     </div>
+    <button class="ghost hidden" id="crownLobby" style="width:100%;margin-bottom:14px;">👑 Crown: off</button>
 
     <div id="settings">
       <div class="group-title">Categories</div>
@@ -280,6 +284,7 @@
       <span class="room" id="gRoom"></span>
       <span class="spacer"></span>
       <button id="mpCatBtn" style="display:none">Categories ▾</button>
+      <button id="crownGame" class="hidden" title="Toggle your crown">👑</button>
       <button id="mpLeave">Leave</button>
       <div id="mpCatMenu" style="display:none">
         <div class="title">Categories (applies next round)</div>

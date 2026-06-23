@@ -56,13 +56,8 @@
   }
   #endBtn:hover { background: var(--bad); border-color: var(--bad); color: #fff; }
   #catBtn:hover, #muteBtn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
-  /* 🎯 easter-egg: logo grows + shakes when you name the magic words */
-  #logo.party { display: inline-block; transform-origin: left center; animation: logoParty .9s ease; }
-  @keyframes logoParty {
-    0%{transform:scale(1) rotate(0)} 12%{transform:scale(1.7) rotate(-8deg)} 28%{transform:scale(1.7) rotate(8deg)}
-    44%{transform:scale(1.75) rotate(-6deg)} 60%{transform:scale(1.6) rotate(6deg)}
-    76%{transform:scale(1.4) rotate(-4deg)} 100%{transform:scale(1) rotate(0)}
-  }
+  /* "your turn to open" cue — red glow on the answer box */
+  #input.opening-cue { border-color: var(--bad) !important; box-shadow: 0 0 0 3px rgba(229,72,77,.35); background: rgba(229,72,77,.07); }
   /* In-game category switcher dropdown */
   #catMenu {
     position: absolute; top: 52px; right: 16px; width: 232px; z-index: 5;

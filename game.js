@@ -78,45 +78,12 @@ function setMuted(m) {
   $("muteBtn").textContent = m ? "🔇" : "🔊";
   $("muteBtn").title = m ? "Sound off" : "Sound on";
 }
+// (Easter eggs are intentionally multiplayer-only — discover them there. 😏)
 
-// Self-contained canvas confetti (same as multiplayer) — for the easter egg.
-function confettiBurst() {
-  const canvas = document.createElement("canvas");
-  canvas.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:9999";
-  canvas.width = innerWidth; canvas.height = innerHeight;
-  document.body.appendChild(canvas);
-  const ctx = canvas.getContext("2d");
-  const colors = ["#ffd34d", "#3ecf8e", "#5b8cff", "#e5484d", "#b06bff", "#ff8c42"];
-  const parts = Array.from({ length: 180 }, () => ({
-    x: canvas.width / 2 + (Math.random() - 0.5) * 240, y: canvas.height / 3 + (Math.random() - 0.5) * 60,
-    vx: (Math.random() - 0.5) * 14, vy: Math.random() * -13 - 3, size: 6 + Math.random() * 7,
-    color: colors[Math.floor(Math.random() * colors.length)], rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.4,
-  }));
-  let frame = 0;
-  (function tick() {
-    ctx.clearRect(0, 0, canvas.width, canvas.height); frame++;
-    let alive = false;
-    for (const p of parts) {
-      p.vy += 0.32; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
-      if (p.y < canvas.height + 30) alive = true;
-      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
-      ctx.globalAlpha = Math.max(0, 1 - frame / 170); ctx.fillStyle = p.color;
-      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6); ctx.restore();
-    }
-    if (alive && frame < 170) requestAnimationFrame(tick); else canvas.remove();
-  })();
-}
-// 🎯 easter egg: naming the magic words in the right category = +5 + a party (just like multiplayer).
-function maybeEasterEgg(entry) {
-  const egg = (current.name === "Video Games" && entry.display === "Prove It!")
-           || (current.name === "Famous Mathematicians" && entry.display === "Jayden Lin");
-  if (!egg) return false;
-  scoreMe += 5;
-  $("scoreMe").textContent = scoreMe;
-  confettiBurst(); sfx.sparkle();
-  const logo = $("logo"); logo.classList.remove("party"); void logo.offsetWidth; logo.classList.add("party");
-  add(`🎯 You said the magic words — +5 bonus points!`, "system");
-  return true;
+// Red glow + a shake on the answer box when it's your turn to open.
+function openingCue(on) {
+  input.classList.toggle("opening-cue", on);
+  if (on) { input.classList.remove("shake"); void input.offsetWidth; input.classList.add("shake"); }
 }
 
 // ---------- Setup / lobby ----------
@@ -361,17 +328,28 @@ function newRound() {
     `Alright, ${c.name}. How many can you name?`,
     `${c.name}. Give me a number.`,
   ]), "bot", "Bot");
-  setActions([]);
+  setActions([{ label: "🔁 Skip category", onClick: skipCategory }]);
   setTurn("me");
   input.placeholder = "Type a number to open…";
   input.focus();
+  openingCue(true);  // unmissable "your turn to open" cue
   startTurnTimer();  // your reaction clock starts as soon as the question lands
+}
+
+// Don't like the category? Skip it (only before you open) → fresh category, no points.
+function skipCategory() {
+  if (state !== "opening") return;
+  clearInterval(reactId);
+  openingCue(false);
+  add("Skipped — new category.", "system");
+  newRound();
 }
 
 // You open the bidding with a number → hand the turn to the bot.
 function open(n) {
   if (state !== "opening") return;
   clearInterval(reactId);
+  openingCue(false);
   claim = n;
   holder = "me";
   add(`I can name ${n}.`, "me", "You");
@@ -427,6 +405,7 @@ function onTurnTimeout() {
   if (state === "opening") {
     state = "thinking";
     timerEl.textContent = "";
+    openingCue(false);
     setTurn("bot");
     add("Too slow. 😎", "bot", "Bot");
     endRound(false, "Ran out of time.", { skipCount: true });
@@ -556,8 +535,6 @@ function submitAnswer(p) {
     proven.push(entry.id);
     sfx.ding();
     add(`${entry.display} ✓ (${proven.length}/${claim})`, "ok", "You");
-    // the +5 easter-egg bonus can win the match outright
-    if (maybeEasterEgg(entry) && targetScore !== Infinity && scoreMe >= targetScore) { setTimeout(showWin, 700); return; }
     if (proven.length >= claim) { endRound(true, "Nailed it!"); return; }
   }
   updateTimer();
@@ -680,7 +657,6 @@ input.addEventListener("animationend", () => input.classList.remove("shake"));
 buildSetup();
 $("muteBtn").onclick = () => setMuted(!muted);
 setMuted(muted);
-$("logo").addEventListener("animationend", () => $("logo").classList.remove("party"));
 $("startBtn").onclick = startGame;
 $("logo").onclick = returnToMenu;
 $("againBtn").onclick = beginMatch;

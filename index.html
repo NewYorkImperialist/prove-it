@@ -50,12 +50,19 @@
   #topbar .logo { font-size: 18px; font-weight: 800; letter-spacing: 0.5px; }
   #topbar .room { color: var(--muted); font-size: 13px; padding: 4px 10px; background: var(--panel2); border-radius: 8px; }
   #topbar .spacer { flex: 1; }
-  #endBtn, #catBtn {
+  #endBtn, #catBtn, #muteBtn {
     background: var(--panel2); color: var(--muted); border: 1px solid var(--line);
     border-radius: 8px; padding: 6px 12px; font-size: 13px; font-weight: 700; cursor: pointer; transition: .12s;
   }
   #endBtn:hover { background: var(--bad); border-color: var(--bad); color: #fff; }
-  #catBtn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #catBtn:hover, #muteBtn:hover { background: var(--accent); border-color: var(--accent); color: #fff; }
+  /* 🎯 easter-egg: logo grows + shakes when you name the magic words */
+  #logo.party { display: inline-block; transform-origin: left center; animation: logoParty .9s ease; }
+  @keyframes logoParty {
+    0%{transform:scale(1) rotate(0)} 12%{transform:scale(1.7) rotate(-8deg)} 28%{transform:scale(1.7) rotate(8deg)}
+    44%{transform:scale(1.75) rotate(-6deg)} 60%{transform:scale(1.6) rotate(6deg)}
+    76%{transform:scale(1.4) rotate(-4deg)} 100%{transform:scale(1) rotate(0)}
+  }
   /* In-game category switcher dropdown */
   #catMenu {
     position: absolute; top: 52px; right: 16px; width: 232px; z-index: 5;
@@ -236,6 +243,7 @@
     <span class="logo" id="logo" title="Back to lobby" style="cursor:pointer">🎯 Prove It!</span>
     <span class="room" id="roomName">Lobby</span>
     <span class="spacer"></span>
+    <button id="muteBtn" title="Sound on">🔊</button>
     <button id="catBtn" style="display:none">Categories ▾</button>
     <button id="endBtn" style="display:none">End game</button>
     <div id="catMenu" style="display:none">
@@ -290,6 +298,9 @@
 
     <div class="group-title">Win at</div>
     <div class="seg" id="winSeg"></div>
+
+    <div class="group-title">Bot difficulty</div>
+    <div class="seg" id="diffSeg"></div>
 
     <div class="modes">
       <button id="startBtn">🎮 Start Singleplayer</button>

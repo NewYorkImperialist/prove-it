@@ -30,6 +30,94 @@ let reactId = null, reactLeft = 0;     // 10s timer for your turn (open / raise 
 let proven = [];           // canonical entry ids correctly named this round
 let lastCatName = null;    // last category, to avoid an immediate repeat after a reset
 let usedNames = [];        // categories already played this match (no repeats until exhausted)
+let difficulty = "medium"; // bot difficulty: easy | medium | hard
+
+// Bot difficulty presets. botMax = how many it can actually name (its bluff ceiling);
+// raiseUnder = chance it raises (vs makes you prove) when it's still within its skill;
+// raiseBluff = chance it bluffs a raise past its skill; ceiling = how far past skill it'll bluff.
+const DIFF = {
+  easy:   { lo: 3, hi: 6,  raiseUnder: 0.30, raiseBluff: 0.05, ceiling: 1 },
+  medium: { lo: 5, hi: 12, raiseUnder: 0.45, raiseBluff: 0.15, ceiling: 2 },
+  hard:   { lo: 9, hi: 16, raiseUnder: 0.62, raiseBluff: 0.28, ceiling: 3 },
+};
+
+// ---------- sound effects (synthesized; shares the mute setting with multiplayer) ----------
+let audioCtx = null;
+let muted = localStorage.getItem("muted") === "1";
+function actx() {
+  if (!audioCtx) { try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; } }
+  if (audioCtx.state === "suspended") audioCtx.resume();
+  return audioCtx;
+}
+["click", "keydown", "touchstart"].forEach(ev => document.addEventListener(ev, () => actx(), { once: true }));
+function tone(freq, dur, { type = "sine", gain = 0.2, delay = 0, sweep = 0 } = {}) {
+  if (muted) return;
+  const ctx = actx(); if (!ctx) return;
+  const t0 = ctx.currentTime + delay;
+  const osc = ctx.createOscillator(), g = ctx.createGain();
+  osc.type = type; osc.frequency.setValueAtTime(freq, t0);
+  if (sweep) osc.frequency.exponentialRampToValueAtTime(Math.max(40, freq + sweep), t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(g).connect(ctx.destination);
+  osc.start(t0); osc.stop(t0 + dur + 0.03);
+}
+const sfx = {
+  tick:    () => tone(820, 0.05, { type: "square", gain: 0.07 }),
+  tickHot: () => tone(1280, 0.07, { type: "square", gain: 0.11 }),
+  ding:    () => { tone(880, 0.12, { gain: 0.2 }); tone(1320, 0.16, { gain: 0.14, delay: 0.05 }); },
+  buzz:    () => tone(170, 0.22, { type: "sawtooth", gain: 0.16, sweep: -70 }),
+  roundWin:  () => [523, 659, 784].forEach((f, i) => tone(f, 0.18, { type: "triangle", gain: 0.16, delay: i * 0.08 })),
+  roundLose: () => [392, 311].forEach((f, i) => tone(f, 0.24, { gain: 0.16, delay: i * 0.11 })),
+  fanfare: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.3, { type: "square", gain: 0.15, delay: i * 0.12 })),
+  sparkle: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.14, { type: "triangle", gain: 0.14, delay: i * 0.06 })),
+};
+function setMuted(m) {
+  muted = m; localStorage.setItem("muted", m ? "1" : "0");
+  $("muteBtn").textContent = m ? "🔇" : "🔊";
+  $("muteBtn").title = m ? "Sound off" : "Sound on";
+}
+
+// Self-contained canvas confetti (same as multiplayer) — for the easter egg.
+function confettiBurst() {
+  const canvas = document.createElement("canvas");
+  canvas.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:9999";
+  canvas.width = innerWidth; canvas.height = innerHeight;
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext("2d");
+  const colors = ["#ffd34d", "#3ecf8e", "#5b8cff", "#e5484d", "#b06bff", "#ff8c42"];
+  const parts = Array.from({ length: 180 }, () => ({
+    x: canvas.width / 2 + (Math.random() - 0.5) * 240, y: canvas.height / 3 + (Math.random() - 0.5) * 60,
+    vx: (Math.random() - 0.5) * 14, vy: Math.random() * -13 - 3, size: 6 + Math.random() * 7,
+    color: colors[Math.floor(Math.random() * colors.length)], rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.4,
+  }));
+  let frame = 0;
+  (function tick() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height); frame++;
+    let alive = false;
+    for (const p of parts) {
+      p.vy += 0.32; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      if (p.y < canvas.height + 30) alive = true;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      ctx.globalAlpha = Math.max(0, 1 - frame / 170); ctx.fillStyle = p.color;
+      ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6); ctx.restore();
+    }
+    if (alive && frame < 170) requestAnimationFrame(tick); else canvas.remove();
+  })();
+}
+// 🎯 easter egg: naming the magic words in the right category = +5 + a party (just like multiplayer).
+function maybeEasterEgg(entry) {
+  const egg = (current.name === "Video Games" && entry.display === "Prove It!")
+           || (current.name === "Famous Mathematicians" && entry.display === "Jayden Lin");
+  if (!egg) return false;
+  scoreMe += 5;
+  $("scoreMe").textContent = scoreMe;
+  confettiBurst(); sfx.sparkle();
+  const logo = $("logo"); logo.classList.remove("party"); void logo.offsetWidth; logo.classList.add("party");
+  add(`🎯 You said the magic words — +5 bonus points!`, "system");
+  return true;
+}
 
 // ---------- Setup / lobby ----------
 function buildSetup() {
@@ -75,6 +163,20 @@ function buildSetup() {
       targetScore = n;
     };
     win.appendChild(b);
+  });
+
+  const diff = $("diffSeg");
+  diff.innerHTML = "";
+  [["easy", "😌 Easy"], ["medium", "🙂 Medium"], ["hard", "😤 Hard"]].forEach(([key, label]) => {
+    const b = document.createElement("button");
+    b.textContent = label;
+    if (key === difficulty) b.classList.add("on");
+    b.onclick = () => {
+      [...diff.children].forEach(c => c.classList.remove("on"));
+      b.classList.add("on");
+      difficulty = key;
+    };
+    diff.appendChild(b);
   });
 }
 
@@ -246,8 +348,9 @@ function newRound() {
   lastCatName = c.name;
   current = c;
 
-  // The bot secretly "knows" this many (5–12, capped to the list) — its bluff ceiling.
-  botMax = Math.min(c.entries.length, 5 + Math.floor(Math.random() * 8));
+  // The bot secretly "knows" this many (range set by difficulty, capped to the list) — its bluff ceiling.
+  const d = DIFF[difficulty] || DIFF.medium;
+  botMax = Math.min(c.entries.length, d.lo + Math.floor(Math.random() * (d.hi - d.lo + 1)));
 
   catNameEl.textContent = c.name;
   $("catLabel").textContent = `${c.emoji} ${c.group}`;
@@ -346,13 +449,14 @@ function botDecide() {
   if (state !== "botturn") return;  // match may have ended during the delay
   const size = current.entries.length;
   const canRaise = claim + 1 <= size;
+  const d = DIFF[difficulty] || DIFF.medium;
   // The bot is challenge-happy: even when it could safely raise, it often
-  // calls your bluff instead. Only a small chance to bluff past its own skill.
+  // calls your bluff instead. Higher difficulty raises more and bluffs further.
   let wantRaise;
   if (claim < botMax) {
-    wantRaise = Math.random() < 0.45;            // 55% chance it makes YOU prove it
+    wantRaise = Math.random() < d.raiseUnder;
   } else {
-    wantRaise = Math.random() < 0.15 && claim < botMax + 2;  // rare bluff beyond its skill
+    wantRaise = Math.random() < d.raiseBluff && claim < botMax + d.ceiling;  // bluff beyond its skill
   }
   if (canRaise && wantRaise) {
     claim += 1;
@@ -423,6 +527,7 @@ function startProving() {
   timerId = setInterval(() => {
     timeLeft--;
     updateTimer();
+    if (timeLeft > 0 && timeLeft <= 5) (timeLeft <= 3 ? sfx.tickHot : sfx.tick)();  // tense final seconds
     if (timeLeft <= 0) endRound(false, "Time's up!");
   }, 1000);
 }
@@ -442,12 +547,17 @@ function submitAnswer(p) {
   if (state !== "proving") return;
   const entry = resolve(current, p);
   if (!entry) {
+    sfx.buzz();
     add(`${p} ✗ not on my list`, "bad", "You");
   } else if (proven.includes(entry.id)) {
+    sfx.buzz();
     add(`already got ${entry.display}`, "bad", "You");
   } else {
     proven.push(entry.id);
+    sfx.ding();
     add(`${entry.display} ✓ (${proven.length}/${claim})`, "ok", "You");
+    // the +5 easter-egg bonus can win the match outright
+    if (maybeEasterEgg(entry) && targetScore !== Infinity && scoreMe >= targetScore) { setTimeout(showWin, 700); return; }
     if (proven.length >= claim) { endRound(true, "Nailed it!"); return; }
   }
   updateTimer();
@@ -472,6 +582,7 @@ function endRound(won, reason, opts = {}) {
   state = "over";
   updateTimer();
   setTurn(null);
+  (won ? sfx.roundWin : sfx.roundLose)();
   const count = opts.skipCount ? "" : ` ${proven.length}/${claim}.`;
   if (won) {
     scoreMe++;
@@ -502,6 +613,7 @@ function endMatch() {
 // Match over → show the win screen. Winner is whoever has more points (ties allowed).
 function showWin() {
   state = "gameover";
+  sfx.fanfare();
   setActions([]);
   setTurn(null);
   input.disabled = true; sendBtn.disabled = true;
@@ -566,6 +678,9 @@ input.addEventListener("animationend", () => input.classList.remove("shake"));
 
 // ---------- Boot ----------
 buildSetup();
+$("muteBtn").onclick = () => setMuted(!muted);
+setMuted(muted);
+$("logo").addEventListener("animationend", () => $("logo").classList.remove("party"));
 $("startBtn").onclick = startGame;
 $("logo").onclick = returnToMenu;
 $("againBtn").onclick = beginMatch;

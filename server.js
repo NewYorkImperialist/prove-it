@@ -138,7 +138,7 @@ function histHtml(h, k) {
   const rec = h.recent.map((r) => `<tr><td>${esc(r.code)}</td><td>${esc(r.p1_name)} ${num(r.p1_score)}–${num(r.p2_score)} ${esc(r.p2_name)}</td><td>${esc(r.winner_name || "tie")}</td><td>${num(r.rounds)}r</td><td>${esc(r.reason)}</td><td>${fmtMs(num(r.duration_ms))}</td></tr>`).join("");
   const ses = h.sessions || {};
   const dev = (ses.devices || []).map((d) => `<tr><td>${esc(d.device)}</td><td>${num(d.n)}</td><td>${fmtMs(num(d.avg))}</td></tr>`).join("");
-  const sesRecent = (ses.recent || []).map((r) => `<tr><td>${easternTime(num(r.connected_at))}</td><td>${fmtMs(num(r.duration_ms))}</td><td>${esc(r.device)}</td><td>${r.played ? "🎮 played" : r.spectated ? "👀 watched" : r.joined ? "lobby" : "browsed"}</td></tr>`).join("");
+  const sesRecent = (ses.recent || []).map((r) => `<tr><td>${easternTime(num(r.connected_at))}</td><td>${fmtMs(num(r.duration_ms))}</td><td>${esc(r.device)}</td><td>${r.singleplayer ? "🕹️ singleplayer" : r.played ? "🎮 played" : r.spectated ? "👀 watched" : r.joined ? "lobby" : "browsed"}</td></tr>`).join("");
   const b = ses.buckets || {};
   // sessions per day + busiest hour, in Eastern; plus the browse-and-leave drop-off
   const stimes = ses.times || [];
@@ -164,7 +164,7 @@ function histHtml(h, k) {
     <p class="stats"><b>${h.games}</b> games · <b>${h.rounds}</b> rounds · <b>${h.players}</b> unique players · avg game <b>${fmtMs(h.avgDurationMs)}</b></p>
     <div class="pills">${sup}</div>
     <h3>🧑‍💻 Sessions (visits) — when people arrive & how long they stay</h3>
-    <p class="stats"><b>${ses.total || 0}</b> sessions · avg stay <b>${fmtMs(ses.avgMs)}</b> · <b>${ses.played || 0}</b> played a game · <b>${ses.joined || 0}</b> entered a room ·
+    <p class="stats"><b>${ses.total || 0}</b> sessions · avg stay <b>${fmtMs(ses.avgMs)}</b> · <b>${ses.played || 0}</b> played a game · <b>${ses.joined || 0}</b> entered a room · <b>${ses.singleplayer || 0}</b> went to single-player ·
       engagement: ${num(b.bounce)} bounced (&lt;30s) · ${num(b.short)} short (&lt;2m) · ${num(b.med)} medium (&lt;10m) · ${num(b.long)} long (10m+)</p>
     <div class="pills">
       <span class="pill">🚪 <b>${browseOnly}</b> browsed &amp; left without joining (<b>${browsePct}%</b> of visits)</span>
@@ -459,6 +459,7 @@ io.on("connection", (socket) => {
   console.log(`✅ connected: ${socket.id}`);
   online++; broadcastPresence();
   socket.on("latencyPing", (ack) => { if (typeof ack === "function") ack(); }); // RTT probe for the client's "X ms" indicator
+  socket.on("enterSingleplayer", () => { if (socket.data.session) socket.data.session.singleplayer = true; }); // they left the lobby to play the bot
   socket.data.session = { connectedAt: Date.now(), device: deviceOf(socket), joined: false, spectated: false, played: false, name: null };
 
   function doResume(room, pid, ack) {
@@ -642,7 +643,7 @@ io.on("connection", (socket) => {
     console.log(`👋 disconnected: ${socket.id} (${reason})`);
     online = Math.max(0, online - 1); broadcastPresence();
     const sess = socket.data.session; // log the whole visit (records nothing if persistence is off)
-    if (sess) { const end = Date.now(); analytics.recordSession({ connected_at: sess.connectedAt, disconnected_at: end, duration_ms: end - sess.connectedAt, device: sess.device, played: sess.played, joined: sess.joined, spectated: sess.spectated, name: sess.name, reason }); }
+    if (sess) { const end = Date.now(); analytics.recordSession({ connected_at: sess.connectedAt, disconnected_at: end, duration_ms: end - sess.connectedAt, device: sess.device, played: sess.played, joined: sess.joined, spectated: sess.spectated, name: sess.name, reason, singleplayer: sess.singleplayer }); }
     const code = socket.data.roomCode, pid = socket.data.playerId;
     if (!code) return;
     const room = rooms.get(code);

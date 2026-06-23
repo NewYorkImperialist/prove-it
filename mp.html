@@ -101,7 +101,7 @@
   .conn.bad::before { content:"● "; color:var(--bad); }
 
   /* ---------- game screen (matches index.html: top bar + main + sidebar) ---------- */
-  #game { position:fixed; top:0; left:0; width:100%; height:var(--app-height,100dvh); z-index:20; display:grid;
+  #game { position:fixed; top:var(--app-top,0); left:0; width:100%; height:var(--app-height,100dvh); z-index:20; display:grid;
     grid-template-rows:56px 1fr; grid-template-columns:1fr 300px;
     grid-template-areas:"top top" "main side"; background:var(--bg); }
   #topbar { grid-area:top; position:relative; display:flex; align-items:center; gap:18px; padding:0 20px;

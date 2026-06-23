@@ -553,10 +553,17 @@ function updateTimer() {
 // Keep the layout sized to the visible viewport so the mobile keyboard shrinks the
 // feed instead of hiding the header & input bar.
 function setAppHeight() {
-  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-  document.documentElement.style.setProperty("--app-height", h + "px");
+  const vv = window.visualViewport;
+  const h = (vv && vv.height) || window.innerHeight;
+  const top = (vv && vv.offsetTop) || 0; // iOS shifts the visible area down when the keyboard opens
+  const s = document.documentElement.style;
+  s.setProperty("--app-height", h + "px");
+  s.setProperty("--app-top", top + "px");
 }
-if (window.visualViewport) window.visualViewport.addEventListener("resize", setAppHeight);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", setAppHeight);
+  window.visualViewport.addEventListener("scroll", setAppHeight);
+}
 window.addEventListener("resize", setAppHeight);
 window.addEventListener("orientationchange", setAppHeight);
 setAppHeight();

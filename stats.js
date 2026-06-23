@@ -40,7 +40,8 @@ async function init() {
     ], "write");
     // migrate existing tables: mode (mp/sp) + difficulty. ALTER fails harmlessly if the column already exists.
     for (const [t, c] of [["games", "mode TEXT DEFAULT 'mp'"], ["games", "difficulty TEXT"], ["rounds", "mode TEXT DEFAULT 'mp'"],
-      ["rounds", "difficulty TEXT"], ["answers", "mode TEXT DEFAULT 'mp'"], ["events", "mode TEXT DEFAULT 'mp'"], ["sessions", "mode TEXT DEFAULT 'mp'"]]) {
+      ["rounds", "difficulty TEXT"], ["answers", "mode TEXT DEFAULT 'mp'"], ["events", "mode TEXT DEFAULT 'mp'"], ["sessions", "mode TEXT DEFAULT 'mp'"],
+      ["sessions", "singleplayer INTEGER DEFAULT 0"]]) {
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
     console.log("📊 stats: connected to Turso ✓");
@@ -74,8 +75,8 @@ function recordEvent(type, code, detail, mode) {
   fire(`INSERT INTO events (type,code,detail,at,mode) VALUES (?,?,?,?,?)`, [type, code || null, detail || null, Date.now(), mode || "mp"]);
 }
 function recordSession(s) {
-  fire(`INSERT INTO sessions (connected_at,disconnected_at,duration_ms,device,played,joined,spectated,name,reason,mode) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [s.connected_at, s.disconnected_at, s.duration_ms, s.device, s.played ? 1 : 0, s.joined ? 1 : 0, s.spectated ? 1 : 0, s.name || null, s.reason || null, s.mode || "mp"]);
+  fire(`INSERT INTO sessions (connected_at,disconnected_at,duration_ms,device,played,joined,spectated,name,reason,mode,singleplayer) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [s.connected_at, s.disconnected_at, s.duration_ms, s.device, s.played ? 1 : 0, s.joined ? 1 : 0, s.spectated ? 1 : 0, s.name || null, s.reason || null, s.mode || "mp", s.singleplayer ? 1 : 0]);
 }
 
 async function q(sql, args) { if (!client) return []; try { return (await client.execute(args ? { sql, args } : sql)).rows; } catch (e) { console.error("📊 stats read:", e.message); return []; } }
@@ -129,7 +130,7 @@ async function spStats() {
 }
 
 async function sessionStats() {
-  const agg = await one(`SELECT COUNT(*) n, COALESCE(AVG(duration_ms),0) avg, COALESCE(SUM(played),0) played, COALESCE(SUM(joined),0) joined FROM sessions WHERE mode='mp' AND duration_ms IS NOT NULL`);
+  const agg = await one(`SELECT COUNT(*) n, COALESCE(AVG(duration_ms),0) avg, COALESCE(SUM(played),0) played, COALESCE(SUM(joined),0) joined, COALESCE(SUM(singleplayer),0) singleplayer FROM sessions WHERE mode='mp' AND duration_ms IS NOT NULL`);
   const b = await one(`SELECT
       COALESCE(SUM(duration_ms<30000),0) bounce,
       COALESCE(SUM(duration_ms>=30000 AND duration_ms<120000),0) short,
@@ -141,10 +142,11 @@ async function sessionStats() {
     avgMs: agg ? Number(agg.avg) : 0,
     played: agg ? Number(agg.played) : 0,
     joined: agg ? Number(agg.joined) : 0,
+    singleplayer: agg ? Number(agg.singleplayer) : 0,
     buckets: { bounce: Number(b?.bounce || 0), short: Number(b?.short || 0), med: Number(b?.med || 0), long: Number(b?.long || 0) },
     devices: await q(`SELECT device, COUNT(*) n, AVG(duration_ms) avg FROM sessions WHERE mode='mp' AND duration_ms IS NOT NULL GROUP BY device`),
     times: (await q(`SELECT connected_at FROM sessions WHERE mode='mp' ORDER BY id DESC LIMIT 5000`)).map((r) => Number(r.connected_at)),
-    recent: await q(`SELECT connected_at, duration_ms, device, played, joined, spectated, name FROM sessions WHERE mode='mp' ORDER BY id DESC LIMIT 20`),
+    recent: await q(`SELECT connected_at, duration_ms, device, played, joined, spectated, name, singleplayer FROM sessions WHERE mode='mp' ORDER BY id DESC LIMIT 20`),
   };
 }
 

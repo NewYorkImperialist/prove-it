@@ -5,10 +5,17 @@ const socket = io();
 // Keep the in-game layout sized to the *visible* viewport so the mobile keyboard
 // (opened for chat/answers) shrinks the feed instead of hiding the header & input bar.
 function setAppHeight() {
-  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
-  document.documentElement.style.setProperty("--app-height", h + "px");
+  const vv = window.visualViewport;
+  const h = (vv && vv.height) || window.innerHeight;
+  const top = (vv && vv.offsetTop) || 0; // iOS shifts the visible area down when the keyboard opens
+  const s = document.documentElement.style;
+  s.setProperty("--app-height", h + "px");
+  s.setProperty("--app-top", top + "px");
 }
-if (window.visualViewport) window.visualViewport.addEventListener("resize", setAppHeight);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", setAppHeight);
+  window.visualViewport.addEventListener("scroll", setAppHeight);
+}
 window.addEventListener("resize", setAppHeight);
 window.addEventListener("orientationchange", setAppHeight);
 setAppHeight();
@@ -248,7 +255,10 @@ $("spectateBtn").onclick = () => {
     myId = res.you; setRoom(res.code); setSpectator(true); rememberName(nameValue()); show(res.inGame ? "game" : "room");
   });
 };
-$("spBtn").onclick = () => { location.href = "index.html"; };
+$("spBtn").onclick = () => {
+  try { socket.emit("enterSingleplayer"); } catch (e) {}  // tell the server this visit went single-player
+  setTimeout(() => { location.href = "index.html"; }, 90); // small delay so the emit flushes before we navigate
+};
 $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("createBtn").click(); });
 $("name").addEventListener("change", () => rememberName(nameValue()));
 $("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("joinBtn").click(); });

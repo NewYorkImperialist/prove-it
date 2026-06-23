@@ -1,2 +1,5 @@
 .DS_Store
 node_modules/
+
+# UI mockups / design tests — local + Fly only, never on GitHub
+mockup-*.html

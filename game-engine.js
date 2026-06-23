@@ -306,6 +306,10 @@ function handleAnswer(io, room, socket, text, ack) {
       g.proven.push(entry.id);
       log(io, room, socket.data.playerId, me, `${entry.display} ✓ (${total(g)}/${g.claim})`, "ok");
       report(room, "answer", { category: g.current.name, grp: g.current.group, display: entry.display, offList: false });
+      // 🛢️ Strait of Hormuz → rain oil barrels (no points, just chaos).
+      if (g.current.name === "Seas and Oceans" && entry.display === "Strait of Hormuz") {
+        io.to(room.code).emit("easterEgg", { name: me, phrase: entry.display, fx: "oil" });
+      }
       // 🎯 Easter eggs: special answers = +5 bonus points + a party (just for fun).
       const isEgg = (g.current.name === "Video Games" && entry.display === "Prove It!")
                  || (g.current.name === "Famous Mathematicians" && entry.display === "Jayden Lin");

@@ -550,6 +550,20 @@ function updateTimer() {
 }
 
 // One answer per submission — type each out individually and hit Enter.
+function oilRain() {
+  for (let i = 0; i < 44; i++) {
+    const d = document.createElement("div");
+    d.className = "oil-drop";
+    d.textContent = "🛢️";
+    d.style.left = Math.random() * 100 + "vw";
+    d.style.fontSize = (22 + Math.random() * 28) + "px";
+    const dur = 2 + Math.random() * 2.6;
+    d.style.animation = `oilFall ${dur}s linear ${Math.random() * 0.9}s forwards`;
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), (dur + 1.2) * 1000);
+  }
+}
+
 function submitAnswer(p) {
   if (state !== "proving") return;
   // 🇮🇱 Troll easter egg: on US Presidents, "Benjamin Netanyahu" is worth +50 toward the claim.
@@ -572,6 +586,8 @@ function submitAnswer(p) {
     proven.push(entry.id);
     sfx.ding();
     add(`${entry.display} ✓ (${proven.length + bonus}/${claim})`, "ok", "You");
+    // 🛢️ Strait of Hormuz → rain oil barrels.
+    if (current.name === "Seas and Oceans" && entry.display === "Strait of Hormuz") oilRain();
     if (proven.length + bonus >= claim) { endRound(true, "Nailed it!"); return; }
   }
   updateTimer();

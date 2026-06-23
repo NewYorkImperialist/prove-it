@@ -438,7 +438,21 @@ socket.on("gameState", (state) => {
 
 // 🎯 Easter egg: someone answered "Prove It!" in the Video Games round → +5 + a party for everyone.
 function partyCrowns() { document.querySelectorAll(".crown").forEach((el) => { el.classList.remove("party"); void el.offsetWidth; el.classList.add("party"); }); }
+function oilRain() {
+  for (let i = 0; i < 44; i++) {
+    const d = document.createElement("div");
+    d.className = "oil-drop";
+    d.textContent = "🛢️";
+    d.style.left = Math.random() * 100 + "vw";
+    d.style.fontSize = (22 + Math.random() * 28) + "px";
+    const dur = 2 + Math.random() * 2.6;
+    d.style.animation = `oilFall ${dur}s linear ${Math.random() * 0.9}s forwards`;
+    document.body.appendChild(d);
+    setTimeout(() => d.remove(), (dur + 1.2) * 1000);
+  }
+}
 socket.on("easterEgg", ({ name, phrase, fx }) => {
+  if (fx === "oil") { oilRain(); sfx.sparkle(); flashStatus(`🛢️ ${name} said "${phrase}" — oil incoming!`); return; }
   confettiBurst();
   sfx.sparkle();
   if (fx === "crown") {

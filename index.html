@@ -110,6 +110,8 @@
   }
   #banner .label { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); }
   #banner .cat { font-family: var(--display); font-size: 27px; font-weight: 700; letter-spacing: -.5px; margin-top: 5px; }
+  .oil-drop { position: fixed; top: -8vh; z-index: 9999; pointer-events: none; will-change: transform; user-select: none; }
+  @keyframes oilFall { 0% { transform: translateY(-10vh) rotate(0); } 100% { transform: translateY(120vh) rotate(540deg); } }
   #banner .claim { margin-top: 6px; font-size: 14px; color: var(--gold); min-height: 18px; }
 
   #feed {

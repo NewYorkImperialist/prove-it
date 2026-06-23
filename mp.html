@@ -181,6 +181,9 @@
     100%{transform:scale(1) rotate(0)}
   }
 
+  .oil-drop { position:fixed; top:-8vh; z-index:9999; pointer-events:none; will-change:transform; user-select:none; }
+  @keyframes oilFall { 0%{transform:translateY(-10vh) rotate(0)} 100%{transform:translateY(120vh) rotate(540deg)} }
+
   #main { grid-area:main; display:flex; flex-direction:column; min-width:0; min-height:0; overflow:hidden; }
   #banner { margin:16px 20px 0; padding:18px 22px; background:radial-gradient(120% 140% at 0 0,var(--acc-dim),transparent 55%),var(--panel2);
     border:1px solid var(--line); border-radius:14px; }

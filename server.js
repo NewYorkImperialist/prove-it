@@ -42,17 +42,27 @@ function adminData() {
   return [...rooms.values()].map((room) => ({
     code: room.code,
     status: room.game ? "playing" : "waiting",
+    createdAt: room.createdAt || null, lastActivityAt: room.lastActivityAt || null,
     players: [...room.players.values()].map((p) => ({ name: p.name, connected: p.connected, host: p.id === room.hostId })),
     spectators: room.spectators ? room.spectators.size : 0,
     game: gamePeek(room),
   }));
 }
+function fmtDur(ms) {
+  if (ms == null) return "?";
+  const s = Math.floor(ms / 1000); if (s < 60) return s + "s";
+  const m = Math.floor(s / 60); if (m < 60) return m + "m " + (s % 60) + "s";
+  const h = Math.floor(m / 60); return h + "h " + (m % 60) + "m";
+}
+function ownerOk(req) { const key = req.query.key || req.get("x-owner-key"); return process.env.OWNER_KEY && key === process.env.OWNER_KEY; }
+
 app.get("/admin", (req, res) => {
-  const key = req.query.key || req.get("x-owner-key");
-  if (!process.env.OWNER_KEY || key !== process.env.OWNER_KEY) return res.status(404).send("Not found");
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const now = Date.now();
   const list = adminData();
-  if (req.query.json) return res.json({ now: Date.now(), roomCount: list.length, rooms: list });
+  if (req.query.json) return res.json({ now, uptimeMs: now - serverStartedAt, stats, roomCount: list.length, rooms: list });
   const playing = list.filter((r) => r.status === "playing").length;
+  const k = encodeURIComponent(req.query.key || "");
   const card = (r) => {
     const ps = r.players.map((p) => `${esc(p.name)}${p.host ? " 👑" : ""}${p.connected === false ? " (reconnecting…)" : ""}`).join(" vs ") || "—";
     const g = r.game;
@@ -66,8 +76,10 @@ app.get("/admin", (req, res) => {
     ` : `<div class="g">In the waiting room.</div>`;
     return `<div class="card ${r.status}">
       <div class="hd"><span class="code">${esc(r.code)}</span><span class="badge">${r.status === "playing" ? "🟢 playing" : "🟡 lobby"}</span>
-        <a class="watch" href="/?spectate=${encodeURIComponent(r.code)}" target="_blank">👀 watch live</a></div>
+        <a class="watch" href="/?spectate=${encodeURIComponent(r.code)}" target="_blank">👀 watch</a>
+        <a class="close" href="/admin/close?key=${k}&code=${encodeURIComponent(r.code)}" onclick="return confirm('Close room ${esc(r.code)}? This kicks everyone out.')">✕ close</a></div>
       <div class="g players">${ps} &nbsp;·&nbsp; 👀 ${r.spectators}</div>
+      <div class="g meta">age ${fmtDur(now - r.createdAt)} · idle ${fmtDur(now - r.lastActivityAt)}</div>
       ${gameHtml}
     </div>`;
   };
@@ -75,18 +87,29 @@ app.get("/admin", (req, res) => {
     <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="4">
     <title>Prove It! — server</title><style>
     body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-    h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;margin:0 0 18px;font-size:13px}
+    h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;margin:0 0 6px;font-size:13px}
+    .stats{color:#c6ccda;margin:0 0 18px;font-size:13px} .stats b{color:#ffd34d}
     .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
     .card{background:#171a23;border:1px solid #262b38;border-radius:12px;padding:14px}
     .card.playing{border-color:#2e7d52} .hd{display:flex;align-items:center;gap:10px;margin-bottom:8px}
     .code{font-weight:900;font-size:22px;letter-spacing:3px;color:#ffd34d}
     .badge{font-size:12px;color:#8a92a6} .watch{margin-left:auto;color:#5b8cff;text-decoration:none;font-weight:700;font-size:13px}
-    .watch:hover{text-decoration:underline} .g{font-size:13px;color:#c6ccda;margin:3px 0} .g.players{color:#fff;font-weight:600}
+    .close{color:#e5484d;text-decoration:none;font-weight:700;font-size:13px} .watch:hover,.close:hover{text-decoration:underline}
+    .g{font-size:13px;color:#c6ccda;margin:3px 0} .g.players{color:#fff;font-weight:600} .g.meta{color:#6b7382;font-size:12px}
     .g.pend{color:#ffb454} b{color:#fff}</style></head>
     <body><h1>🎯 Prove It! — live server</h1>
     <p class="sub">${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${new Date().toISOString()}</p>
+    <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
     <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
     </body></html>`);
+});
+
+// Owner closes a room (kicks everyone, clears timers). Redirects back to the dashboard.
+app.get("/admin/close", (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const code = String(req.query.code || "").toUpperCase().trim();
+  closeRoom(code);
+  res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));
 });
 
 app.use(express.static(path.join(__dirname)));
@@ -98,6 +121,9 @@ app.use(express.static(path.join(__dirname)));
 const rooms = new Map();
 const MAX_PLAYERS = 2;
 const GRACE_MS = 30000; // time to reconnect before forfeiting
+const serverStartedAt = Date.now();
+const stats = { roomsCreated: 0, gamesStarted: 0, peakRooms: 0 }; // resets on server restart (no DB)
+function touch(room) { if (room) room.lastActivityAt = Date.now(); } // mark recent activity for the idle clock
 
 function makeCode() {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -123,7 +149,7 @@ function roomState(room) {
     spectators: room.spectators ? [...room.spectators.values()].map((s) => ({ id: s.id, name: s.name })) : [],
   };
 }
-function broadcast(room) { io.to(room.code).emit("roomState", roomState(room)); }
+function broadcast(room) { touch(room); io.to(room.code).emit("roomState", roomState(room)); }
 
 function attach(room, socket, playerId) {
   const p = room.players.get(playerId);
@@ -146,6 +172,19 @@ function removePlayer(room, playerId) {
   if (room.hostId === playerId) room.hostId = [...room.players.keys()][0];
   if (wasInGame) engine.endGameForLeaver(io, room, playerId);
   broadcast(room);
+}
+
+// Owner-forced room shutdown: tell everyone, drop timers, evict sockets, delete the room.
+function closeRoom(code) {
+  const room = rooms.get(code);
+  if (!room) return false;
+  if (room.game?.timeout) clearTimeout(room.game.timeout);
+  if (room.graceTimeout) clearTimeout(room.graceTimeout);
+  io.to(code).emit("roomClosed");
+  io.in(code).socketsLeave(code);
+  rooms.delete(code);
+  console.log(`🛑 room ${code} closed by owner`);
+  return true;
 }
 
 function leaveCurrentRoom(socket) {
@@ -175,11 +214,13 @@ io.on("connection", (socket) => {
     leaveCurrentRoom(socket);
     const code = makeCode();
     const pid = playerId || genId();
+    const now = Date.now();
     const room = { code, hostId: pid, status: "waiting",
       settings: { groups: [...DEFAULT_GROUPS], timer: 30, target: 5, autoAdvance: true },
-      players: new Map(), spectators: new Map(), graceTimeout: null };
+      players: new Map(), spectators: new Map(), graceTimeout: null, createdAt: now, lastActivityAt: now };
     room.players.set(pid, { id: pid, name: cleanName(name), socketId: socket.id, connected: true });
     rooms.set(code, room);
+    stats.roomsCreated++; stats.peakRooms = Math.max(stats.peakRooms, rooms.size);
     attach(room, socket, pid);
     console.log(`🏠 room ${code} created`);
     ack?.({ ok: true, code, you: pid });
@@ -283,6 +324,7 @@ io.on("connection", (socket) => {
     if (room.hostId !== socket.data.playerId) return ack?.({ ok: false, error: "Only the host can start." });
     if (room.players.size < MAX_PLAYERS) return ack?.({ ok: false, error: "Need 2 players to start." });
     room.status = "started";
+    stats.gamesStarted++;
     console.log(`▶️ room ${room.code} started`);
     ack?.({ ok: true });
     engine.startMatch(io, room);
@@ -292,7 +334,7 @@ io.on("connection", (socket) => {
   // Game actions are players-only — spectators (not in room.players) are silently ignored.
   const withGame = (fn) => (...args) => {
     const room = rooms.get(socket.data.roomCode);
-    if (room && room.game && !room.game.paused && room.players.has(socket.data.playerId)) fn(room, ...args);
+    if (room && room.game && !room.game.paused && room.players.has(socket.data.playerId)) { touch(room); fn(room, ...args); }
   };
   socket.on("open", withGame((room, { n } = {}, ack) => engine.handleOpen(io, room, socket, n, ack)));
   socket.on("raise", withGame((room, { toN } = {}, ack) => engine.handleRaise(io, room, socket, toN, ack)));

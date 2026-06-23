@@ -362,6 +362,12 @@ socket.on("opponentLeft", ({ name }) => {
   show("room");
 });
 
+socket.on("roomClosed", () => {
+  gs = null; setRoom(null);
+  show("home");
+  $("homeErr").textContent = "This room was closed.";
+});
+
 let prevPhase = null, prevTurnMine = false;
 socket.on("gameState", (state) => {
   const phaseChanged = state.phase !== prevPhase;

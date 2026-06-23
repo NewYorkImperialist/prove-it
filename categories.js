@@ -570,6 +570,25 @@ const CATEGORY_GROUPS = {
       ["Louis the Great","louis the great","louis i of hungary"], ["Llywelyn the Great","llywelyn the great","llywelyn"], ["Tigranes the Great","tigranes the great","tigranes ii"],
       ["Sweyn","sweyn forkbeard","sweyn"],
     ]},
+    { name: "Historical Empires", items: [
+      ["Roman Empire","roman empire","rome"], ["British Empire","british empire"], ["Mongol Empire","mongol empire","mongols"], ["Ottoman Empire","ottoman empire","ottomans"],
+      ["Byzantine Empire","byzantine empire","byzantium"], ["Persian Empire","persian empire","persia"], ["Spanish Empire","spanish empire"], ["Portuguese Empire","portuguese empire"],
+      ["French Empire","french empire"], ["Russian Empire","russian empire"], ["Austro-Hungarian Empire","austro-hungarian empire","austria-hungary"], ["Holy Roman Empire","holy roman empire"],
+      ["Aztec Empire","aztec empire","aztecs"], ["Inca Empire","inca empire","incas"], ["Mughal Empire","mughal empire","mughals"], ["Maurya Empire","maurya empire","mauryan empire"],
+      ["Gupta Empire","gupta empire"], ["Akkadian Empire","akkadian empire","akkad"], ["Babylonian Empire","babylonian empire","babylon"], ["Assyrian Empire","assyrian empire","assyria"],
+      ["Macedonian Empire","macedonian empire","macedon"], ["Carthaginian Empire","carthaginian empire","carthage"], ["Han Dynasty","han dynasty"], ["Ming Dynasty","ming dynasty"],
+      ["Qing Dynasty","qing dynasty"], ["Tang Dynasty","tang dynasty"], ["Achaemenid Empire","achaemenid empire","achaemenid"], ["Sassanid Empire","sassanid empire","sassanid"],
+      ["Umayyad Caliphate","umayyad caliphate","umayyad"], ["Abbasid Caliphate","abbasid caliphate","abbasid"], ["Japanese Empire","japanese empire","empire of japan"], ["German Empire","german empire"],
+      ["Mali Empire","mali empire"], ["Songhai Empire","songhai empire"], ["Khmer Empire","khmer empire"], ["Dutch Empire","dutch empire"],
+    ]},
+    { name: "Former Colonies of the British Empire", items: [
+      ["United States","united states","usa","america","us"], "India", "Canada", "Australia", ["New Zealand","new zealand"], ["South Africa","south africa"],
+      "Nigeria", "Kenya", "Egypt", "Ghana", "Jamaica", ["Hong Kong","hong kong"], "Singapore", "Malaysia", "Pakistan", "Bangladesh",
+      ["Sri Lanka","sri lanka","ceylon"], "Ireland", ["Myanmar","myanmar","burma"], "Sudan", "Zimbabwe", ["Rhodesia","rhodesia"], "Uganda", "Tanzania",
+      "Cyprus", "Malta", "Fiji", ["Trinidad and Tobago","trinidad and tobago","trinidad"], "Barbados", ["Bahamas","bahamas","the bahamas"], "Belize", "Guyana",
+      "Kuwait", "Iraq", "Jordan", "Zambia", "Botswana", ["Sierra Leone","sierra leone"], ["Gambia","gambia","the gambia"], "Malawi", "Brunei",
+      "Bahrain", "Qatar", ["United Arab Emirates","united arab emirates","uae"], ["Papua New Guinea","papua new guinea"], "Gibraltar",
+    ]},
   ]},
   Entertainment: { emoji: "🎬", cats: [
     { name: "Minecraft Blocks", items: [
@@ -926,6 +945,19 @@ const CATEGORY_GROUPS = {
       ["Reese's Puffs","reese's puffs","reeses puffs"], ["Apple Jacks","apple jacks"], ["Corn Pops","corn pops"], "Kix", ["Life","life cereal","life"],
       ["Grape-Nuts","grape-nuts","grape nuts"], ["Shredded Wheat","shredded wheat"], "Chex", ["Fruity Pebbles","fruity pebbles"], ["Cocoa Pebbles","cocoa pebbles"],
       ["Count Chocula","count chocula"], ["Honey Smacks","honey smacks","smacks"], "Total",
+    ]},
+    { name: "Ways to Cook an Egg", items: [
+      "Scrambled", "Fried", "Poached", ["Hard-boiled","hard-boiled","hard boiled"], ["Soft-boiled","soft-boiled","soft boiled"], ["Sunny-side Up","sunny-side up","sunny side up"],
+      ["Over Easy","over easy"], ["Over Medium","over medium"], ["Over Hard","over hard"], "Omelette", "Baked", "Coddled", "Shirred", "Basted", "Steamed",
+      "Deviled", "Pickled", "Frittata", ["Scotch Egg","scotch egg"], ["Eggs Benedict","eggs benedict","benedict"], ["Soufflé","souffle","soufflé"], "Quiche",
+      ["Tea Egg","tea egg"], ["Egg Drop","egg drop"], ["Century Egg","century egg"], ["Egg Salad","egg salad"],
+    ]},
+    { name: "Cuts of Steak", items: [
+      "Ribeye", "Sirloin", ["Filet Mignon","filet mignon","filet"], ["T-bone","t-bone","t bone"], "Porterhouse", ["New York Strip","new york strip","ny strip","strip steak"],
+      ["Flank","flank","flank steak"], ["Skirt","skirt","skirt steak"], ["Flat Iron","flat iron"], ["Hanger","hanger","hanger steak"], "Tomahawk", ["Tri-tip","tri-tip","tri tip"],
+      ["Chuck","chuck","chuck steak"], "Brisket", ["Short Rib","short rib","short ribs"], ["Top Round","top round"], ["Bottom Round","bottom round"], ["Rump","rump","rump steak"],
+      "Picanha", ["Denver","denver","denver steak"], ["Prime Rib","prime rib"], "Tenderloin", ["Flap Steak","flap steak","flap meat"], ["Cube Steak","cube steak"],
+      ["London Broil","london broil"], "Bavette", "Chateaubriand", "Delmonico", ["Sirloin Tip","sirloin tip"],
     ]},
   ]},
   Animals: { emoji: "🐾", cats: [

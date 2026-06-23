@@ -181,19 +181,14 @@
   .mplink:hover { color: var(--accent); }
   #setup p.sub { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
   #setup .group-title { font-size: 12px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 18px 0 8px; }
-  .checks {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-    max-height: 196px; overflow-y: auto; padding: 2px; margin: 0 -2px;
-  }
-  .checks::-webkit-scrollbar { width: 8px; }
-  .checks::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; max-height: 160px; overflow-y: auto; }
   .check {
     display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line);
     border-radius: 10px; cursor: pointer; background: var(--panel2); user-select: none; transition: .12s; font-family: var(--ui);
   }
   .check:hover { border-color: var(--accent); }
   .check.on { border-color: var(--accent); background: var(--acc-dim); }
-  .check input { accent-color: var(--accent); width: 16px; height: 16px; }
+  .check input { width: 16px; height: 16px; padding: 0; margin: 0; border: none; background: transparent; accent-color: var(--accent); }
   .check .emoji { font-size: 18px; }
   .check span:last-child { font-size: 14px; }
   .seg { display: flex; gap: 8px; }
@@ -324,7 +319,7 @@
     <div class="seg" id="diffSeg"></div>
 
     <div class="modes">
-      <button id="startBtn">🎮 Start Singleplayer</button>
+      <button id="startBtn">Start Singleplayer</button>
     </div>
 
     <p class="credit">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></p>

@@ -151,7 +151,7 @@ function buildSetup() {
 
   const diff = $("diffSeg");
   diff.innerHTML = "";
-  [["easy", "😌 Easy"], ["medium", "🙂 Medium"], ["hard", "😤 Hard"]].forEach(([key, label]) => {
+  [["easy", "Easy"], ["medium", "Medium"], ["hard", "Hard"]].forEach(([key, label]) => {
     const b = document.createElement("button");
     b.textContent = label;
     if (key === difficulty) b.classList.add("on");

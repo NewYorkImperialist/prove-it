@@ -42,7 +42,7 @@ function buildPool(settings) {
 
 // ---------- small utilities ----------
 const other = (g, id) => g.order.find((x) => x !== id);
-const total = (g) => g.proven.length + (g.granted ? g.granted.length : 0); // listed + opponent-granted
+const total = (g) => g.proven.length + (g.granted ? g.granted.length : 0) + (g.bonus || 0); // listed + opponent-granted + bonus
 function clearTimer(room) {
   if (room.game?.timeout) { clearTimeout(room.game.timeout); room.game.timeout = null; }
 }
@@ -245,7 +245,7 @@ function startProving(io, room, challengerId) {
   const proverId = g.holderId;
   g.phase = "proving"; g.turnId = proverId; g.challengerId = challengerId;
   g.proven = []; g.granted = []; g.pending = new Map(); g.answerSeq = 0; g.lastAnswerAt = 0;
-  g.judgeQueue = []; g.judgeActive = null; g.offListCount = 0;
+  g.judgeQueue = []; g.judgeActive = null; g.offListCount = 0; g.bonus = 0;
   log(io, room, challengerId, g.names[challengerId], `Prove it! ${g.names[proverId]}, name ${g.claim}.`);
   setTimer(room, g.timer * 1000, () => onProveTimeout(io, room));
   emit(io, room);
@@ -287,6 +287,16 @@ function handleAnswer(io, room, socket, text, ack) {
   if (g.lastAnswerAt && now - g.lastAnswerAt < ANSWER_COOLDOWN_MS) return ack?.({ ok: false, reason: "cooldown" });
   g.lastAnswerAt = now;
   const me = g.names[socket.data.playerId];
+
+  // 🇮🇱 Troll easter egg: on US Presidents, "Benjamin Netanyahu" is worth +50 toward the claim.
+  if (g.current.name === "US Presidents" && ["benjamin netanyahu", "netanyahu", "bibi"].includes(norm(text))) {
+    g.bonus = (g.bonus || 0) + 50;
+    log(io, room, socket.data.playerId, me, `Benjamin Netanyahu ✓✓✓ +50! (${total(g)}/${g.claim})`, "ok");
+    if (total(g) >= g.claim) { ack?.({ ok: true }); return roundOver(io, room, socket.data.playerId, "Nailed it!"); }
+    ack?.({ ok: true });
+    return emit(io, room);
+  }
+
   const entry = resolve(g.current, text);
 
   if (entry) {

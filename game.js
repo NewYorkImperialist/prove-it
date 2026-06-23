@@ -28,6 +28,7 @@ let scoreMe = 0, scoreBot = 0;
 let timerId = null, timeLeft = 0;      // prove-phase countdown
 let reactId = null, reactLeft = 0;     // 10s timer for your turn (open / raise / call)
 let proven = [];           // canonical entry ids correctly named this round
+let bonus = 0;             // extra credited guesses this round (troll easter egg)
 let lastCatName = null;    // last category, to avoid an immediate repeat after a reset
 let usedNames = [];        // categories already played this match (no repeats until exhausted)
 let difficulty = "medium"; // bot difficulty: easy | medium | hard
@@ -523,6 +524,7 @@ function startProving() {
   if (state === "gameover" || state === "over") return;  // guard against late calls
   state = "proving";
   proven = [];
+  bonus = 0;
   timeLeft = timerLength;
   setTurn("me");
   setActions([{ label: "🏳️ Give up", cls: "danger", onClick: giveUp }]);
@@ -539,7 +541,7 @@ function startProving() {
 
 function updateTimer() {
   if (state === "proving") {
-    timerEl.textContent = `⏱ ${timeLeft}s · ${proven.length}/${claim}`;
+    timerEl.textContent = `⏱ ${timeLeft}s · ${proven.length + bonus}/${claim}`;
     timerEl.classList.toggle("danger", timeLeft <= 10);
   } else {
     timerEl.textContent = "";
@@ -550,6 +552,15 @@ function updateTimer() {
 // One answer per submission — type each out individually and hit Enter.
 function submitAnswer(p) {
   if (state !== "proving") return;
+  // 🇮🇱 Troll easter egg: on US Presidents, "Benjamin Netanyahu" is worth +50 toward the claim.
+  if (current.name === "US Presidents" && ["benjamin netanyahu", "netanyahu", "bibi"].includes(norm(p))) {
+    bonus += 50;
+    sfx.ding();
+    add(`Benjamin Netanyahu ✓✓✓ +50! (${proven.length + bonus}/${claim})`, "ok", "You");
+    if (proven.length + bonus >= claim) { endRound(true, "Nailed it!"); return; }
+    updateTimer();
+    return;
+  }
   const entry = resolve(current, p);
   if (!entry) {
     sfx.buzz();
@@ -560,8 +571,8 @@ function submitAnswer(p) {
   } else {
     proven.push(entry.id);
     sfx.ding();
-    add(`${entry.display} ✓ (${proven.length}/${claim})`, "ok", "You");
-    if (proven.length >= claim) { endRound(true, "Nailed it!"); return; }
+    add(`${entry.display} ✓ (${proven.length + bonus}/${claim})`, "ok", "You");
+    if (proven.length + bonus >= claim) { endRound(true, "Nailed it!"); return; }
   }
   updateTimer();
 }
@@ -586,7 +597,7 @@ function endRound(won, reason, opts = {}) {
   updateTimer();
   setTurn(null);
   (won ? sfx.roundWin : sfx.roundLose)();
-  const count = opts.skipCount ? "" : ` ${proven.length}/${claim}.`;
+  const count = opts.skipCount ? "" : ` ${proven.length + bonus}/${claim}.`;
   if (won) {
     scoreMe++;
     add(`${reason}${count} 🎉 Point for you!`, "bot", "Bot");

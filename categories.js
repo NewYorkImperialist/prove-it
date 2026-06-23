@@ -547,6 +547,29 @@ const CATEGORY_GROUPS = {
       ["Princess Lilibet","princess lilibet","lilibet","lili"], ["The Queen Mother","the queen mother","queen mother"], ["Princess Margaret","princess margaret","margaret"],
       ["Zara Tindall","zara tindall","zara"], ["Peter Phillips","peter phillips"], ["Mike Tindall","mike tindall"],
     ]},
+    { name: "Popes", items: [
+      ["Pope Francis","pope francis","francis"], ["Pope Leo XIV","pope leo xiv","leo xiv"], ["Pope Benedict XVI","pope benedict xvi","benedict xvi"],
+      ["Pope John Paul II","pope john paul ii","john paul ii","jp2"], ["Pope John Paul I","pope john paul i","john paul i"], ["Pope Paul VI","pope paul vi","paul vi"],
+      ["Pope John XXIII","pope john xxiii","john xxiii"], ["Pope Pius XII","pope pius xii","pius xii"], ["Pope Pius XI","pope pius xi","pius xi"], ["Pope Pius X","pope pius x","pius x"],
+      ["Pope Leo XIII","pope leo xiii","leo xiii"], ["Pope Pius IX","pope pius ix","pius ix"], ["Pope Gregory I","pope gregory i","gregory i","gregory the great"],
+      ["Pope Leo I","pope leo i","leo i","leo the great"], ["Pope Urban II","pope urban ii","urban ii"], ["Pope Innocent III","pope innocent iii","innocent iii"],
+      ["Pope Boniface VIII","pope boniface viii","boniface viii"], ["Pope Alexander VI","pope alexander vi","alexander vi","borgia"], ["Pope Julius II","pope julius ii","julius ii"],
+      ["Pope Clement VII","pope clement vii","clement vii"], ["Pope Gregory VII","pope gregory vii","gregory vii"], ["Saint Peter","saint peter","st peter","peter"],
+      ["Pope Sylvester I","pope sylvester i","sylvester i"], ["Pope Pius V","pope pius v","pius v"], ["Pope Urban VIII","pope urban viii","urban viii"],
+      ["Pope Sixtus IV","pope sixtus iv","sixtus iv"], ["Pope Celestine V","pope celestine v","celestine v"], ["Pope Clement V","pope clement v","clement v"],
+      ["Pope Nicholas V","pope nicholas v","nicholas v"], ["Pope Adrian VI","pope adrian vi","adrian vi"],
+    ]},
+    { name: "Monarchs Called \"the Great\"", items: [
+      ["Alexander the Great","alexander the great","alexander"], ["Catherine the Great","catherine the great","catherine ii"], ["Peter the Great","peter the great","peter i"],
+      ["Frederick the Great","frederick the great","frederick ii"], ["Charlemagne","charlemagne","charles the great","charles i"], ["Alfred the Great","alfred the great","alfred"],
+      ["Cyrus the Great","cyrus the great","cyrus ii"], ["Constantine the Great","constantine the great","constantine i"], ["Ramesses the Great","ramesses the great","ramesses ii","rameses the great"],
+      ["Darius the Great","darius the great","darius i"], ["Ashoka the Great","ashoka the great","ashoka"], ["Herod the Great","herod the great","herod"],
+      ["Canute the Great","canute the great","cnut the great","knut the great"], ["Sargon the Great","sargon the great","sargon of akkad"], ["Kamehameha the Great","kamehameha the great","kamehameha i"],
+      ["Casimir the Great","casimir the great","casimir iii"], ["Otto the Great","otto the great","otto i"], ["Pompey the Great","pompey the great","pompey"],
+      ["Antiochus the Great","antiochus the great","antiochus iii"], ["Theodoric the Great","theodoric the great","theodoric"], ["Mithridates the Great","mithridates the great","mithridates vi"],
+      ["Louis the Great","louis the great","louis i of hungary"], ["Llywelyn the Great","llywelyn the great","llywelyn"], ["Tigranes the Great","tigranes the great","tigranes ii"],
+      ["Sweyn","sweyn forkbeard","sweyn"],
+    ]},
   ]},
   Entertainment: { emoji: "🎬", cats: [
     { name: "Minecraft Blocks", items: [
@@ -1206,6 +1229,16 @@ const CATEGORY_GROUPS = {
       ["Tiffany & Co","tiffany & co","tiffany","tiffany and co"], "Balenciaga", "Fendi", "Givenchy", ["Armani","armani","giorgio armani"], "Valentino", ["Bvlgari","bvlgari","bulgari"],
       ["Saint Laurent","saint laurent","ysl"], ["Dolce & Gabbana","dolce & gabbana","dolce and gabbana","d&g"], ["Bottega Veneta","bottega veneta"], "Montblanc", "Omega", ["Patek Philippe","patek philippe","patek"],
     ]},
+    { name: "Financial Companies", items: [
+      ["JPMorgan Chase","jpmorgan chase","jpmorgan","jp morgan","chase"], ["Goldman Sachs","goldman sachs","goldman"], ["Morgan Stanley","morgan stanley"],
+      ["Bank of America","bank of america","bofa","boa"], ["Wells Fargo","wells fargo"], ["Citigroup","citigroup","citi","citibank"], ["Visa","visa"], ["Mastercard","mastercard"],
+      ["American Express","american express","amex"], ["Berkshire Hathaway","berkshire hathaway","berkshire"], ["BlackRock","blackrock"], ["Vanguard","vanguard"],
+      ["Fidelity","fidelity"], ["Charles Schwab","charles schwab","schwab"], ["Capital One","capital one"], ["PayPal","paypal"], ["Block","block","square"], ["Stripe","stripe"],
+      ["Robinhood","robinhood"], ["Coinbase","coinbase"], ["HSBC","hsbc"], ["Barclays","barclays"], ["Deutsche Bank","deutsche bank"], ["UBS","ubs"],
+      ["PNC","pnc","pnc bank"], ["TD Bank","td bank","td"], ["US Bank","us bank","u.s. bancorp","us bancorp"], ["BNP Paribas","bnp paribas","bnp"], ["Santander","santander"],
+      ["Allianz","allianz"], ["Prudential","prudential"], ["MetLife","metlife"], ["AIG","aig"], ["Moody's","moody's","moodys"], ["S&P Global","s&p global","s&p","standard and poors"],
+      ["Nasdaq","nasdaq"], ["Discover","discover"], ["Western Union","western union"], ["Fannie Mae","fannie mae"], ["Freddie Mac","freddie mac"],
+    ]},
   ]},
   "Computer Science": { emoji: "💻", cats: [
     { name: "macOS Version Names", items: [
@@ -1313,6 +1346,14 @@ const CATEGORY_GROUPS = {
       ["Sonic the Hedgehog","sonic the hedgehog","sonic"], ["The Loneliest Number","the loneliest number","loneliest number"], ["Metronome","metronome"],
       ["Spinner","spinner","fidget spinner"], ["Tic Tac Toe","tic tac toe"], ["Snake Game","snake game","snake"], ["Minesweeper","minesweeper"], ["Solitaire","solitaire"],
       ["Flip a Coin","flip a coin"], ["Roll a Die","roll a die","roll a dice"], ["Bletchley Park","bletchley park"], ["Google Gravity","google gravity"], ["Dreidel","dreidel"],
+    ]},
+    { name: "AI Chatbots and Assistants", items: [
+      ["ChatGPT","chatgpt","chat gpt","gpt"], ["Claude","claude"], ["Gemini","gemini","google gemini","bard"], ["Copilot","copilot","github copilot","microsoft copilot"],
+      ["Grok","grok"], ["Llama","llama","meta llama"], ["Perplexity","perplexity"], ["DeepSeek","deepseek"], ["Mistral","mistral","le chat"], ["Meta AI","meta ai"],
+      ["Bing Chat","bing chat","bing"], ["Siri","siri"], ["Alexa","alexa"], ["Google Assistant","google assistant"], ["Cortana","cortana"], ["Watson","watson","ibm watson"],
+      ["Character.AI","character.ai","character ai","c.ai"], ["Pi","pi","inflection pi"], ["Jasper","jasper"], ["Replika","replika"], ["Bixby","bixby"], ["Qwen","qwen"],
+      ["Ernie Bot","ernie bot","ernie"], ["ChatGLM","chatglm"], ["Poe","poe"], ["HuggingChat","huggingchat","hugging chat"], ["You.com","you.com","youchat"],
+      ["Midjourney","midjourney"], ["DALL-E","dall-e","dalle","dall e"], ["Sora","sora"],
     ]},
   ]},
   Math: { emoji: "➗", cats: [

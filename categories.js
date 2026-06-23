@@ -404,6 +404,9 @@ const CATEGORY_GROUPS = {
       ["National Mall","national mall"], ["Universal Studios","universal studios"], ["Mall of America","mall of america"], ["Willis Tower","willis tower","sears tower"], ["One World Trade Center","one world trade center","freedom tower"],
       ["Pearl Harbor","pearl harbor"], "Graceland", ["Kennedy Space Center","kennedy space center"], "Zion", ["Death Valley","death valley"], ["Bourbon Street","bourbon street"],
     ]},
+    { name: "Cities Mistaken for Australia's Capital", items: [
+      "Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", ["Gold Coast","gold coast"], "Newcastle", "Hobart", "Darwin", "Cairns",
+    ]},
   ]},
   History: { emoji: "🏛️", cats: [
     { name: "Soviet Leaders", items: [
@@ -625,6 +628,16 @@ const CATEGORY_GROUPS = {
       ["Byzantine Empire","byzantine empire","byzantium","eastern roman empire"], ["Holy Roman Empire","holy roman empire","hre"], ["Ottoman Empire","ottoman empire","ottomans"], ["Russian Empire","russian empire","third rome","tsardom of russia"],
       ["Carolingian Empire","carolingian empire","frankish empire","franks"], ["Bulgarian Empire","bulgarian empire","bulgaria"], ["Serbian Empire","serbian empire","serbia"], ["Latin Empire","latin empire"],
       ["Empire of Nicaea","empire of nicaea","nicaea"], ["Empire of Trebizond","empire of trebizond","trebizond"], ["German Empire","german empire","second reich","kaiserreich"], ["Austrian Empire","austrian empire","habsburg empire","habsburgs"],
+    ]},
+    { name: "British Prime Ministers", items: [
+      ["Robert Walpole","robert walpole","walpole"], ["William Pitt the Younger","william pitt the younger","pitt the younger"], ["William Pitt the Elder","william pitt the elder","pitt the elder"],
+      ["Duke of Wellington","duke of wellington","wellington"], ["Robert Peel","robert peel","peel"], ["Benjamin Disraeli","benjamin disraeli","disraeli"], ["William Gladstone","william gladstone","gladstone"],
+      ["Lord Salisbury","lord salisbury","salisbury"], ["Herbert Asquith","herbert asquith","asquith"], ["David Lloyd George","david lloyd george","lloyd george"], ["Stanley Baldwin","stanley baldwin","baldwin"],
+      ["Ramsay MacDonald","ramsay macdonald","macdonald"], ["Neville Chamberlain","neville chamberlain","chamberlain"], ["Winston Churchill","winston churchill","churchill"], ["Clement Attlee","clement attlee","attlee"],
+      ["Anthony Eden","anthony eden","eden"], ["Harold Macmillan","harold macmillan","macmillan"], ["Alec Douglas-Home","alec douglas-home","douglas-home"], ["Harold Wilson","harold wilson","wilson"],
+      ["Edward Heath","edward heath","heath"], ["James Callaghan","james callaghan","callaghan"], ["Margaret Thatcher","margaret thatcher","thatcher"], ["John Major","john major","major"],
+      ["Tony Blair","tony blair","blair"], ["Gordon Brown","gordon brown","brown"], ["David Cameron","david cameron","cameron"], ["Theresa May","theresa may"], ["Boris Johnson","boris johnson","boris"],
+      ["Liz Truss","liz truss","truss"], ["Rishi Sunak","rishi sunak","sunak"], ["Keir Starmer","keir starmer","starmer"], "Vacant",
     ]},
   ]},
   Entertainment: { emoji: "🎬", cats: [
@@ -1546,6 +1559,13 @@ const CATEGORY_GROUPS = {
       ["Four Color Theorem","four color theorem"], ["Euclid's Theorem","euclid's theorem","euclid"], ["Bolzano-Weierstrass Theorem","bolzano-weierstrass theorem","bolzano weierstrass"],
       ["Rolle's Theorem","rolle's theorem","rolles theorem"], ["Chinese Remainder Theorem","chinese remainder theorem","crt"], ["Cauchy's Theorem","cauchy's theorem","cauchy"], ["Taylor's Theorem","taylor's theorem","taylor"],
     ]},
+    { name: "Counting Numbers", items: [
+      "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+      "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+      "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
+      "31", "32", "33", "34", "35", "36", "37", "38", "39", "40",
+      "41", "42", "43", "44", "45", "46", "47", "48", "49", "50",
+    ]},
   ]},
   Science: { emoji: "🔬", cats: [
     { name: "Human Body Organs", items: [
@@ -1852,6 +1872,12 @@ const CATEGORY_GROUPS = {
       ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"],
       ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"],
     ]},
+    { name: "Seasons of the Year", exact: true, items: [
+      "Spring", "Summer", ["Fall","fall","autumn"], "Winter",
+    ]},
+    { name: "Months of the Year", exact: true, items: [
+      "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
+    ]},
   ]},
   Mythology: { emoji: "🔱", cats: [
     { name: "Religions", items: [
@@ -1931,24 +1957,6 @@ const CATEGORY_GROUPS = {
       ["Junk Junction","junk junction"], ["Frosty Flights","frosty flights"], ["Polar Peak","polar peak"], ["Happy Hamlet","happy hamlet"], ["Mega Mall","mega mall"],
       ["Sweaty Sands","sweaty sands"], ["Holly Hedges","holly hedges"], ["Slurpy Swamp","slurpy swamp"], ["Misty Meadows","misty meadows"], ["Steamy Stacks","steamy stacks"],
       ["Craggy Cliffs","craggy cliffs"], ["Catty Corner","catty corner"], ["Coral Castle","coral castle"], ["Weeping Woods","weeping woods"], ["Lazy Lake","lazy lake"],
-    ]},
-  ]},
-  "Just for Fun": { emoji: "🎈", cats: [
-    { name: "Seasons of the Year", exact: true, items: [
-      "Spring", "Summer", ["Fall","fall","autumn"], "Winter",
-    ]},
-    { name: "Months of the Year", exact: true, items: [
-      "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
-    ]},
-    { name: "Counting Numbers", items: [
-      "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
-      "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
-      "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
-      "31", "32", "33", "34", "35", "36", "37", "38", "39", "40",
-      "41", "42", "43", "44", "45", "46", "47", "48", "49", "50",
-    ]},
-    { name: "Cities Mistaken for Australia's Capital", items: [
-      "Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", ["Gold Coast","gold coast"], "Newcastle", "Hobart", "Darwin", "Cairns",
     ]},
   ]},
   // 🤫 Personal category — OFF by default (defaultOff). Friends guess facts about you.

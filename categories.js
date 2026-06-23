@@ -535,6 +535,18 @@ const CATEGORY_GROUPS = {
       ["George III","george iii"], ["George IV","george iv"], ["William IV","william iv"], ["Queen Victoria","queen victoria","victoria"], ["Edward VII","edward vii"],
       ["George V","george v"], ["Edward VIII","edward viii"], ["George VI","george vi"], ["Elizabeth II","elizabeth ii","queen elizabeth"], ["King Charles III","king charles iii","charles iii"],
     ]},
+    { name: "British Royal Family Members", items: [
+      ["Queen Elizabeth II","queen elizabeth ii","queen elizabeth","elizabeth ii","the queen"], ["Prince Philip","prince philip","philip","duke of edinburgh"],
+      ["King Charles III","king charles iii","king charles","charles iii","prince charles"], ["Camilla","camilla","queen camilla","camilla parker bowles"],
+      ["Princess Diana","princess diana","diana","lady diana","princess di"], ["Prince William","prince william","william","prince of wales"],
+      ["Kate Middleton","kate middleton","kate","catherine","princess of wales","duchess of cambridge"], ["Prince Harry","prince harry","harry","duke of sussex"],
+      ["Meghan Markle","meghan markle","meghan","duchess of sussex"], ["Prince George","prince george","george"], ["Princess Charlotte","princess charlotte","charlotte"],
+      ["Prince Louis","prince louis","louis"], ["Prince Andrew","prince andrew","andrew","duke of york"], ["Sarah Ferguson","sarah ferguson","fergie"],
+      ["Princess Beatrice","princess beatrice","beatrice"], ["Princess Eugenie","princess eugenie","eugenie"], ["Prince Edward","prince edward","edward","duke of edinburgh"],
+      ["Sophie","sophie","duchess of edinburgh","countess of wessex"], ["Princess Anne","princess anne","anne","princess royal"], ["Prince Archie","prince archie","archie"],
+      ["Princess Lilibet","princess lilibet","lilibet","lili"], ["The Queen Mother","the queen mother","queen mother"], ["Princess Margaret","princess margaret","margaret"],
+      ["Zara Tindall","zara tindall","zara"], ["Peter Phillips","peter phillips"], ["Mike Tindall","mike tindall"],
+    ]},
   ]},
   Entertainment: { emoji: "🎬", cats: [
     { name: "Minecraft Blocks", items: [
@@ -1292,6 +1304,16 @@ const CATEGORY_GROUPS = {
       ["Larry Ellison","larry ellison"], ["Michael Dell","michael dell"], ["Andy Jassy","andy jassy"], ["Reed Hastings","reed hastings"], ["Brian Chesky","brian chesky"],
       ["Susan Wojcicki","susan wojcicki"], ["Marc Benioff","marc benioff"], ["Lisa Su","lisa su"], ["Pat Gelsinger","pat gelsinger"],
     ]},
+    { name: "Google Easter Eggs", items: [
+      ["Do a Barrel Roll","do a barrel roll","barrel roll"], ["Askew","askew","tilt"], ["Zerg Rush","zerg rush"], ["Google in 1998","google in 1998"],
+      ["The Answer to Life the Universe and Everything","the answer to life the universe and everything","42","answer to life"], ["Recursion","recursion"],
+      ["Anagram","anagram"], ["Atari Breakout","atari breakout"], ["Pac-Man","pac-man","pacman"], ["Thanos","thanos"], ["Wizard of Oz","wizard of oz"],
+      ["Blink HTML","blink html","blink tag"], ["Marquee HTML","marquee html","marquee"], ["I'm Feeling Curious","i'm feeling curious","im feeling curious","fun facts"],
+      ["Festivus","festivus"], ["Once in a Blue Moon","once in a blue moon"], ["Beam Me Up Scotty","beam me up scotty"], ["Super Mario Bros","super mario bros"],
+      ["Sonic the Hedgehog","sonic the hedgehog","sonic"], ["The Loneliest Number","the loneliest number","loneliest number"], ["Metronome","metronome"],
+      ["Spinner","spinner","fidget spinner"], ["Tic Tac Toe","tic tac toe"], ["Snake Game","snake game","snake"], ["Minesweeper","minesweeper"], ["Solitaire","solitaire"],
+      ["Flip a Coin","flip a coin"], ["Roll a Die","roll a die","roll a dice"], ["Bletchley Park","bletchley park"], ["Google Gravity","google gravity"], ["Dreidel","dreidel"],
+    ]},
   ]},
   Math: { emoji: "➗", cats: [
     { name: "Math Movies", items: [
@@ -1660,6 +1682,23 @@ const CATEGORY_GROUPS = {
       ["Candy Land","candy land","candyland"], ["The Game of Life","the game of life","life"], "Trouble", "Battleship", ["Connect Four","connect four","connect 4"], "Operation",
       ["Trivial Pursuit","trivial pursuit"], "Pictionary", ["Ticket to Ride","ticket to ride"], "Pandemic", "Carcassonne", "Backgammon", ["Othello","othello","reversi"],
       "Sequence", "Yahtzee", ["Chutes and Ladders","chutes and ladders","snakes and ladders"], ["Mouse Trap","mouse trap","mousetrap"],
+    ]},
+    { name: "Famous YouTube Videos", items: [
+      ["Me at the Zoo","me at the zoo"], ["Charlie Bit My Finger","charlie bit my finger","charlie bit my finger again"], ["Gangnam Style","gangnam style"],
+      ["Baby Shark","baby shark","baby shark dance"], ["Despacito","despacito"], ["Evolution of Dance","evolution of dance"], ["Nyan Cat","nyan cat"],
+      ["David After Dentist","david after dentist"], ["Keyboard Cat","keyboard cat"], ["Double Rainbow","double rainbow"], ["Friday","friday","rebecca black friday"],
+      ["Harlem Shake","harlem shake"], ["Numa Numa","numa numa"], ["Chocolate Rain","chocolate rain"], ["Leave Britney Alone","leave britney alone"],
+      ["What Does the Fox Say","what does the fox say","the fox"], ["Star Wars Kid","star wars kid"], ["The Duck Song","the duck song"], ["Damn Daniel","damn daniel"],
+      ["Dramatic Chipmunk","dramatic chipmunk"], ["Surprised Kitty","surprised kitty"], ["The Honey Badger","the honey badger","honey badger"], ["Charlie the Unicorn","charlie the unicorn"],
+      ["Potter Puppet Pals","potter puppet pals"], ["Crank That","crank that","soulja boy"], ["Hide the Pain Harold","hide the pain harold"], ["Ultimate Dog Tease","ultimate dog tease"],
+      ["Sneezing Baby Panda","sneezing baby panda"], ["Gentleman","gentleman","psy gentleman"], ["Trololo","trololo","mr trololo"],
+    ]},
+    { name: "Things the Nyan Cat Says", items: [
+      "nyan", ["nyannyan","nyannyan","nyan nyan"], ["nyannyannyan","nyannyannyan","nyan nyan nyan"], ["nyannyannyannyan","nyannyannyannyan","nyan nyan nyan nyan"], ["nyannyannyannyannyan","nyannyannyannyannyan","nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyan","nyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan"],
+      ["nyannyannyannyannyannyannyan","nyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"],
+      ["nyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"],
+      ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"], ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"],
+      ["nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyannyan","nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan nyan"],
     ]},
   ]},
   // 🤫 Personal category — OFF by default (defaultOff). Friends guess facts about you.

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Prove It!</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='8' y='8' width='84' height='84' rx='20' fill='%23f5a623'/><circle cx='50' cy='50' r='24' fill='none' stroke='%23241500' stroke-width='8'/><circle cx='50' cy='50' r='9' fill='%23241500'/></svg>">
 <!-- Social preview (so the link shows a rich card in Discord / Reddit / iMessage / Twitter) -->
 <meta name="description" content="A fast, free browser bluffing word game — name as many as you can, or call your opponent's bluff. No sign-up; just click and play.">
 <meta property="og:type" content="website">
@@ -37,7 +37,7 @@
   body { margin:0; min-height:100vh; font-family:var(--ui); background:var(--bg); color:var(--text);
          display:grid; place-items:center; padding:16px; transition:background-color .25s ease, color .25s ease; }
   h1 { font-family:var(--display); }
-  .code, #gRoom, #timer, .player .pts, .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+  .code, #gRoom, .player .pts, .mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
   /* logo: filled badge + dark thick two-circle glyph (◎), with the wordmark */
   .logobadge { display:inline-grid; place-items:center; width:30px; height:30px; border-radius:8px; background:var(--mark);
     color:var(--markfg); font-size:16px; line-height:1; -webkit-text-stroke:.9px var(--markfg); flex:0 0 auto; }
@@ -202,9 +202,9 @@
   .chat .nm { font-weight:700; color:#8ab4ff; }
   .chat.mine .nm { color:var(--accent2); }
 
-  #timer { font-variant-numeric:tabular-nums; font-weight:800; font-size:16px; color:var(--accent); text-align:center; letter-spacing:.3px; }
+  #timer { font-family:var(--ui); font-variant-numeric:tabular-nums; font-weight:700; font-size:16px; color:var(--accent); text-align:center; letter-spacing:.3px; }
   #timer:empty { display:none; }
-  #timer:not(:empty) { margin:0 20px 8px; padding:8px 12px; background:rgba(91,140,255,.1); border:1px solid var(--line); border-radius:10px; }
+  #timer:not(:empty) { margin:0 20px 8px; padding:8px 12px; background:var(--acc-dim); border:1px solid var(--line); border-radius:10px; }
   #timer.danger { color:var(--bad); background:rgba(255,91,110,.1); border-color:rgba(255,91,110,.4); }
 
   /* judging panel (off-list rulings) */

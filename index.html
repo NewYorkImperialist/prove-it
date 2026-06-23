@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Prove It!</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='8' y='8' width='84' height='84' rx='20' fill='%23f5a623'/><circle cx='50' cy='50' r='24' fill='none' stroke='%23241500' stroke-width='8'/><circle cx='50' cy='50' r='9' fill='%23241500'/></svg>">
 <meta name="description" content="A fast, free browser bluffing word game — name as many as you can, or call the bot's bluff. No sign-up; just click and play.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Prove It!">
@@ -41,7 +41,7 @@
   }
   button { font-family: inherit; }
   h1, #setup h1 { font-family: var(--display); }
-  #timer, .player .pts, #scoreMe, #scoreBot, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .player .pts, #scoreMe, #scoreBot, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
   .logobadge { display:inline-grid; place-items:center; width:30px; height:30px; border-radius:8px; background:var(--mark);
     color:var(--markfg); font-size:16px; line-height:1; -webkit-text-stroke:.9px var(--markfg); flex:0 0 auto; }
   .wd { font-family:var(--display); font-weight:700; letter-spacing:-.3px; }
@@ -89,13 +89,13 @@
   #catMenuChecks { display: grid; gap: 6px; max-height: 280px; overflow-y: auto; }
   /* Reaction / prove timer — sits just above the input box. Hidden when empty. */
   #timer {
-    font-variant-numeric: tabular-nums; font-weight: 800; font-size: 16px;
+    font-family: var(--ui); font-variant-numeric: tabular-nums; font-weight: 700; font-size: 16px;
     color: var(--accent); text-align: center; letter-spacing: 0.3px;
   }
   #timer:empty { display: none; }
   #timer:not(:empty) {
     margin: 0 20px 8px; padding: 8px 12px;
-    background: rgba(91,140,255,.1); border: 1px solid var(--line); border-radius: 10px;
+    background: var(--acc-dim); border: 1px solid var(--line); border-radius: 10px;
   }
   #timer.danger { color: var(--bad); background: rgba(255,91,110,.1); border-color: rgba(255,91,110,.4); }
 

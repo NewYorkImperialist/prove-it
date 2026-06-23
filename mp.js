@@ -154,6 +154,15 @@ socket.on("opponentStatus", ({ connected, name }) => {
   if (connected) flashStatus(`${name} reconnected.`);
 });
 
+// ---------- admin broadcast banner (e.g. pre-deploy heads-up) ----------
+socket.on("announce", ({ text }) => {
+  const el = $("announce");
+  el.textContent = "📢 " + text + "   (tap to dismiss)";
+  el.classList.remove("hidden");
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.add("hidden"), 45000);
+});
+$("announce").onclick = () => $("announce").classList.add("hidden");
+
 // ---------- live "online" count (social proof in the lobby/home) ----------
 let onlineCount = 0;
 socket.on("presence", ({ online }) => { onlineCount = online || 0; updateOnline(); });

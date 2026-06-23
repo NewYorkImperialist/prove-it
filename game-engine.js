@@ -85,6 +85,7 @@ function handlePauseRound(io, room, socket) {
   clearTimer(room); // cancel the auto-advance to the next round
   g.intermission = true;
   log(io, room, "system", null, `${g.names[socket.data.playerId]} paused the game.`);
+  report(room, "event", { type: "pause" });
   emit(io, room);
 }
 // Either player advances to the next round (manual auto-advance-off mode, or resume from pause).
@@ -128,6 +129,7 @@ function handleVoteSkip(io, room, socket) {
   g.skipVotes.add(pid);
   if (g.skipVotes.size >= 2) {
     log(io, room, "system", null, "Both players skipped — new category.");
+    report(room, "event", { type: "categorySkipped", detail: g.current.name });
     return beginRound(io, room); // fresh category, no points awarded
   }
   log(io, room, "system", null, `${g.names[pid]} wants to skip this category (1/2).`);
@@ -293,10 +295,12 @@ function handleAnswer(io, room, socket, text, ack) {
     } else {
       g.proven.push(entry.id);
       log(io, room, socket.data.playerId, me, `${entry.display} ✓ (${total(g)}/${g.claim})`, "ok");
+      report(room, "answer", { category: g.current.name, grp: g.current.group, display: entry.display, offList: false });
       // 🎯 Easter eggs: special answers = +5 bonus points + a party (just for fun).
       const isEgg = (g.current.name === "Video Games" && entry.display === "Prove It!")
                  || (g.current.name === "Famous Mathematicians" && entry.display === "Jayden Lin");
       if (isEgg) {
+        report(room, "event", { type: "easterEgg", detail: entry.display });
         const pid = socket.data.playerId;
         g.scores[pid] = (g.scores[pid] || 0) + 5;
         log(io, room, "system", null, `🎯 ${me} said the magic words — +5 bonus points!`);
@@ -381,6 +385,7 @@ function applyRuling(io, room, p, accept) {
   if (accept) {
     g.granted.push(p.q);
     log(io, room, g.challengerId, g.names[g.challengerId], `accepted "${p.text}" ✓ (${total(g)}/${g.claim})`, "ok");
+    report(room, "answer", { category: g.current.name, grp: g.current.group, display: p.text, offList: true });
   } else {
     log(io, room, g.challengerId, g.names[g.challengerId], `rejected "${p.text}"`, "bad");
   }

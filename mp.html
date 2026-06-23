@@ -119,6 +119,9 @@
   #online { position:fixed; bottom:12px; right:14px; z-index:20; font-size:12px; font-weight:700; color:var(--muted);
     background:var(--panel2); border:1px solid var(--line); border-radius:20px; padding:5px 11px; }
   #online::before { content:"🟢 "; }
+  #announce { position:fixed; top:0; left:0; right:0; z-index:9998; background:linear-gradient(90deg,#f5c542,#ff8c42); color:#1a1200;
+    font-weight:800; font-size:14px; text-align:center; padding:10px 16px; cursor:pointer; box-shadow:0 2px 12px rgba(0,0,0,.4); animation:slideDown .3s ease; }
+  @keyframes slideDown { from{transform:translateY(-100%)} to{transform:translateY(0)} }
   #topbar .spacer { flex:1; }
   #mpLeave { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:8px;
     padding:6px 12px; font-size:13px; font-weight:700; cursor:pointer; transition:.12s; }
@@ -245,6 +248,7 @@
 <!-- End Cloudflare Web Analytics -->
 </head>
 <body>
+  <div id="announce" class="hidden"></div>
   <div class="conn" id="conn">connecting…</div>
   <div id="online" class="hidden">0 online</div>
 

@@ -9,6 +9,8 @@ const analytics = require("./stats"); // persistent game history (Turso); separa
 const CATEGORY_GROUPS = require("./categories.js");
 const ALL_GROUPS = Object.keys(CATEGORY_GROUPS);
 const DEFAULT_GROUPS = ALL_GROUPS.filter((k) => !CATEGORY_GROUPS[k].defaultOff); // Secret starts off
+const CAT_SIZES = {}; // category name -> # of answers (for "coverage" / least-explored report)
+for (const grp of Object.values(CATEGORY_GROUPS)) for (const c of grp.cats) CAT_SIZES[c.name] = c.items.length;
 const TIMERS = [15, 30, 45, 60];
 const TARGETS = [3, 5, 10]; // plus null = endless
 
@@ -22,6 +24,10 @@ engine.setReporter((room, type, extra) => {
     if (type === "round") {
       analytics.recordRound({ code: room.code, category: extra.category, grp: extra.grp,
         winner_id: extra.winnerId, winner_name: extra.winnerName, claim: extra.claim, proven: extra.proven, at: Date.now() });
+    } else if (type === "answer") {
+      analytics.recordAnswer({ code: room.code, category: extra.category, grp: extra.grp, display: extra.display, offList: extra.offList, at: Date.now() });
+    } else if (type === "event") {
+      analytics.recordEvent(extra.type, room.code, extra.detail);
     } else if (type === "end") {
       const g = room.game; if (!g) return;
       const [a, b] = g.order;
@@ -78,20 +84,47 @@ function fmtDur(ms) {
 function ownerOk(req) { const key = req.query.key || req.get("x-owner-key"); return process.env.OWNER_KEY && key === process.env.OWNER_KEY; }
 
 function fmtMs(ms) { return ms ? fmtDur(ms) : "—"; }
-function histHtml(h) {
+function bar(n, max) { const w = max ? Math.round((n / max) * 100) : 0; return `<span style="display:inline-block;height:9px;width:${w}%;min-width:${n ? 3 : 0}px;background:#5b8cff;border-radius:2px;vertical-align:middle"></span>`; }
+const tbl = (head, rows, cols) => `<table><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr>${rows || `<tr><td colspan=${cols}>—</td></tr>`}</table>`;
+function histHtml(h, k) {
   if (!h) return `<p class="stats" style="margin-top:22px">📦 Historical stats off — set <b>TURSO_URL</b> / <b>TURSO_TOKEN</b> to persist game history.</p>`;
-  const lb = h.leaderboard.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${Number(r.wins)}</td><td>${Number(r.games)}</td><td>${r.games ? Math.round(Number(r.wins) / Number(r.games) * 100) : 0}%</td></tr>`).join("");
-  const cat = h.categories.map((r) => `<tr><td>${esc(r.grp)} — ${esc(r.category)}</td><td>${Number(r.plays)}</td><td>${r.avg_claim ? Number(r.avg_claim).toFixed(1) : "—"}</td><td>${r.avg_ratio != null ? Math.round(Number(r.avg_ratio) * 100) + "%" : "—"}</td></tr>`).join("");
-  const day = h.perDay.map((r) => `<tr><td>${esc(r.day)}</td><td>${Number(r.n)}</td></tr>`).join("");
-  const rec = h.recent.map((r) => `<tr><td>${esc(r.code)}</td><td>${esc(r.p1_name)} ${Number(r.p1_score)}–${Number(r.p2_score)} ${esc(r.p2_name)}</td><td>${esc(r.winner_name || "tie")}</td><td>${esc((r.groups || "").split(",")[0] || "")}…</td><td>${Number(r.rounds)}r</td><td>${esc(r.reason)}</td><td>${fmtMs(Number(r.duration_ms))}</td></tr>`).join("");
+  const num = (x) => Number(x || 0);
+  const lb = h.leaderboard.map((r, i) => `<tr><td>${i + 1}</td><td><a href="/admin/player?key=${k}&name=${encodeURIComponent(r.name)}">${esc(r.name)}</a></td><td>${num(r.wins)}</td><td>${num(r.games)}</td><td>${r.games ? Math.round(num(r.wins) / num(r.games) * 100) : 0}%</td></tr>`).join("");
+  const h2h = h.headToHead.map((r) => `<tr><td>${esc(r.a)} vs ${esc(r.b)}</td><td>${num(r.awins)}–${num(r.bwins)}</td><td>${num(r.n)}</td></tr>`).join("");
+  const cat = h.categories.map((r) => `<tr><td>${esc(r.grp)} — ${esc(r.category)}</td><td>${num(r.plays)}</td><td>${r.avg_claim ? num(r.avg_claim).toFixed(1) : "—"}</td><td>${r.avg_ratio != null ? Math.round(num(r.avg_ratio) * 100) + "%" : "—"}</td></tr>`).join("");
+  const cov = h.namedPerCat.map((r) => ({ cat: r.category, c: num(r.c), total: CAT_SIZES[r.category] || 0 })).filter((x) => x.total)
+    .map((x) => ({ ...x, pct: x.c / x.total })).sort((a, b) => a.pct - b.pct).slice(0, 15)
+    .map((x) => `<tr><td>${esc(x.cat)}</td><td>${x.c}/${x.total}</td><td>${Math.round(x.pct * 100)}%</td></tr>`).join("");
+  const ta = h.topAnswers.map((r) => `<tr><td>${esc(r.display)}</td><td>${esc(r.category)}</td><td>${num(r.n)}</td></tr>`).join("");
+  const hours = Array.from({ length: 24 }, () => 0); h.hourly.forEach((r) => { hours[num(r.hr)] = num(r.n); });
+  const hmax = Math.max(1, ...hours);
+  const hourRows = hours.map((n, i) => `<tr><td>${String(i).padStart(2, "0")}h</td><td>${bar(n, hmax)} ${n || ""}</td></tr>`).join("");
+  const feat = h.features.map((r) => `<tr><td>${esc(r.type)}</td><td>${num(r.n)}</td></tr>`).join("");
+  const reasons = h.reasons.map((r) => `<tr><td>${esc(r.reason)}</td><td>${num(r.n)}</td></tr>`).join("");
+  const day = h.perDay.map((r) => `<tr><td>${esc(r.day)}</td><td>${num(r.n)}</td></tr>`).join("");
+  const rec = h.recent.map((r) => `<tr><td>${esc(r.code)}</td><td>${esc(r.p1_name)} ${num(r.p1_score)}–${num(r.p2_score)} ${esc(r.p2_name)}</td><td>${esc(r.winner_name || "tie")}</td><td>${num(r.rounds)}r</td><td>${esc(r.reason)}</td><td>${fmtMs(num(r.duration_ms))}</td></tr>`).join("");
+  const s = h.superlatives;
+  const sup = [
+    s.longestGame ? `Longest game: <b>${fmtMs(num(s.longestGame.duration_ms))}</b> (${esc(s.longestGame.p1_name)} vs ${esc(s.longestGame.p2_name)})` : "",
+    s.mostRounds ? `Most rounds: <b>${num(s.mostRounds.rounds)}</b> (${esc(s.mostRounds.p1_name)} vs ${esc(s.mostRounds.p2_name)})` : "",
+    s.highestClaim ? `Highest claim: <b>${num(s.highestClaim.claim)}</b> — ${esc(s.highestClaim.category)} by ${esc(s.highestClaim.winner_name || "?")}` : "",
+    `🎯 Easter eggs triggered: <b>${s.easterEggs}</b>`,
+  ].filter(Boolean).map((x) => `<span class="pill">${x}</span>`).join("");
   return `
     <h2>All-time history</h2>
     <p class="stats"><b>${h.games}</b> games · <b>${h.rounds}</b> rounds · <b>${h.players}</b> unique players · avg game <b>${fmtMs(h.avgDurationMs)}</b></p>
+    <div class="pills">${sup}</div>
     <div class="cols">
-      <div><h3>🏆 Leaderboard</h3><table><tr><th>#</th><th>Player</th><th>W</th><th>G</th><th>Win%</th></tr>${lb || '<tr><td colspan=5>—</td></tr>'}</table></div>
-      <div><h3>🗂 Categories (plays · avg claim · solve%)</h3><table><tr><th>Category</th><th>Plays</th><th>Claim</th><th>Solve%</th></tr>${cat || '<tr><td colspan=4>—</td></tr>'}</table></div>
-      <div><h3>📅 Games per day</h3><table><tr><th>Day</th><th>Games</th></tr>${day || '<tr><td colspan=2>—</td></tr>'}</table></div>
-      <div><h3>🕑 Recent games</h3><table><tr><th>Code</th><th>Result</th><th>Winner</th><th>Cat</th><th>Rds</th><th>End</th><th>Len</th></tr>${rec || '<tr><td colspan=7>—</td></tr>'}</table></div>
+      <div><h3>🏆 Leaderboard</h3>${tbl(["#", "Player", "W", "G", "Win%"], lb, 5)}</div>
+      <div><h3>⚔️ Head-to-head</h3>${tbl(["Matchup", "Record", "Games"], h2h, 3)}</div>
+      <div><h3>🗂 Categories — plays · claim · solve%</h3>${tbl(["Category", "Plays", "Claim", "Solve%"], cat, 4)}</div>
+      <div><h3>🔍 Least-explored categories</h3>${tbl(["Category", "Named", "Coverage"], cov, 3)}</div>
+      <div><h3>💬 Most-named answers</h3>${tbl(["Answer", "Category", "×"], ta, 3)}</div>
+      <div><h3>🕐 When people play (UTC)</h3>${tbl(["Hour", "Games"], hourRows, 2)}</div>
+      <div><h3>✨ Feature usage</h3>${tbl(["Event", "Count"], feat, 2)}</div>
+      <div><h3>🏁 How games ended</h3>${tbl(["Reason", "Count"], reasons, 2)}</div>
+      <div><h3>📅 Games per day</h3>${tbl(["Day", "Games"], day, 2)}</div>
+      <div><h3>🕑 Recent games</h3>${tbl(["Code", "Result", "Winner", "Rds", "End", "Len"], rec, 6)}</div>
     </div>`;
 }
 
@@ -143,12 +176,26 @@ app.get("/admin", async (req, res) => {
     h2{font-size:17px;margin:26px 0 4px} h3{font-size:13px;margin:14px 0 6px;color:#c6ccda}
     .cols{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
     table{width:100%;border-collapse:collapse;font-size:12px} th{text-align:left;color:#8a92a6;font-weight:600;border-bottom:1px solid #262b38;padding:4px 6px}
-    td{padding:4px 6px;border-bottom:1px solid #1c2029;color:#dfe4ee}</style></head>
+    td{padding:4px 6px;border-bottom:1px solid #1c2029;color:#dfe4ee} td a{color:#5b8cff;text-decoration:none} td a:hover{text-decoration:underline}
+    .pills{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px} .pill{background:#171a23;border:1px solid #262b38;border-radius:20px;padding:5px 12px;font-size:12px;color:#c6ccda}
+    .announce{background:#171a23;border:1px solid #262b38;border-radius:12px;padding:12px 14px;margin:0 0 18px}
+    .announce form{display:flex;gap:8px;flex-wrap:wrap;align-items:center} .announce input{flex:1;min-width:180px;background:#0e1016;border:1px solid #2a3040;border-radius:8px;color:#fff;padding:8px 10px;font-size:13px}
+    .announce button,.announce a.preset{background:#2a3040;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none}
+    .announce a.preset{background:#3a2030;color:#ffb4b4} .announce .lbl{font-size:12px;color:#8a92a6;margin-right:4px}</style></head>
     <body><h1>🎯 Prove It! — live server</h1>
     <p class="sub">🟢 <b style="color:#3ecf8e">${online}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${new Date().toISOString()}</p>
     <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
+    <div class="announce">
+      <form action="/admin/announce" method="get">
+        <span class="lbl">📢 Broadcast to all games:</span>
+        <input type="hidden" name="key" value="${k}"><input name="msg" maxlength="200" placeholder="Type a message to every player…" autocomplete="off">
+        <button>Send</button>
+        <a class="preset" href="/admin/announce?key=${k}&msg=${encodeURIComponent("⚠️ Server updating in ~1 minute — finish your round!")}">⚠️ 1-min restart</a>
+        <a class="preset" href="/admin/announce?key=${k}&msg=${encodeURIComponent("⚠️ Server updating in ~5 minutes — wrap up soon!")}">⚠️ 5-min restart</a>
+      </form>
+    </div>
     <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
-    ${histHtml(hist)}
+    ${histHtml(hist, k)}
     </body></html>`);
 });
 
@@ -158,6 +205,39 @@ app.get("/admin/close", (req, res) => {
   const code = String(req.query.code || "").toUpperCase().trim();
   closeRoom(code);
   res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));
+});
+
+// Owner broadcasts a banner message to EVERY connected client (e.g. a pre-deploy heads-up).
+app.get("/admin/announce", (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const text = String(req.query.msg || "").replace(/\s+/g, " ").trim().slice(0, 200);
+  if (text) { io.emit("announce", { text }); console.log(`📢 announce: ${text}`); }
+  res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));
+});
+
+// Owner drill-down: one player's history.
+app.get("/admin/player", async (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const k = encodeURIComponent(req.query.key || "");
+  const name = String(req.query.name || "");
+  const p = analytics.enabled() ? await analytics.playerProfile(name).catch(() => null) : null;
+  const back = `<a href="/admin?key=${k}" style="color:#5b8cff;text-decoration:none">← back to dashboard</a>`;
+  const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
+    h1{font-size:20px} h3{font-size:13px;margin:18px 0 6px;color:#c6ccda} .stats{color:#c6ccda} b{color:#ffd34d}
+    table{border-collapse:collapse;font-size:12px;min-width:280px} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:4px 8px}
+    td{padding:4px 8px;border-bottom:1px solid #1c2029}</style>`;
+  if (!p || !p.games) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>${esc(name)}</h1><p class="stats">No games recorded.</p></body>`);
+  const num = (x) => Number(x || 0);
+  const opp = p.opponents.map((o) => `<tr><td>${esc(o.opp)}</td><td>${num(o.wins)}–${num(o.games) - num(o.wins)}</td><td>${num(o.games)}</td></tr>`).join("");
+  const bc = p.bestCategories.map((c) => `<tr><td>${esc(c.grp)} — ${esc(c.category)}</td><td>${num(c.round_wins)}</td></tr>`).join("");
+  const rec = p.recent.map((r) => `<tr><td>${esc(r.code)}</td><td>${esc(r.p1_name)} ${num(r.p1_score)}–${num(r.p2_score)} ${esc(r.p2_name)}</td><td>${esc(r.winner_name || "tie")}</td><td>${num(r.rounds)}r</td><td>${esc(r.reason)}</td></tr>`).join("");
+  res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    <h1>${esc(p.name)}</h1>
+    <p class="stats"><b>${p.games}</b> games · <b>${p.wins}</b> wins · <b>${p.games - p.wins}</b> losses · <b>${p.games ? Math.round(p.wins / p.games * 100) : 0}%</b> win rate</p>
+    <h3>⚔️ vs each opponent</h3><table><tr><th>Opponent</th><th>W–L</th><th>Games</th></tr>${opp || "<tr><td colspan=3>—</td></tr>"}</table>
+    <h3>🗂 Best categories (round wins)</h3><table><tr><th>Category</th><th>Round wins</th></tr>${bc || "<tr><td colspan=2>—</td></tr>"}</table>
+    <h3>🕑 Recent games</h3><table><tr><th>Code</th><th>Result</th><th>Winner</th><th>Rds</th><th>End</th></tr>${rec || "<tr><td colspan=5>—</td></tr>"}</table>
+    </body>`);
 });
 
 app.use(express.static(path.join(__dirname)));

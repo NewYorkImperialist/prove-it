@@ -173,7 +173,7 @@
     display: grid; place-items: center; z-index: 10;
   }
   #setup {
-    width: min(92vw, 480px); background: var(--panel); border: 1px solid var(--line);
+    width: min(92vw, 480px); max-height: 92vh; overflow-y: auto; background: var(--panel); border: 1px solid var(--line);
     border-radius: 16px; padding: 26px; box-shadow: 0 24px 70px rgba(0,0,0,.6);
   }
   #setup h1 { margin: 0 0 4px; font-size: 24px; }
@@ -188,13 +188,14 @@
   .checks::-webkit-scrollbar { width: 8px; }
   .checks::-webkit-scrollbar-thumb { background: var(--line); border-radius: 4px; }
   .check {
-    display: flex; align-items: center; gap: 10px; padding: 11px 13px; border: 1px solid var(--line);
-    border-radius: 10px; cursor: pointer; background: var(--panel2); user-select: none; transition: .12s;
+    display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line);
+    border-radius: 10px; cursor: pointer; background: var(--panel2); user-select: none; transition: .12s; font-family: var(--ui);
   }
   .check:hover { border-color: var(--accent); }
   .check.on { border-color: var(--accent); background: var(--acc-dim); }
   .check input { accent-color: var(--accent); width: 16px; height: 16px; }
   .check .emoji { font-size: 18px; }
+  .check span:last-child { font-size: 14px; }
   .seg { display: flex; gap: 8px; }
   .seg button {
     flex: 1; padding: 11px; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;

@@ -152,8 +152,8 @@
   #online { position:fixed; bottom:12px; right:14px; z-index:20; display:flex; align-items:center; gap:7px;
     font-family:var(--mono); font-size:11px; font-weight:600; letter-spacing:.3px; color:var(--muted);
     background:var(--panel2); border:1px solid var(--line); border-radius:20px; padding:5px 11px 5px 10px; }
-  #online::before { content:""; width:7px; height:7px; border-radius:50%; background:#3fb950;
-    box-shadow:0 0 0 3px rgba(63,185,80,.18); }
+  #online::before { content:""; width:7px; height:7px; border-radius:50%; background:var(--accent);
+    box-shadow:0 0 0 3px var(--acc-dim); }
   #announce { position:fixed; top:0; left:0; right:0; z-index:9998; background:linear-gradient(90deg,#f5c542,#ff8c42); color:#1a1200;
     font-weight:800; font-size:14px; text-align:center; padding:10px 16px; cursor:pointer; box-shadow:0 2px 12px rgba(0,0,0,.4); animation:slideDown .3s ease; }
   @keyframes slideDown { from{transform:translateY(-100%)} to{transform:translateY(0)} }
@@ -419,7 +419,7 @@
       <p>If you forfeit, your opponent wins this match.</p>
       <div class="btns">
         <button id="cfReturn">↩︎ Return to your game</button>
-        <button id="cfForfeit">🏳️ Forfeit</button>
+        <button id="cfForfeit">Forfeit</button>
       </div>
     </div>
   </div>

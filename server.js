@@ -458,6 +458,7 @@ const deviceOf = (socket) => (/Mobile|Android|iPhone|iPad|iPod/i.test(socket.han
 io.on("connection", (socket) => {
   console.log(`✅ connected: ${socket.id}`);
   online++; broadcastPresence();
+  socket.on("latencyPing", (ack) => { if (typeof ack === "function") ack(); }); // RTT probe for the client's "X ms" indicator
   socket.data.session = { connectedAt: Date.now(), device: deviceOf(socket), joined: false, spectated: false, played: false, name: null };
 
   function doResume(room, pid, ack) {

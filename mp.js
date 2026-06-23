@@ -135,12 +135,25 @@ setTheme(localStorage.getItem("theme") || "amber");
 
 // ---------- connection indicator + auto-resume ----------
 // Two indicators: the floating one (lobby) and the sidebar one (in game).
+let pingMs = null, connOk = false;
+function connectedLabel() { return pingMs == null ? "connected" : `connected · ${pingMs}ms`; }
 function setConn(text, cls) {
+  connOk = cls === "ok";
   $("conn").textContent = text; $("conn").className = "conn " + cls;
   $("connSide").textContent = text; $("connSide").className = "conn-side " + cls;
 }
+function measureLatency() {
+  if (!socket.connected) return;
+  const t0 = performance.now();
+  socket.emit("latencyPing", () => {
+    pingMs = Math.max(1, Math.round(performance.now() - t0));
+    if (connOk) setConn(connectedLabel(), "ok");
+  });
+}
+setInterval(measureLatency, 4000);
 socket.on("connect", () => {
   setConn("connected", "ok");
+  measureLatency();
   if (myRoom && isSpectator) {
     socket.emit("spectateRoom", { code: myRoom, name: nameValue(), playerId }, (res) => {
       if (!res?.ok) { setRoom(null); show("home"); }

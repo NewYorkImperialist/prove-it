@@ -83,7 +83,7 @@ async function summary() {
         AVG(CAST(proven AS REAL)/NULLIF(claim,0)) avg_ratio
       FROM rounds GROUP BY grp, category ORDER BY plays DESC LIMIT 30`),
     perDay: await q(`SELECT date(started_at/1000,'unixepoch') day, COUNT(*) n FROM games GROUP BY day ORDER BY day DESC LIMIT 14`),
-    hourly: await q(`SELECT CAST(strftime('%H', started_at/1000, 'unixepoch') AS INTEGER) hr, COUNT(*) n FROM games GROUP BY hr`),
+    startedTimes: (await q(`SELECT started_at FROM games WHERE started_at IS NOT NULL ORDER BY id DESC LIMIT 5000`)).map((r) => Number(r.started_at)),
     reasons: await q(`SELECT reason, COUNT(*) n FROM games GROUP BY reason ORDER BY n DESC`),
     features: await q(`SELECT type, COUNT(*) n FROM events GROUP BY type ORDER BY n DESC`),
     topAnswers: await q(`SELECT category, display, COUNT(*) n FROM answers GROUP BY category, display ORDER BY n DESC LIMIT 25`),
@@ -99,4 +99,9 @@ async function summary() {
   };
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, summary };
+// Distinct on-list answers ever named, per category (for the category-health / never-named report).
+async function namedDisplays() {
+  return q(`SELECT DISTINCT category, display FROM answers WHERE off_list=0`);
+}
+
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, summary, namedDisplays };

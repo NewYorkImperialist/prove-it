@@ -10,7 +10,18 @@ const CATEGORY_GROUPS = require("./categories.js");
 const ALL_GROUPS = Object.keys(CATEGORY_GROUPS);
 const DEFAULT_GROUPS = ALL_GROUPS.filter((k) => !CATEGORY_GROUPS[k].defaultOff); // Secret starts off
 const CAT_SIZES = {}; // category name -> # of answers (for "coverage" / least-explored report)
-for (const grp of Object.values(CATEGORY_GROUPS)) for (const c of grp.cats) CAT_SIZES[c.name] = c.items.length;
+const CAT_ITEMS = {}; // category name -> [canonical display names] (for the never-named report)
+const CAT_GROUP = {}; // category name -> its group
+for (const [gname, grp] of Object.entries(CATEGORY_GROUPS)) for (const c of grp.cats) {
+  CAT_SIZES[c.name] = c.items.length;
+  CAT_ITEMS[c.name] = c.items.map((it) => (Array.isArray(it) ? it[0] : it));
+  CAT_GROUP[c.name] = gname;
+}
+// Hour of day (0–23) in US Eastern, DST-aware; falls back to UTC if ICU/tz data is missing.
+function easternHour(ts) {
+  try { return Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", hour12: false }).format(new Date(ts))) % 24; }
+  catch { return new Date(ts).getUTCHours(); }
+}
 const TIMERS = [15, 30, 45, 60];
 const TARGETS = [3, 5, 10]; // plus null = endless
 
@@ -94,7 +105,7 @@ function histHtml(h, k) {
     .map((x) => ({ ...x, pct: x.c / x.total })).sort((a, b) => a.pct - b.pct).slice(0, 15)
     .map((x) => `<tr><td>${esc(x.cat)}</td><td>${x.c}/${x.total}</td><td>${Math.round(x.pct * 100)}%</td></tr>`).join("");
   const ta = h.topAnswers.map((r) => `<tr><td>${esc(r.display)}</td><td>${esc(r.category)}</td><td>${num(r.n)}</td></tr>`).join("");
-  const hours = Array.from({ length: 24 }, () => 0); h.hourly.forEach((r) => { hours[num(r.hr)] = num(r.n); });
+  const hours = Array.from({ length: 24 }, () => 0); (h.startedTimes || []).forEach((ts) => { hours[easternHour(ts)]++; });
   const hmax = Math.max(1, ...hours);
   const hourRows = hours.map((n, i) => `<tr><td>${String(i).padStart(2, "0")}h</td><td>${bar(n, hmax)} ${n || ""}</td></tr>`).join("");
   const feat = h.features.map((r) => `<tr><td>${esc(r.type)}</td><td>${num(r.n)}</td></tr>`).join("");
@@ -116,7 +127,7 @@ function histHtml(h, k) {
       <div><h3>🗂 Categories — plays · claim · solve%</h3>${tbl(["Category", "Plays", "Claim", "Solve%"], cat, 4)}</div>
       <div><h3>🔍 Least-explored categories</h3>${tbl(["Category", "Named", "Coverage"], cov, 3)}</div>
       <div><h3>💬 Most-named answers</h3>${tbl(["Answer", "Category", "×"], ta, 3)}</div>
-      <div><h3>🕐 When people play (UTC)</h3>${tbl(["Hour", "Games"], hourRows, 2)}</div>
+      <div><h3>🕐 When people play (Eastern)</h3>${tbl(["Hour", "Games"], hourRows, 2)}</div>
       <div><h3>✨ Feature usage</h3>${tbl(["Event", "Count"], feat, 2)}</div>
       <div><h3>🏁 How games ended</h3>${tbl(["Reason", "Count"], reasons, 2)}</div>
       <div><h3>📅 Games per day</h3>${tbl(["Day", "Games"], day, 2)}</div>
@@ -190,9 +201,53 @@ app.get("/admin", async (req, res) => {
         <a class="preset" href="/admin/announce?key=${k}&msg=${encodeURIComponent("⚠️ Server updating in ~5 minutes — wrap up soon!")}">⚠️ 5-min restart</a>
       </form>
     </div>
+    <p style="margin:0 0 16px"><a href="/admin/health?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🩺 Category health → which answers never get named</a></p>
     <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
     ${histHtml(hist, k)}
     </body></html>`);
+});
+
+// Category health: per-category coverage, and the "never-named" answer list (which entries nobody ever gets).
+app.get("/admin/health", async (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const k = encodeURIComponent(req.query.key || "");
+  const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
+    a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
+    table{border-collapse:collapse;font-size:12px;width:100%;max-width:760px} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:5px 8px}
+    td{padding:5px 8px;border-bottom:1px solid #1c2029} .bar{display:inline-block;height:8px;border-radius:2px;background:#3ecf8e;vertical-align:middle}
+    .low .bar{background:#e5484d} .mid .bar{background:#ffb454} .chips span{display:inline-block;background:#1c2029;border:1px solid #2a3040;border-radius:6px;padding:2px 7px;margin:3px;font-size:12px}</style>`;
+  const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
+  if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Category health</h1><p class="sub">Persistence not configured.</p></body>`);
+  const named = new Map();
+  (await analytics.namedDisplays().catch(() => [])).forEach((r) => { if (!named.has(r.category)) named.set(r.category, new Set()); named.get(r.category).add(r.display); });
+  const cat = String(req.query.cat || "");
+
+  if (cat && CAT_ITEMS[cat]) { // single-category drill-down: the never-named list
+    const set = named.get(cat) || new Set();
+    const never = CAT_ITEMS[cat].filter((d) => !set.has(d));
+    const got = CAT_ITEMS[cat].filter((d) => set.has(d));
+    return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+      <h1>${esc(CAT_GROUP[cat] || "")} — ${esc(cat)}</h1>
+      <p class="sub">${got.length}/${CAT_ITEMS[cat].length} answers named at least once (${Math.round(got.length / CAT_ITEMS[cat].length * 100)}% coverage).</p>
+      <h3>🚫 Never named (${never.length})</h3><div class="chips">${never.map((d) => `<span>${esc(d)}</span>`).join("") || "— all named! —"}</div>
+      <h3 style="margin-top:18px">✅ Named (${got.length})</h3><div class="chips" style="opacity:.7">${got.map((d) => `<span>${esc(d)}</span>`).join("") || "—"}</div>
+      </body>`);
+  }
+
+  // overview: every category by coverage (least-explored first)
+  const rows = Object.keys(CAT_ITEMS).map((c) => {
+    const total = CAT_ITEMS[c].length, n = (named.get(c) ? [...named.get(c)].filter((d) => CAT_ITEMS[c].includes(d)).length : 0);
+    return { c, grp: CAT_GROUP[c], total, n, pct: total ? n / total : 0 };
+  }).sort((a, b) => a.pct - b.pct);
+  const tr = rows.map((r) => {
+    const cls = r.pct < 0.25 ? "low" : r.pct < 0.6 ? "mid" : "";
+    return `<tr class="${cls}"><td><a href="/admin/health?key=${k}&cat=${encodeURIComponent(r.c)}">${esc(r.c)}</a></td><td>${esc(r.grp)}</td><td>${r.n}/${r.total}</td><td><span class="bar" style="width:${Math.round(r.pct * 80)}px"></span> ${Math.round(r.pct * 100)}%</td></tr>`;
+  }).join("");
+  res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    <h1>🩺 Category health</h1>
+    <p class="sub">Coverage = share of a category's answers that have been named at least once. Low coverage may mean the category is too obscure, mis-spelled, or just under-played. Click one to see exactly which answers never get named.</p>
+    <table><tr><th>Category</th><th>Group</th><th>Named</th><th>Coverage</th></tr>${tr}</table>
+    </body>`);
 });
 
 // Owner closes a room (kicks everyone, clears timers). Redirects back to the dashboard.

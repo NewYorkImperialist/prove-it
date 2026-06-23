@@ -34,6 +34,9 @@ async function init() {
         category TEXT, grp TEXT, display TEXT, off_list INTEGER, at INTEGER)`,
       `CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT, type TEXT, code TEXT, detail TEXT, at INTEGER)`,
+      `CREATE TABLE IF NOT EXISTS sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, connected_at INTEGER, disconnected_at INTEGER, duration_ms INTEGER,
+        device TEXT, played INTEGER, joined INTEGER, spectated INTEGER, name TEXT, reason TEXT)`,
     ], "write");
     console.log("📊 stats: connected to Turso ✓");
   } catch (e) {
@@ -64,6 +67,10 @@ function recordAnswer(a) {
 }
 function recordEvent(type, code, detail) {
   fire(`INSERT INTO events (type,code,detail,at) VALUES (?,?,?,?)`, [type, code || null, detail || null, Date.now()]);
+}
+function recordSession(s) {
+  fire(`INSERT INTO sessions (connected_at,disconnected_at,duration_ms,device,played,joined,spectated,name,reason) VALUES (?,?,?,?,?,?,?,?,?)`,
+    [s.connected_at, s.disconnected_at, s.duration_ms, s.device, s.played ? 1 : 0, s.joined ? 1 : 0, s.spectated ? 1 : 0, s.name || null, s.reason || null]);
 }
 
 async function q(sql, args) { if (!client) return []; try { return (await client.execute(args ? { sql, args } : sql)).rows; } catch (e) { console.error("📊 stats read:", e.message); return []; } }
@@ -96,6 +103,26 @@ async function summary() {
     },
     recent: await q(`SELECT code,p1_name,p2_name,p1_score,p2_score,winner_name,groups,rounds,reason,duration_ms,ended_at
       FROM games ORDER BY id DESC LIMIT 15`),
+    sessions: await sessionStats(),
+  };
+}
+
+async function sessionStats() {
+  const agg = await one(`SELECT COUNT(*) n, COALESCE(AVG(duration_ms),0) avg, COALESCE(SUM(played),0) played, COALESCE(SUM(joined),0) joined FROM sessions WHERE duration_ms IS NOT NULL`);
+  const b = await one(`SELECT
+      COALESCE(SUM(duration_ms<30000),0) bounce,
+      COALESCE(SUM(duration_ms>=30000 AND duration_ms<120000),0) short,
+      COALESCE(SUM(duration_ms>=120000 AND duration_ms<600000),0) med,
+      COALESCE(SUM(duration_ms>=600000),0) long
+    FROM sessions WHERE duration_ms IS NOT NULL`);
+  return {
+    total: agg ? Number(agg.n) : 0,
+    avgMs: agg ? Number(agg.avg) : 0,
+    played: agg ? Number(agg.played) : 0,
+    joined: agg ? Number(agg.joined) : 0,
+    buckets: { bounce: Number(b?.bounce || 0), short: Number(b?.short || 0), med: Number(b?.med || 0), long: Number(b?.long || 0) },
+    devices: await q(`SELECT device, COUNT(*) n, AVG(duration_ms) avg FROM sessions WHERE duration_ms IS NOT NULL GROUP BY device`),
+    recent: await q(`SELECT connected_at, duration_ms, device, played, joined, spectated, name FROM sessions ORDER BY id DESC LIMIT 20`),
   };
 }
 
@@ -104,4 +131,4 @@ async function namedDisplays() {
   return q(`SELECT DISTINCT category, display FROM answers WHERE off_list=0`);
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, summary, namedDisplays };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordSession, summary, namedDisplays };

@@ -22,6 +22,10 @@ function easternHour(ts) {
   try { return Number(new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", hour12: false }).format(new Date(ts))) % 24; }
   catch { return new Date(ts).getUTCHours(); }
 }
+function easternTime(ts) {
+  try { return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(ts)); }
+  catch { return new Date(ts).toISOString().slice(0, 16).replace("T", " "); }
+}
 const TIMERS = [15, 30, 45, 60];
 const TARGETS = [3, 5, 10]; // plus null = endless
 
@@ -76,6 +80,16 @@ function gamePeek(room) {
     paused: !!g.paused, intermission: !!g.intermission,
   };
 }
+// Everyone currently connected (live, from socket state — not the DB).
+function liveSessions() {
+  const out = [];
+  for (const s of io.sockets.sockets.values()) {
+    const ss = s.data.session; if (!ss) continue;
+    out.push({ connectedAt: ss.connectedAt, device: ss.device, name: ss.name,
+      room: s.data.roomCode || null, role: s.data.spectator ? "spectator" : (s.data.roomCode ? "player" : "browsing") });
+  }
+  return out.sort((a, b) => a.connectedAt - b.connectedAt);
+}
 function adminData() {
   return [...rooms.values()].map((room) => ({
     code: room.code,
@@ -112,6 +126,10 @@ function histHtml(h, k) {
   const reasons = h.reasons.map((r) => `<tr><td>${esc(r.reason)}</td><td>${num(r.n)}</td></tr>`).join("");
   const day = h.perDay.map((r) => `<tr><td>${esc(r.day)}</td><td>${num(r.n)}</td></tr>`).join("");
   const rec = h.recent.map((r) => `<tr><td>${esc(r.code)}</td><td>${esc(r.p1_name)} ${num(r.p1_score)}–${num(r.p2_score)} ${esc(r.p2_name)}</td><td>${esc(r.winner_name || "tie")}</td><td>${num(r.rounds)}r</td><td>${esc(r.reason)}</td><td>${fmtMs(num(r.duration_ms))}</td></tr>`).join("");
+  const ses = h.sessions || {};
+  const dev = (ses.devices || []).map((d) => `<tr><td>${esc(d.device)}</td><td>${num(d.n)}</td><td>${fmtMs(num(d.avg))}</td></tr>`).join("");
+  const sesRecent = (ses.recent || []).map((r) => `<tr><td>${easternTime(num(r.connected_at))}</td><td>${fmtMs(num(r.duration_ms))}</td><td>${esc(r.device)}</td><td>${r.played ? "🎮 played" : r.spectated ? "👀 watched" : r.joined ? "lobby" : "browsed"}</td></tr>`).join("");
+  const b = ses.buckets || {};
   const s = h.superlatives;
   const sup = [
     s.longestGame ? `Longest game: <b>${fmtMs(num(s.longestGame.duration_ms))}</b> (${esc(s.longestGame.p1_name)} vs ${esc(s.longestGame.p2_name)})` : "",
@@ -123,6 +141,13 @@ function histHtml(h, k) {
     <h2>All-time history</h2>
     <p class="stats"><b>${h.games}</b> games · <b>${h.rounds}</b> rounds · <b>${h.players}</b> unique players · avg game <b>${fmtMs(h.avgDurationMs)}</b></p>
     <div class="pills">${sup}</div>
+    <h3>🧑‍💻 Sessions (visits) — when people arrive & how long they stay</h3>
+    <p class="stats"><b>${ses.total || 0}</b> sessions · avg stay <b>${fmtMs(ses.avgMs)}</b> · <b>${ses.played || 0}</b> played a game · <b>${ses.joined || 0}</b> entered a room ·
+      engagement: ${num(b.bounce)} bounced (&lt;30s) · ${num(b.short)} short (&lt;2m) · ${num(b.med)} medium (&lt;10m) · ${num(b.long)} long (10m+)</p>
+    <div class="cols">
+      <div><h3>📱 Device</h3>${tbl(["Device", "Sessions", "Avg stay"], dev, 3)}</div>
+      <div><h3>🕒 Recent sessions (Eastern)</h3>${tbl(["Arrived", "Stayed", "Device", "Did"], sesRecent, 4)}</div>
+    </div>
     <div class="cols">
       <div><h3>🗂 Categories — plays · claim · solve%</h3>${tbl(["Category", "Plays", "Claim", "Solve%"], cat, 4)}</div>
       <div><h3>🔍 Least-explored categories</h3>${tbl(["Category", "Named", "Coverage"], cov, 3)}</div>
@@ -203,6 +228,8 @@ app.get("/admin", async (req, res) => {
     </div>
     <p style="margin:0 0 16px"><a href="/admin/health?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🩺 Category health → which answers never get named</a></p>
     <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
+    ${(() => { const live = liveSessions(); return `<h2>🌐 Live connections (${live.length})</h2>${tbl(["Connected for", "Name", "Doing", "Device"],
+      live.map((s) => `<tr><td>${fmtDur(now - s.connectedAt)}</td><td>${esc(s.name || "—")}</td><td>${s.role}${s.room ? " · " + esc(s.room) : ""}</td><td>${s.device}</td></tr>`).join(""), 4)}`; })()}
     ${histHtml(hist, k)}
     </body></html>`);
 });
@@ -313,6 +340,7 @@ function attach(room, socket, playerId) {
   socket.join(room.code);
   socket.data.roomCode = room.code;
   socket.data.playerId = playerId;
+  if (socket.data.session) { socket.data.session.joined = true; socket.data.session.name = p.name; }
 }
 
 // Full removal (explicit leave, or grace expiry).
@@ -355,9 +383,12 @@ function leaveCurrentRoom(socket) {
   else if (room.spectators?.has(pid)) { room.spectators.delete(pid); broadcast(room); }
 }
 
+const deviceOf = (socket) => (/Mobile|Android|iPhone|iPad|iPod/i.test(socket.handshake.headers["user-agent"] || "") ? "mobile" : "desktop");
+
 io.on("connection", (socket) => {
   console.log(`✅ connected: ${socket.id}`);
   online++; broadcastPresence();
+  socket.data.session = { connectedAt: Date.now(), device: deviceOf(socket), joined: false, spectated: false, played: false, name: null };
 
   function doResume(room, pid, ack) {
     attach(room, socket, pid);
@@ -413,6 +444,7 @@ io.on("connection", (socket) => {
     room.spectators.set(pid, { id: pid, name: cleanName(name), socketId: socket.id });
     socket.join(code);
     socket.data.roomCode = code; socket.data.playerId = pid; socket.data.spectator = true;
+    if (socket.data.session) { socket.data.session.spectated = true; socket.data.session.name = cleanName(name); }
     console.log(`👀 spectating room ${code}`);
     ack?.({ ok: true, code, you: pid, spectator: true, inGame: !!room.game });
     broadcast(room);
@@ -446,6 +478,7 @@ io.on("connection", (socket) => {
     const p = room?.players.get(socket.data.playerId) || room?.spectators?.get(socket.data.playerId);
     if (!p) return;
     p.name = cleanName(name);
+    if (socket.data.session) socket.data.session.name = p.name;
     if (room.game && room.game.names && room.players.has(socket.data.playerId)) room.game.names[socket.data.playerId] = p.name;
     broadcast(room);
     if (room.game) engine.resync(io, room); // refresh in-game name labels
@@ -483,6 +516,7 @@ io.on("connection", (socket) => {
     if (room.players.size < MAX_PLAYERS) return ack?.({ ok: false, error: "Need 2 players to start." });
     room.status = "started";
     stats.gamesStarted++;
+    for (const pl of room.players.values()) { const sk = io.sockets.sockets.get(pl.socketId); if (sk?.data?.session) sk.data.session.played = true; }
     console.log(`▶️ room ${room.code} started`);
     ack?.({ ok: true });
     engine.startMatch(io, room);
@@ -536,6 +570,8 @@ io.on("connection", (socket) => {
   socket.on("disconnect", (reason) => {
     console.log(`👋 disconnected: ${socket.id} (${reason})`);
     online = Math.max(0, online - 1); broadcastPresence();
+    const sess = socket.data.session; // log the whole visit (records nothing if persistence is off)
+    if (sess) { const end = Date.now(); analytics.recordSession({ connected_at: sess.connectedAt, disconnected_at: end, duration_ms: end - sess.connectedAt, device: sess.device, played: sess.played, joined: sess.joined, spectated: sess.spectated, name: sess.name, reason }); }
     const code = socket.data.roomCode, pid = socket.data.playerId;
     if (!code) return;
     const room = rooms.get(code);

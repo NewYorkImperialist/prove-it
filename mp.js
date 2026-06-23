@@ -134,7 +134,7 @@ socket.on("opponentStatus", ({ connected, name }) => {
 function show(which) {
   for (const id of ["home", "room", "game"]) $(id).classList.toggle("hidden", id !== which);
   $("conn").style.display = which === "game" ? "none" : ""; // sidebar shows it during the game
-  if (which !== "game") $("mpCatMenu").style.display = "none";
+  if (which !== "game") { $("mpCatMenu").style.display = "none"; $("mpSettingsMenu").style.display = "none"; }
 }
 
 // ---------- home actions ----------
@@ -415,6 +415,7 @@ function render() {
 
   $("mpCatBtn").style.display = iAmHost ? "inline-block" : "none"; // host can switch categories
   if ($("mpCatMenu").style.display !== "none") syncCatMenu();
+  if ($("mpSettingsMenu").style.display !== "none") syncSettingsMenu();
 
   const input = $("input"), sendBtn = $("send"), actions = $("actions"), status = $("gstatus");
   actions.innerHTML = "";
@@ -462,8 +463,10 @@ function render() {
       statusText = "Next round coming up…";
       addBtn(actions, "⏸ Pause", "", () => socket.emit("pauseRound"));
     }
+    if (gs.target == null) // endless → let either player vote to end the whole game
+      addBtn(actions, gs.endVotes ? `🏁 End game (${gs.endVotes}/2)` : "🏁 End game", "danger", () => socket.emit("voteEnd"));
   } else if (gs.phase === "matchover") {
-    statusText = `🏆 ${nameOf(gs.matchWinnerId)} wins the match!`;
+    statusText = gs.matchWinnerId ? `🏆 ${nameOf(gs.matchWinnerId)} wins the match!` : "🏁 Game over — it's a tie!";
     if (iAmHost) addBtn(actions, "🔁 Play again", "again", () => socket.emit("rematch", {}, ackErr));
     addBtn(actions, "🏠 Leave", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
   }
@@ -728,6 +731,55 @@ $("mpCatBtn").onclick = (e) => {
 document.addEventListener("click", (e) => {
   const m = $("mpCatMenu");
   if (m.style.display !== "none" && !m.contains(e.target) && e.target !== $("mpCatBtn")) m.style.display = "none";
+});
+
+// ---------- in-game settings menu (name for everyone; timer/win/auto for the host) ----------
+let builtSettingsMenu = false;
+function buildSettingsMenu() {
+  if (builtSettingsMenu) return;
+  builtSettingsMenu = true;
+  TIMERS.forEach((s) => {
+    const b = document.createElement("button"); b.textContent = s + "s"; b.dataset.timer = s;
+    b.onclick = () => iAmHost && socket.emit("setSettings", { timer: s });
+    $("gTimerSeg").appendChild(b);
+  });
+  WINS.forEach((w) => {
+    const b = document.createElement("button"); b.textContent = w; b.dataset.win = w;
+    b.onclick = () => iAmHost && socket.emit("setSettings", { target: w === "∞" ? null : w });
+    $("gWinSeg").appendChild(b);
+  });
+  $("gAdvanceSeg").querySelectorAll("button").forEach((b) => {
+    b.onclick = () => iAmHost && socket.emit("setSettings", { autoAdvance: b.dataset.auto === "1" });
+  });
+}
+function syncSettingsMenu() {
+  if (!gs) return;
+  $("gHostSettings").style.display = iAmHost ? "" : "none";
+  $("gTimerSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.timer === gs.timer));
+  $("gWinSeg").querySelectorAll("button").forEach((b) =>
+    b.classList.toggle("on", b.dataset.win === "∞" ? gs.target == null : +b.dataset.win === gs.target));
+  $("gAdvanceSeg").querySelectorAll("button").forEach((b) =>
+    b.classList.toggle("on", (b.dataset.auto === "1") === (gs.autoAdvance !== false)));
+  if (document.activeElement !== $("gName")) {
+    const me = gs.players.find((p) => p.id === myId);
+    if (me) $("gName").value = me.name;
+  }
+}
+$("mpSettingsBtn").onclick = (e) => {
+  e.stopPropagation();
+  const m = $("mpSettingsMenu");
+  if (m.style.display !== "none") { m.style.display = "none"; return; }
+  $("mpCatMenu").style.display = "none"; // don't stack the two menus
+  buildSettingsMenu(); syncSettingsMenu(); m.style.display = "block";
+};
+$("gNameSave").onclick = () => {
+  const n = $("gName").value.trim();
+  if (n) { socket.emit("setName", { name: n }); rememberName(n); }
+};
+$("gName").addEventListener("keydown", (e) => { if (e.key === "Enter") $("gNameSave").click(); });
+document.addEventListener("click", (e) => {
+  const m = $("mpSettingsMenu");
+  if (m.style.display !== "none" && !m.contains(e.target) && e.target !== $("mpSettingsBtn")) m.style.display = "none";
 });
 
 // ---------- server-driven timer (render the countdown from the deadline) ----------

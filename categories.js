@@ -459,6 +459,20 @@ const CATEGORY_GROUPS = {
     ]},
   ]},
   Entertainment: { emoji: "🎬", cats: [
+    { name: "Minecraft Blocks", items: [
+      ["Grass Block","grass block","grass"], "Dirt", "Stone", "Cobblestone", "Sand", "Gravel", ["Oak Log","oak log","oak wood","log"],
+      ["Oak Planks","oak planks","planks"], "Bedrock", "Obsidian", ["Coal Ore","coal ore"], ["Iron Ore","iron ore"], ["Gold Ore","gold ore"],
+      ["Diamond Ore","diamond ore"], ["Redstone Ore","redstone ore"], ["Emerald Ore","emerald ore"], "Glass", "Sandstone", "Bookshelf",
+      ["Crafting Table","crafting table"], "Furnace", "Chest", "TNT", "Sponge", "Glowstone", "Netherrack", ["Soul Sand","soul sand"],
+      ["Quartz Block","quartz block"], "Wool", "Ice", "Clay", "Pumpkin", "Melon", ["Hay Bale","hay bale"], ["Stone Bricks","stone bricks"],
+      ["End Stone","end stone"], "Purpur", "Prismarine", ["Sea Lantern","sea lantern"], "Beacon", ["Enchanting Table","enchanting table"],
+      "Anvil", "Hopper", "Dispenser", "Piston", ["Sticky Piston","sticky piston"], "Observer", ["Note Block","note block"], "Jukebox",
+      "Ladder", "Torch", ["Redstone Lamp","redstone lamp"], ["Slime Block","slime block"], ["Honey Block","honey block"],
+      ["Magma Block","magma block"], ["Dragon Egg","dragon egg"], ["Ancient Debris","ancient debris"], ["Netherite Block","netherite block"],
+      ["Diamond Block","diamond block"], "Deepslate", "Tuff", "Amethyst", ["Copper Block","copper block"], ["Lightning Rod","lightning rod"],
+      "Spawner", "Mud", "Bell", "Lodestone", "Scaffolding", "Barrel", "Smoker", ["Blast Furnace","blast furnace"], "Grindstone",
+      "Stonecutter", "Loom", "Composter", "Lectern", "Campfire", "Conduit", "Cactus", ["Sugar Cane","sugar cane"], "Bamboo", "Cobweb",
+    ]},
     { name: "Minecraft Mobs", items: [
       "Creeper", "Zombie", "Skeleton", "Spider", "Enderman", "Pig", "Cow", "Sheep", "Chicken", "Villager",
       ["Iron Golem","iron golem"], "Wolf", "Cat", "Ocelot", "Horse", "Slime", "Ghast", "Blaze", ["Wither Skeleton","wither skeleton"],

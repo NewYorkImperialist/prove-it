@@ -149,29 +149,33 @@ io.on("connection", (socket) => {
     engine.resync(io, room); // refresh in-game name labels too
   });
 
-  // Change your display name while in the waiting room.
+  // Change your display name — works in the lobby AND mid-game.
   socket.on("setName", ({ name } = {}) => {
     const room = rooms.get(socket.data.roomCode);
-    if (!room || room.status !== "waiting") return;
-    const p = room.players.get(socket.data.playerId);
+    const p = room?.players.get(socket.data.playerId);
     if (!p) return;
     p.name = cleanName(name);
+    if (room.game && room.game.names) room.game.names[socket.data.playerId] = p.name;
     broadcast(room);
+    if (room.game) engine.resync(io, room); // refresh in-game name labels
   });
 
-  // Host configures the room before starting.
+  // Host configures the room — before starting (all settings) and mid-game (timer/target/auto).
   socket.on("setSettings", ({ groups, timer, target, autoAdvance } = {}) => {
     const room = rooms.get(socket.data.roomCode);
-    if (!room || room.hostId !== socket.data.playerId || room.status !== "waiting") return;
+    if (!room || room.hostId !== socket.data.playerId) return;
     const s = room.settings;
-    if (Array.isArray(groups)) {
+    const inGame = room.status !== "waiting";
+    if (!inGame && Array.isArray(groups)) { // categories changed mid-game go through setGroups instead
       const valid = groups.filter((k) => CATEGORY_GROUPS[k]);
       if (valid.length) s.groups = valid; // never allow zero
     }
-    if (TIMERS.includes(timer)) s.timer = timer;
-    if (target === null || TARGETS.includes(target)) s.target = target;
-    if (typeof autoAdvance === "boolean") s.autoAdvance = autoAdvance;
+    const patch = {};
+    if (TIMERS.includes(timer)) { s.timer = timer; patch.timer = timer; }
+    if (target === null || TARGETS.includes(target)) { s.target = target; patch.target = target; }
+    if (typeof autoAdvance === "boolean") { s.autoAdvance = autoAdvance; patch.autoAdvance = autoAdvance; }
     broadcast(room);
+    if (inGame && room.game) engine.applyLiveSettings(io, room, patch); // apply to the live match
   });
 
   // Host changes categories mid-match (applies next round).
@@ -207,6 +211,7 @@ io.on("connection", (socket) => {
   socket.on("pauseRound", withGame((room) => engine.handlePauseRound(io, room, socket)));
   socket.on("nextRound", withGame((room) => engine.handleNextRound(io, room, socket)));
   socket.on("voteSkip", withGame((room) => engine.handleVoteSkip(io, room, socket)));
+  socket.on("voteEnd", withGame((room) => engine.handleVoteEnd(io, room, socket)));
 
   // Chat — works any time you're in a room (lightly rate-limited; rendered separately from game messages).
   socket.on("chat", ({ text } = {}) => {

@@ -9,8 +9,8 @@ const TURN_MS = 10_000;       // time to raise / call Prove It!
 const ROUNDOVER_MS = 4_500;   // pause between rounds
 const JUDGE_MS_PER = 5_000;   // forced end-of-round ruling: seconds per remaining off-list answer
 const ANSWER_COOLDOWN_MS = 350; // min gap between a prover's submissions (anti-spam)
-const MAX_PENDING = 3;          // max off-list answers awaiting a ruling at once
-const MAX_OFFLIST = 8;          // max off-list answers a prover can queue per round
+const MAX_PENDING = 6;          // max off-list answers awaiting a ruling at once
+const MAX_OFFLIST = 15;         // max off-list answers a prover can queue per round
 const DEFAULTS = { timer: 30, target: 5, autoAdvance: true }; // prove seconds, points to win, auto next round
 
 // ---------- matching helpers (mirror the client) ----------
@@ -89,6 +89,31 @@ function handleNextRound(io, room, socket) {
   if (!g || g.phase !== "roundover") return;
   beginRound(io, room);
 }
+// Vote to end the whole match — endless mode only, needs both players to agree.
+function handleVoteEnd(io, room, socket) {
+  const g = room.game;
+  if (!g || g.target !== Infinity || g.phase === "matchover") return; // endless only
+  const pid = socket.data.playerId;
+  if (!g.endVotes) g.endVotes = new Set();
+  if (g.endVotes.has(pid)) return; // one vote per player
+  g.endVotes.add(pid);
+  if (g.endVotes.size >= 2) {
+    const [a, b] = g.order;
+    const sa = g.scores[a] || 0, sb = g.scores[b] || 0;
+    if (sa === sb) { // ended by mutual vote with a tied score
+      clearTimer(room);
+      g.phase = "matchover"; g.deadline = null; g.matchWinnerId = null;
+      log(io, room, "system", null, `🏁 Game ended by vote — it's a tie! (${sa}–${sb})`);
+      return emit(io, room);
+    }
+    return matchOver(io, room, sa > sb ? a : b);
+  }
+  // first vote → pause any auto-advance so the other player can respond
+  if (g.phase === "roundover" && g.autoAdvance && !g.intermission) { clearTimer(room); g.intermission = true; }
+  log(io, room, "system", null, `🏁 ${g.names[pid]} wants to end the game (1/2).`);
+  emit(io, room);
+}
+
 // Vote to skip the current category — needs both players to agree. Only before the duel starts.
 function handleVoteSkip(io, room, socket) {
   const g = room.game;
@@ -116,7 +141,7 @@ function snapshot(room) {
     pending: g.pending ? [...g.pending.values()].map((p) => ({ id: p.id, text: p.text })) : [],
     judgeActive: g.judgeActive ? { id: g.judgeActive.id, text: g.judgeActive.text } : null,
     judgeRemaining: g.judgeQueue ? g.judgeQueue.length : 0,
-    scores: g.scores, target: g.target === Infinity ? null : g.target,
+    scores: g.scores, target: g.target === Infinity ? null : g.target, timer: g.timer,
     players: g.order.map((id) => ({ id, name: g.names[id], crown: !!room.players.get(id)?.crown })),
     lastResult: g.lastResult || null,
     matchWinnerId: g.matchWinnerId || null,
@@ -124,6 +149,7 @@ function snapshot(room) {
     intermission: !!g.intermission,
     autoAdvance: g.autoAdvance !== false,
     skipVotes: g.skipVotes ? g.skipVotes.size : 0,
+    endVotes: g.endVotes ? g.endVotes.size : 0,
     groups: g.groups || [],
   };
 }
@@ -157,7 +183,7 @@ function beginRound(io, room) {
   const c = avail[Math.floor(Math.random() * avail.length)];
   g.usedNames.push(c.name); g.lastCatName = c.name; g.current = c;
   g.claim = 0; g.holderId = null; g.proven = []; g.lastResult = null; g.challengerId = null;
-  g.intermission = false; g.skipVotes = new Set();
+  g.intermission = false; g.skipVotes = new Set(); g.endVotes = new Set();
 
   const opener = g.order[(g.round - 1) % 2];
   g.turnId = opener; g.phase = "opening";
@@ -397,6 +423,22 @@ function handleRematch(io, room, socket, ack) {
   startMatch(io, room);
 }
 
+// Host tweaked timer / win target / auto-advance mid-match. Applies going forward.
+function applyLiveSettings(io, room, { timer, target, autoAdvance } = {}) {
+  const g = room.game;
+  if (!g) return;
+  if (typeof timer === "number") g.timer = timer;
+  if (target !== undefined) g.target = target == null ? Infinity : target;
+  if (typeof autoAdvance === "boolean") g.autoAdvance = autoAdvance;
+  log(io, room, "system", null, "Host updated the game settings.");
+  // lowering the win target may already decide the match
+  if (g.phase !== "matchover" && g.target !== Infinity) {
+    const leader = g.order.find((id) => (g.scores[id] || 0) >= g.target);
+    if (leader) return matchOver(io, room, leader);
+  }
+  emit(io, room);
+}
+
 // Host changed categories during a match → rebuild the pool for upcoming rounds.
 function setGroups(io, room, groups) {
   if (!room.game) return;
@@ -420,6 +462,6 @@ function endGameForLeaver(io, room, leaverId) {
 }
 
 module.exports = {
-  startMatch, handleOpen, handleRaise, handleProveIt, handleAnswer, handleJudge, handleRejectAll, handleGiveUp, handleRematch, endGameForLeaver, pauseGame, resumeGame, setGroups, handlePauseRound, handleNextRound, handleVoteSkip,
+  startMatch, handleOpen, handleRaise, handleProveIt, handleAnswer, handleJudge, handleRejectAll, handleGiveUp, handleRematch, endGameForLeaver, pauseGame, resumeGame, setGroups, applyLiveSettings, handlePauseRound, handleNextRound, handleVoteSkip, handleVoteEnd,
   resync: (io, room) => { if (room.game) emit(io, room); },
 };

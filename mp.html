@@ -81,6 +81,15 @@
     border:1px solid var(--line); border-radius:12px; padding:10px; box-shadow:0 16px 40px rgba(0,0,0,.5); }
   #mpCatMenu .title { font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:2px 4px 8px; }
   #mpCatMenuChecks { display:grid; gap:6px; max-height:280px; overflow-y:auto; }
+  #mpSettingsBtn { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:8px;
+    padding:6px 11px; font-size:14px; font-weight:700; cursor:pointer; transition:.12s; }
+  #mpSettingsBtn:hover { background:var(--accent); border-color:var(--accent); color:#fff; }
+  #mpSettingsMenu { position:absolute; top:52px; right:16px; width:250px; z-index:6; background:var(--panel);
+    border:1px solid var(--line); border-radius:12px; padding:4px 14px 14px; box-shadow:0 16px 40px rgba(0,0,0,.5); }
+  #mpSettingsMenu .group-title { margin:14px 0 7px; }
+  #mpSettingsMenu .namerow { display:flex; gap:8px; }
+  #mpSettingsMenu .namerow input { flex:1; }
+  #mpSettingsMenu .namerow button { background:var(--accent2); color:#08130d; border:none; border-radius:10px; padding:0 14px; font-weight:800; cursor:pointer; }
 
   /* lobby settings (host configures the room) */
   .group-title { font-size:12px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:18px 0 8px; }
@@ -300,12 +309,25 @@
       <span class="room" id="gRoom"></span>
       <span class="spacer"></span>
       <button id="mpCatBtn" style="display:none">Categories ▾</button>
+      <button id="mpSettingsBtn">⚙</button>
       <button id="muteBtn" title="Sound on">🔊</button>
       <button id="crownGame" class="hidden" title="Toggle your crown">👑</button>
       <button id="mpLeave">Leave</button>
       <div id="mpCatMenu" style="display:none">
         <div class="title">Categories (applies next round)</div>
         <div id="mpCatMenuChecks"></div>
+      </div>
+      <div id="mpSettingsMenu" style="display:none">
+        <div class="group-title" style="margin-top:4px">Your name</div>
+        <div class="namerow"><input id="gName" maxlength="20" autocomplete="off"><button id="gNameSave">Save</button></div>
+        <div id="gHostSettings">
+          <div class="group-title">Timer</div>
+          <div class="seg" id="gTimerSeg"></div>
+          <div class="group-title">Win at</div>
+          <div class="seg" id="gWinSeg"></div>
+          <div class="group-title">Next round</div>
+          <div class="seg" id="gAdvanceSeg"><button data-auto="1">Auto</button><button data-auto="0">Manual</button></div>
+        </div>
       </div>
     </div>
     <div id="main">

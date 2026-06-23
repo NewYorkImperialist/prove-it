@@ -17,6 +17,78 @@ const io = new Server(server);
 
 // Default page is Multiplayer; single-player lives at /index.html.
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "mp.html")));
+
+// ---------- owner-only live dashboard (gated by the OWNER_KEY secret) ----------
+// Reads server state directly — an INVISIBLE peek (doesn't join as a spectator).
+//   /admin?key=YOUR_KEY        → live HTML dashboard (auto-refreshes)
+//   /admin?key=YOUR_KEY&json=1 → raw JSON
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function gamePeek(room) {
+  const g = room.game;
+  if (!g) return null;
+  const nameOf = (id) => g.names[id] || "?";
+  const proven = (g.proven || []).map((id) => { const e = (g.current.entries || []).find((x) => x.id === id); return e ? e.display : "?"; });
+  return {
+    phase: g.phase, round: g.round,
+    category: g.current ? `${g.current.group} — ${g.current.name}` : "?",
+    claim: g.claim, target: g.target === Infinity ? "∞" : g.target,
+    turn: nameOf(g.turnId),
+    scores: g.order.map((id) => `${nameOf(id)}: ${g.scores[id] || 0}`).join("   ·   "),
+    proven, granted: g.granted || [], pending: g.pending ? [...g.pending.values()].map((p) => p.text) : [],
+    paused: !!g.paused, intermission: !!g.intermission,
+  };
+}
+function adminData() {
+  return [...rooms.values()].map((room) => ({
+    code: room.code,
+    status: room.game ? "playing" : "waiting",
+    players: [...room.players.values()].map((p) => ({ name: p.name, connected: p.connected, host: p.id === room.hostId })),
+    spectators: room.spectators ? room.spectators.size : 0,
+    game: gamePeek(room),
+  }));
+}
+app.get("/admin", (req, res) => {
+  const key = req.query.key || req.get("x-owner-key");
+  if (!process.env.OWNER_KEY || key !== process.env.OWNER_KEY) return res.status(404).send("Not found");
+  const list = adminData();
+  if (req.query.json) return res.json({ now: Date.now(), roomCount: list.length, rooms: list });
+  const playing = list.filter((r) => r.status === "playing").length;
+  const card = (r) => {
+    const ps = r.players.map((p) => `${esc(p.name)}${p.host ? " 👑" : ""}${p.connected === false ? " (reconnecting…)" : ""}`).join(" vs ") || "—";
+    const g = r.game;
+    const gameHtml = g ? `
+      <div class="g"><b>${esc(g.category)}</b> · round ${g.round} · phase <b>${esc(g.phase)}</b>${g.paused ? " · ⏸ paused" : ""}</div>
+      <div class="g">Score: ${esc(g.scores)} &nbsp; (first to ${esc(g.target)})</div>
+      <div class="g">Claim: <b>${g.claim}</b> · current turn: <b>${esc(g.turn)}</b></div>
+      <div class="g">Proven (${g.proven.length}): ${g.proven.length ? esc(g.proven.join(", ")) : "—"}</div>
+      ${g.granted.length ? `<div class="g">Granted off-list: ${esc(g.granted.join(", "))}</div>` : ""}
+      ${g.pending.length ? `<div class="g pend">Awaiting ruling: ${esc(g.pending.join(", "))}</div>` : ""}
+    ` : `<div class="g">In the waiting room.</div>`;
+    return `<div class="card ${r.status}">
+      <div class="hd"><span class="code">${esc(r.code)}</span><span class="badge">${r.status === "playing" ? "🟢 playing" : "🟡 lobby"}</span>
+        <a class="watch" href="/?spectate=${encodeURIComponent(r.code)}" target="_blank">👀 watch live</a></div>
+      <div class="g players">${ps} &nbsp;·&nbsp; 👀 ${r.spectators}</div>
+      ${gameHtml}
+    </div>`;
+  };
+  res.set("content-type", "text/html").send(`<!doctype html><html><head><meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="4">
+    <title>Prove It! — server</title><style>
+    body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
+    h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;margin:0 0 18px;font-size:13px}
+    .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
+    .card{background:#171a23;border:1px solid #262b38;border-radius:12px;padding:14px}
+    .card.playing{border-color:#2e7d52} .hd{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+    .code{font-weight:900;font-size:22px;letter-spacing:3px;color:#ffd34d}
+    .badge{font-size:12px;color:#8a92a6} .watch{margin-left:auto;color:#5b8cff;text-decoration:none;font-weight:700;font-size:13px}
+    .watch:hover{text-decoration:underline} .g{font-size:13px;color:#c6ccda;margin:3px 0} .g.players{color:#fff;font-weight:600}
+    .g.pend{color:#ffb454} b{color:#fff}</style></head>
+    <body><h1>🎯 Prove It! — live server</h1>
+    <p class="sub">${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${new Date().toISOString()}</p>
+    <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
+    </body></html>`);
+});
+
 app.use(express.static(path.join(__dirname)));
 
 // ---------- Rooms ----------

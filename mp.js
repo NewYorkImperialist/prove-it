@@ -31,6 +31,15 @@ function rememberName(n) { if (n) localStorage.setItem("pi_name", n); }
 const inviteCode = (new URLSearchParams(location.search).get("room") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
 if (inviteCode) $("joinCode").value = inviteCode;
 let triedInvite = false;
+// ?spectate=CODE → watch a room directly (used by the owner /admin dashboard links)
+const spectateParam = (new URLSearchParams(location.search).get("spectate") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+function doSpectate(code) {
+  socket.emit("spectateRoom", { code, name: nameValue(), playerId }, (res) => {
+    if (!res?.ok) { show("home"); $("homeErr").textContent = res?.error || "Could not spectate."; return; }
+    myId = res.you; setRoom(res.code); setSpectator(true); rememberName(nameValue()); show(res.inGame ? "game" : "room");
+    history.replaceState({}, "", location.pathname);
+  });
+}
 
 // ---------- owner crown 👑 (secret, key-gated server-side) ----------
 // Become the owner once by visiting  ?crown=YOUR_SECRET_KEY  (use ?crown=off to revoke).
@@ -131,6 +140,8 @@ socket.on("connect", () => {
       if (!res?.ok) { setRoom(null); show("home"); maybeAutoJoinInvite(); } // room gone → back to start
       else applyCrown();
     });
+  } else if (spectateParam) {
+    doSpectate(spectateParam);
   } else {
     maybeAutoJoinInvite();
   }

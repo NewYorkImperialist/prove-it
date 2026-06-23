@@ -2,6 +2,17 @@
 const $ = (id) => document.getElementById(id);
 const socket = io();
 
+// Keep the in-game layout sized to the *visible* viewport so the mobile keyboard
+// (opened for chat/answers) shrinks the feed instead of hiding the header & input bar.
+function setAppHeight() {
+  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  document.documentElement.style.setProperty("--app-height", h + "px");
+}
+if (window.visualViewport) window.visualViewport.addEventListener("resize", setAppHeight);
+window.addEventListener("resize", setAppHeight);
+window.addEventListener("orientationchange", setAppHeight);
+setAppHeight();
+
 let iAmHost = false;
 let gs = null; // latest game state snapshot
 let lastSendAt = 0; // client-side answer cooldown
@@ -538,6 +549,16 @@ function render() {
   let enable = false, placeholder = "Type / to chat…", statusText = "";
   const myTurn = gs.turnId === myId;
 
+  // Auto mode (fires on turn/phase transitions): when I need to act, drop to ANSWER mode;
+  // while my opponent is the one guessing, drop me into CHAT mode (I can't answer, only chat).
+  const actKey = gs.phase + ":" + myTurn;
+  if (!isSpectator && actKey !== prevActKey) {
+    const myActiveTurn = myTurn && (gs.phase === "opening" || gs.phase === "bidding" || gs.phase === "proving");
+    if (myActiveTurn) { if (chatMode) exitChat(true); }            // my move → ANSWER mode
+    else if (gs.phase === "proving" && !myTurn && !chatMode) enterChatNoFocus(); // they guess → CHAT
+  }
+  prevActKey = actKey;
+
   if (gs.phase === "opening") {
     if (myTurn) { enable = true; placeholder = "👉 Your turn — type a number to open!"; statusText = "👉 You're opening — how many can you name?"; }
     else statusText = `Waiting for ${nameOf(gs.turnId)} to open…`;
@@ -613,6 +634,7 @@ function render() {
     input.placeholder = placeholder;
     if (enable) input.focus();
   }
+  $("inputbar").classList.toggle("answer-mode", enable && !chatMode); // amber "✏️ ANSWER" cue
   status.textContent = statusText;
 
   // Unmissable cue for whoever's opening: red glow on the box + a shake when it becomes their turn.
@@ -622,6 +644,7 @@ function render() {
   wasMyOpen = iAmOpening;
 }
 let wasMyOpen = false;
+let prevActKey = null;
 
 function addBtn(parent, label, cls, onClick) {
   const b = document.createElement("button");
@@ -759,13 +782,21 @@ function enterChat() {
   $("input").focus();
   if (chatDraft) signalTyping();         // resume the typing indicator if there's a draft
 }
-function exitChat() {
+function exitChat(silent) {
   chatDraft = $("input").value;          // keep the draft so re-opening restores it
   chatMode = false;
   stopTyping();
   $("inputbar").classList.remove("chat-mode");
   $("input").value = "";
-  if (gs) render(); // restore the normal game placeholder/state
+  if (!silent && gs) render(); // restore the normal game placeholder/state
+}
+// Enter chat mode without grabbing focus (so auto-switching the opponent into chat
+// during the opponent's guessing turn doesn't pop their keyboard unprompted).
+function enterChatNoFocus() {
+  chatMode = true;
+  $("inputbar").classList.add("chat-mode");
+  $("input").value = chatDraft;
+  $("input").placeholder = "Message…  (Enter to send, Esc or / to close)";
 }
 function toggleChat() { chatMode ? exitChat() : enterChat(); }
 $("chatToggle").onclick = toggleChat;

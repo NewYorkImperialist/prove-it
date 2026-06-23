@@ -550,6 +550,17 @@ function updateTimer() {
 }
 
 // One answer per submission — type each out individually and hit Enter.
+// Keep the layout sized to the visible viewport so the mobile keyboard shrinks the
+// feed instead of hiding the header & input bar.
+function setAppHeight() {
+  const h = (window.visualViewport && window.visualViewport.height) || window.innerHeight;
+  document.documentElement.style.setProperty("--app-height", h + "px");
+}
+if (window.visualViewport) window.visualViewport.addEventListener("resize", setAppHeight);
+window.addEventListener("resize", setAppHeight);
+window.addEventListener("orientationchange", setAppHeight);
+setAppHeight();
+
 function oilRain() {
   for (let i = 0; i < 44; i++) {
     const d = document.createElement("div");

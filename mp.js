@@ -15,8 +15,14 @@ let playerId = (isReload && sessionStorage.getItem("pid")) || genPid();
 sessionStorage.setItem("pid", playerId);
 let myId = playerId;
 let myRoom = isReload ? (sessionStorage.getItem("room") || null) : null;
-if (!isReload) sessionStorage.removeItem("room");
-function setRoom(code) { myRoom = code; code ? sessionStorage.setItem("room", code) : sessionStorage.removeItem("room"); }
+let isSpectator = isReload && sessionStorage.getItem("spectator") === "1";
+if (!isReload) { sessionStorage.removeItem("room"); sessionStorage.removeItem("spectator"); }
+function setRoom(code) {
+  myRoom = code;
+  if (code) sessionStorage.setItem("room", code);
+  else { sessionStorage.removeItem("room"); sessionStorage.removeItem("spectator"); isSpectator = false; }
+}
+function setSpectator(on) { isSpectator = on; on ? sessionStorage.setItem("spectator", "1") : sessionStorage.removeItem("spectator"); }
 
 // Remember the player's name across visits, and accept ?room=CODE invite links.
 const savedName = localStorage.getItem("pi_name");
@@ -115,7 +121,12 @@ function setConn(text, cls) {
 }
 socket.on("connect", () => {
   setConn("connected", "ok");
-  if (myRoom) {
+  if (myRoom && isSpectator) {
+    socket.emit("spectateRoom", { code: myRoom, name: nameValue(), playerId }, (res) => {
+      if (!res?.ok) { setRoom(null); show("home"); }
+      else { myId = res.you; show(res.inGame ? "game" : "room"); }
+    });
+  } else if (myRoom) {
     socket.emit("resume", { code: myRoom, playerId }, (res) => {
       if (!res?.ok) { setRoom(null); show("home"); maybeAutoJoinInvite(); } // room gone → back to start
       else applyCrown();
@@ -152,8 +163,17 @@ $("joinBtn").onclick = () => {
   $("homeErr").textContent = "";
   if (code.length < 4) return ($("homeErr").textContent = "Enter the 4-letter room code.");
   socket.emit("joinRoom", { code, name: nameValue(), playerId }, (res) => {
-    if (!res?.ok) return ($("homeErr").textContent = res?.error || "Could not join room.");
+    if (!res?.ok) return ($("homeErr").textContent = (res?.error || "Could not join room.") + " (tap 👀 Spectate to watch)");
     myId = res.you; setRoom(res.code); rememberName(nameValue()); show("room"); applyCrown();
+  });
+};
+$("spectateBtn").onclick = () => {
+  const code = $("joinCode").value.trim().toUpperCase();
+  $("homeErr").textContent = "";
+  if (code.length < 4) return ($("homeErr").textContent = "Enter the room code to spectate.");
+  socket.emit("spectateRoom", { code, name: nameValue(), playerId }, (res) => {
+    if (!res?.ok) return ($("homeErr").textContent = res?.error || "Could not spectate.");
+    myId = res.you; setRoom(res.code); setSpectator(true); rememberName(nameValue()); show(res.inGame ? "game" : "room");
   });
 };
 $("spBtn").onclick = () => { location.href = "index.html"; };
@@ -222,10 +242,15 @@ socket.on("roomState", (room) => {
     div.innerHTML = `<div class="avatar" style="background:#2a2f3e">?</div><div class="name">waiting for opponent…</div>`;
     list.appendChild(div);
   }
+  const specs = room.spectators || [];
+  $("watchers").classList.toggle("hidden", specs.length === 0);
+  if (specs.length) $("watchers").textContent = `👀 ${specs.length} watching — ${specs.map((s) => s.name).join(", ")}`;
+
   const canStart = iAmHost && room.players.length >= 2;
   $("startBtn").classList.toggle("hidden", !iAmHost);
   $("startBtn").disabled = !canStart;
-  $("roomStatus").textContent = iAmHost ? (canStart ? "" : "Waiting for a second player…") : "Waiting for the host to start…";
+  $("roomStatus").textContent = isSpectator ? "👀 You're spectating — waiting for the host to start…"
+    : iAmHost ? (canStart ? "" : "Waiting for a second player…") : "Waiting for the host to start…";
 
   buildLobbySettings();
   syncSettings(room.settings);
@@ -308,12 +333,12 @@ socket.on("log", ({ by, name, text, kind }) => {
   feed.scrollTop = feed.scrollHeight;
 });
 
-socket.on("chat", ({ id, name, text }) => {
+socket.on("chat", ({ id, name, text, spectator }) => {
   $("typing").classList.add("hidden"); $("typing").textContent = ""; // they sent it → no longer typing
   const feed = $("feed");
   const div = document.createElement("div");
   div.className = "chat" + (id === myId ? " mine" : "");
-  const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = name + ": ";
+  const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = (spectator ? "👀 " : "") + name + ": ";
   const tx = document.createElement("span"); tx.textContent = text; // textContent → no HTML injection
   div.appendChild(nm); div.appendChild(tx);
   feed.appendChild(div);
@@ -392,7 +417,8 @@ function render() {
   const opp = gs.players.find((p) => p.id !== myId) || gs.players[1];
   const nameOf = (id) => (gs.players.find((p) => p.id === id) || {}).name || "?";
 
-  $("gRoom").textContent = myRoom ? "Room " + myRoom : "";
+  $("gRoom").textContent = (myRoom ? "Room " + myRoom : "") + (gs.spectators ? "  ·  👀 " + gs.spectators : "");
+  $("specBadge").classList.toggle("hidden", !isSpectator);
 
   // sidebar players (you first), with turn highlight
   const sidePlayers = $("sidePlayers");
@@ -469,6 +495,14 @@ function render() {
     statusText = gs.matchWinnerId ? `🏆 ${nameOf(gs.matchWinnerId)} wins the match!` : "🏁 Game over — it's a tie!";
     if (iAmHost) addBtn(actions, "🔁 Play again", "again", () => socket.emit("rematch", {}, ackErr));
     addBtn(actions, "🏠 Leave", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
+  }
+
+  // Spectators watch read-only: no game buttons, input is chat-only.
+  if (isSpectator) {
+    actions.innerHTML = "";
+    enable = false;
+    placeholder = "Say something… (you're spectating 👀)";
+    if (gs.phase === "matchover") addBtn(actions, "🏠 Stop watching", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
   }
 
   // Frozen while an opponent is reconnecting — overrides all controls.
@@ -565,6 +599,13 @@ function flashStatus(msg) { const s = $("gstatus"); s.textContent = msg; s.class
 
 // ---------- input send (context depends on phase) ----------
 function gameSend() {
+  if (isSpectator) { // spectators can only chat
+    const msg = $("input").value.trim();
+    $("input").value = "";
+    if (chatMode) exitChat();
+    if (msg) socket.emit("chat", { text: msg });
+    return;
+  }
   if (chatMode) { // we're in chat mode — send the message, no "/" needed
     const msg = $("input").value.trim();
     $("input").value = "";  // clear first so exitChat saves an empty draft

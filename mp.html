@@ -114,6 +114,8 @@
     76%{transform:scale(1.4) rotate(-4deg)} 100%{transform:scale(1) rotate(0)}
   }
   #topbar .room { color:var(--muted); font-size:13px; padding:4px 10px; background:var(--panel2); border-radius:8px; }
+  #specBadge { font-size:12px; font-weight:800; color:#08130d; background:var(--gold); padding:4px 9px; border-radius:8px; }
+  #watchers { font-size:12px; color:var(--muted); text-align:center; margin:-8px 0 14px; }
   #topbar .spacer { flex:1; }
   #mpLeave { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:8px;
     padding:6px 12px; font-size:13px; font-weight:700; cursor:pointer; transition:.12s; }
@@ -258,6 +260,7 @@
       <input id="joinCode" maxlength="4" placeholder="ABCD" autocomplete="off">
       <button class="secondary" id="joinBtn">Join</button>
     </div>
+    <button class="ghost" id="spectateBtn" style="width:100%;margin-top:8px;">👀 Spectate this room</button>
     <div class="err" id="homeErr"></div>
 
     <div class="divider">— or —</div>
@@ -275,6 +278,7 @@
     </div>
     <button class="secondary" id="copyInvite">🔗 Copy invite link</button>
     <div class="players" id="players"></div>
+    <div id="watchers" class="hidden"></div>
 
     <div class="namebar">
       <label for="lobbyName">Your name</label>
@@ -307,6 +311,7 @@
     <div id="topbar">
       <span class="logo" id="mpLogo" style="cursor:pointer" title="Leave game">🎯 Prove It!</span>
       <span class="room" id="gRoom"></span>
+      <span id="specBadge" class="hidden">👀 Spectating</span>
       <span class="spacer"></span>
       <button id="mpCatBtn" style="display:none">Categories ▾</button>
       <button id="mpSettingsBtn">⚙</button>

@@ -143,6 +143,7 @@ function snapshot(room) {
     judgeRemaining: g.judgeQueue ? g.judgeQueue.length : 0,
     scores: g.scores, target: g.target === Infinity ? null : g.target, timer: g.timer,
     players: g.order.map((id) => ({ id, name: g.names[id], crown: !!room.players.get(id)?.crown })),
+    spectators: room.spectators ? room.spectators.size : 0,
     lastResult: g.lastResult || null,
     matchWinnerId: g.matchWinnerId || null,
     paused: !!g.paused,

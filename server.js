@@ -48,6 +48,7 @@ function roomState(room) {
     players: [...room.players.values()].map((p) => ({
       id: p.id, name: p.name, isHost: p.id === room.hostId, connected: p.connected, crown: !!p.crown,
     })),
+    spectators: room.spectators ? [...room.spectators.values()].map((s) => ({ id: s.id, name: s.name })) : [],
   };
 }
 function broadcast(room) { io.to(room.code).emit("roomState", roomState(room)); }
@@ -83,6 +84,7 @@ function leaveCurrentRoom(socket) {
   if (!room) return;
   socket.leave(code);
   if (room.players.has(pid)) removePlayer(room, pid);
+  else if (room.spectators?.has(pid)) { room.spectators.delete(pid); broadcast(room); }
 }
 
 io.on("connection", (socket) => {
@@ -103,7 +105,7 @@ io.on("connection", (socket) => {
     const pid = playerId || genId();
     const room = { code, hostId: pid, status: "waiting",
       settings: { groups: [...DEFAULT_GROUPS], timer: 30, target: 5, autoAdvance: true },
-      players: new Map(), graceTimeout: null };
+      players: new Map(), spectators: new Map(), graceTimeout: null };
     room.players.set(pid, { id: pid, name: cleanName(name), socketId: socket.id, connected: true });
     rooms.set(code, room);
     attach(room, socket, pid);
@@ -126,6 +128,24 @@ io.on("connection", (socket) => {
     console.log(`➕ joined room ${code}`);
     ack?.({ ok: true, code, you: pid });
     broadcast(room);
+  });
+
+  // Join a room as a read-only spectator (watch the duel; can chat but can't play).
+  socket.on("spectateRoom", ({ code, name, playerId } = {}, ack) => {
+    code = String(code || "").toUpperCase().trim();
+    const room = rooms.get(code);
+    if (!room) return ack?.({ ok: false, error: "No room with that code." });
+    const pid = playerId || genId();
+    if (room.players.has(pid)) return doResume(room, pid, ack); // they're actually a player → resume their slot
+    leaveCurrentRoom(socket);
+    if (!room.spectators) room.spectators = new Map();
+    room.spectators.set(pid, { id: pid, name: cleanName(name), socketId: socket.id });
+    socket.join(code);
+    socket.data.roomCode = code; socket.data.playerId = pid; socket.data.spectator = true;
+    console.log(`👀 spectating room ${code}`);
+    ack?.({ ok: true, code, you: pid, spectator: true, inGame: !!room.game });
+    broadcast(room);
+    if (room.game) engine.resync(io, room); // push current game state to the new spectator
   });
 
   // Reconnect to an existing slot (after refresh / network drop).
@@ -152,10 +172,10 @@ io.on("connection", (socket) => {
   // Change your display name — works in the lobby AND mid-game.
   socket.on("setName", ({ name } = {}) => {
     const room = rooms.get(socket.data.roomCode);
-    const p = room?.players.get(socket.data.playerId);
+    const p = room?.players.get(socket.data.playerId) || room?.spectators?.get(socket.data.playerId);
     if (!p) return;
     p.name = cleanName(name);
-    if (room.game && room.game.names) room.game.names[socket.data.playerId] = p.name;
+    if (room.game && room.game.names && room.players.has(socket.data.playerId)) room.game.names[socket.data.playerId] = p.name;
     broadcast(room);
     if (room.game) engine.resync(io, room); // refresh in-game name labels
   });
@@ -197,9 +217,10 @@ io.on("connection", (socket) => {
   });
 
   // ---------- gameplay intents (ignored while paused; engine validates the rest) ----------
+  // Game actions are players-only — spectators (not in room.players) are silently ignored.
   const withGame = (fn) => (...args) => {
     const room = rooms.get(socket.data.roomCode);
-    if (room && room.game && !room.game.paused) fn(room, ...args);
+    if (room && room.game && !room.game.paused && room.players.has(socket.data.playerId)) fn(room, ...args);
   };
   socket.on("open", withGame((room, { n } = {}, ack) => engine.handleOpen(io, room, socket, n, ack)));
   socket.on("raise", withGame((room, { toN } = {}, ack) => engine.handleRaise(io, room, socket, toN, ack)));
@@ -216,13 +237,13 @@ io.on("connection", (socket) => {
   // Chat — works any time you're in a room (lightly rate-limited; rendered separately from game messages).
   socket.on("chat", ({ text } = {}) => {
     const room = rooms.get(socket.data.roomCode);
-    const p = room?.players.get(socket.data.playerId);
+    const p = room?.players.get(socket.data.playerId) || room?.spectators?.get(socket.data.playerId);
     if (!p) return;
     const now = Date.now();
     if (p.lastChatAt && now - p.lastChatAt < 400) return;
     p.lastChatAt = now;
     const msg = String(text || "").replace(/\s+/g, " ").trim().slice(0, 200);
-    if (msg) io.to(room.code).emit("chat", { id: p.id, name: p.name, text: msg });
+    if (msg) io.to(room.code).emit("chat", { id: p.id, name: p.name, text: msg, spectator: !room.players.has(p.id) });
   });
 
   // Typing indicator — relayed to the rest of the room (not echoed back to the sender).
@@ -245,7 +266,9 @@ io.on("connection", (socket) => {
     const code = socket.data.roomCode, pid = socket.data.playerId;
     if (!code) return;
     const room = rooms.get(code);
-    const p = room?.players.get(pid);
+    if (!room) return;
+    if (room.spectators?.has(pid)) { room.spectators.delete(pid); broadcast(room); return; } // spectator left
+    const p = room.players.get(pid);
     if (!p || p.socketId !== socket.id) return; // stale socket, ignore
     p.connected = false; p.socketId = null;
     if (room.game) engine.pauseGame(io, room);

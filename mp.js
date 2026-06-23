@@ -154,11 +154,21 @@ socket.on("opponentStatus", ({ connected, name }) => {
   if (connected) flashStatus(`${name} reconnected.`);
 });
 
+// ---------- live "online" count (social proof in the lobby/home) ----------
+let onlineCount = 0;
+socket.on("presence", ({ online }) => { onlineCount = online || 0; updateOnline(); });
+function updateOnline() {
+  $("online").textContent = onlineCount + " online";
+  const inGame = !$("game").classList.contains("hidden");
+  $("online").classList.toggle("hidden", inGame || onlineCount <= 0); // shown on home/lobby only
+}
+
 // ---------- screens ----------
 function show(which) {
   for (const id of ["home", "room", "game"]) $(id).classList.toggle("hidden", id !== which);
   $("conn").style.display = which === "game" ? "none" : ""; // sidebar shows it during the game
   if (which !== "game") { $("mpCatMenu").style.display = "none"; $("mpSettingsMenu").style.display = "none"; }
+  updateOnline();
 }
 
 // ---------- home actions ----------

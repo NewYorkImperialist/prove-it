@@ -60,7 +60,7 @@ app.get("/admin", (req, res) => {
   if (!ownerOk(req)) return res.status(404).send("Not found");
   const now = Date.now();
   const list = adminData();
-  if (req.query.json) return res.json({ now, uptimeMs: now - serverStartedAt, stats, roomCount: list.length, rooms: list });
+  if (req.query.json) return res.json({ now, uptimeMs: now - serverStartedAt, online, stats, roomCount: list.length, rooms: list });
   const playing = list.filter((r) => r.status === "playing").length;
   const k = encodeURIComponent(req.query.key || "");
   const card = (r) => {
@@ -98,7 +98,7 @@ app.get("/admin", (req, res) => {
     .g{font-size:13px;color:#c6ccda;margin:3px 0} .g.players{color:#fff;font-weight:600} .g.meta{color:#6b7382;font-size:12px}
     .g.pend{color:#ffb454} b{color:#fff}</style></head>
     <body><h1>🎯 Prove It! — live server</h1>
-    <p class="sub">${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${new Date().toISOString()}</p>
+    <p class="sub">🟢 <b style="color:#3ecf8e">${online}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${new Date().toISOString()}</p>
     <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
     <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
     </body></html>`);
@@ -124,6 +124,8 @@ const GRACE_MS = 30000; // time to reconnect before forfeiting
 const serverStartedAt = Date.now();
 const stats = { roomsCreated: 0, gamesStarted: 0, peakRooms: 0 }; // resets on server restart (no DB)
 function touch(room) { if (room) room.lastActivityAt = Date.now(); } // mark recent activity for the idle clock
+let online = 0; // live count of connected clients (people with the site open)
+function broadcastPresence() { io.emit("presence", { online }); }
 
 function makeCode() {
   const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
@@ -180,9 +182,10 @@ function closeRoom(code) {
   if (!room) return false;
   if (room.game?.timeout) clearTimeout(room.game.timeout);
   if (room.graceTimeout) clearTimeout(room.graceTimeout);
-  io.to(code).emit("roomClosed");
-  io.in(code).socketsLeave(code);
-  rooms.delete(code);
+  rooms.delete(code);             // remove first: any reconnect-resume will now fail → client lands home
+  io.to(code).emit("roomClosed"); // clean clients leave with a message…
+  // …then hard-evict everyone once the message flushes (covers any stale/cached client too)
+  setTimeout(() => io.in(code).disconnectSockets(true), 150);
   console.log(`🛑 room ${code} closed by owner`);
   return true;
 }
@@ -200,6 +203,7 @@ function leaveCurrentRoom(socket) {
 
 io.on("connection", (socket) => {
   console.log(`✅ connected: ${socket.id}`);
+  online++; broadcastPresence();
 
   function doResume(room, pid, ack) {
     attach(room, socket, pid);
@@ -377,6 +381,7 @@ io.on("connection", (socket) => {
   // Disconnect ≠ leave: hold the slot, pause the game, give them GRACE_MS to return.
   socket.on("disconnect", (reason) => {
     console.log(`👋 disconnected: ${socket.id} (${reason})`);
+    online = Math.max(0, online - 1); broadcastPresence();
     const code = socket.data.roomCode, pid = socket.data.playerId;
     if (!code) return;
     const room = rooms.get(code);

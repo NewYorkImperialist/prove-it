@@ -86,6 +86,19 @@ function openingCue(on) {
   if (on) { input.classList.remove("shake"); void input.offsetWidth; input.classList.add("shake"); }
 }
 
+// ---------- single-player analytics (phones home to /track; silently no-ops if the server isn't recording) ----------
+const spLoadedAt = Date.now();
+let spPlayed = false, sessionSent = false, matchStart = 0, roundsPlayed = 0;
+function track(type, data) {
+  try { fetch("/track", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, ...data }), keepalive: true }).catch(() => {}); } catch {}
+}
+function sendSpSession() {
+  if (sessionSent) return; sessionSent = true;
+  const body = JSON.stringify({ type: "spSession", durationMs: Date.now() - spLoadedAt, played: spPlayed });
+  try { navigator.sendBeacon("/track", new Blob([body], { type: "application/json" })); } catch { track("spSession", { durationMs: Date.now() - spLoadedAt, played: spPlayed }); }
+}
+addEventListener("pagehide", sendSpSession);
+
 // ---------- Setup / lobby ----------
 function buildSetup() {
   const checks = $("catChecks");
@@ -165,6 +178,7 @@ function beginMatch() {
   $("overlay").style.display = "none";
   $("winOverlay").style.display = "none";
   scoreMe = 0; scoreBot = 0;
+  spPlayed = true; matchStart = Date.now(); roundsPlayed = 0;
   usedNames = [];
   $("scoreMe").textContent = "0";
   $("scoreBot").textContent = "0";
@@ -341,6 +355,7 @@ function skipCategory() {
   if (state !== "opening") return;
   clearInterval(reactId);
   openingCue(false);
+  track("spSkip", { category: current.name });
   add("Skipped — new category.", "system");
   newRound();
 }
@@ -571,6 +586,9 @@ function endRound(won, reason, opts = {}) {
   $("scoreMe").textContent = scoreMe;
   $("scoreBot").textContent = scoreBot;
   claimLineEl.textContent = "";
+  roundsPlayed++;
+  track("spRound", { category: current.name, grp: current.group, difficulty, won, claim,
+    proven: proven.length, answers: proven.map(id => (current.entries.find(e => e.id === id) || {}).display).filter(Boolean) });
   if (scoreMe >= targetScore || scoreBot >= targetScore) {
     setTimeout(showWin, 900);  // let the final-point message land first
     return;
@@ -591,6 +609,9 @@ function endMatch() {
 function showWin() {
   state = "gameover";
   sfx.fanfare();
+  const result = scoreMe > scoreBot ? "win" : scoreBot > scoreMe ? "loss" : "tie";
+  track("spGame", { difficulty, scoreMe, scoreBot, result, rounds: roundsPlayed, durationMs: matchStart ? Date.now() - matchStart : null,
+    groups: enabledGroups.join(","), timer: timerLength, target: targetScore === Infinity ? "endless" : String(targetScore) });
   setActions([]);
   setTurn(null);
   input.disabled = true; sendBtn.disabled = true;

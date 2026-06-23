@@ -41,6 +41,7 @@ const TARGETS = [3, 5, 10]; // plus null = endless
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+app.use(express.json({ limit: "16kb" })); // for the single-player /track beacon
 
 // Persist game/round events for the admin board (fire-and-forget; no-ops if Turso isn't set).
 engine.setReporter((room, type, extra) => {
@@ -154,6 +155,10 @@ function histHtml(h, k) {
     s.highestClaim ? `Highest claim: <b>${num(s.highestClaim.claim)}</b> — ${esc(s.highestClaim.category)} by ${esc(s.highestClaim.winner_name || "?")}` : "",
     `🎯 Easter eggs triggered: <b>${s.easterEggs}</b>`,
   ].filter(Boolean).map((x) => `<span class="pill">${x}</span>`).join("");
+  const skips = (h.skips || []).map((r) => `<tr><td>${esc(r.category)}</td><td>${num(r.n)}</td></tr>`).join("");
+  const sp = h.sp || {};
+  const spDiff = (sp.byDifficulty || []).map((r) => `<tr><td>${esc(r.difficulty)}</td><td>${num(r.n)}</td><td>${num(r.wins)} (${r.n ? Math.round(num(r.wins) / num(r.n) * 100) : 0}%)</td></tr>`).join("");
+  const spCats = (sp.topCategories || []).map((r) => `<tr><td>${esc(r.grp)} — ${esc(r.category)}</td><td>${num(r.plays)}</td></tr>`).join("");
   return `
     <h2>All-time history</h2>
     <p class="stats"><b>${h.games}</b> games · <b>${h.rounds}</b> rounds · <b>${h.players}</b> unique players · avg game <b>${fmtMs(h.avgDurationMs)}</b></p>
@@ -176,9 +181,16 @@ function histHtml(h, k) {
       <div><h3>💬 Most-named answers</h3>${tbl(["Answer", "Category", "×"], ta, 3)}</div>
       <div><h3>🕐 When people play (Eastern)</h3>${tbl(["Hour", "Games"], hourRows, 2)}</div>
       <div><h3>✨ Feature usage</h3>${tbl(["Event", "Count"], feat, 2)}</div>
+      <div><h3>🔁 Most-skipped categories</h3>${tbl(["Category", "Skips"], skips, 2)}</div>
       <div><h3>🏁 How games ended</h3>${tbl(["Reason", "Count"], reasons, 2)}</div>
       <div><h3>📅 Games per day</h3>${tbl(["Day", "Games"], day, 2)}</div>
       <div><h3>🕑 Recent games</h3>${tbl(["Code", "Result", "Winner", "Rds", "End", "Len"], rec, 6)}</div>
+    </div>
+    <h2>🎮 Single-player (vs bot)</h2>
+    <p class="stats"><b>${sp.games || 0}</b> games · you won <b>${sp.wins || 0}</b> / lost <b>${sp.losses || 0}</b> · <b>${sp.rounds || 0}</b> rounds · <b>${sp.sessions || 0}</b> visits (avg stay <b>${fmtMs(sp.avgMs)}</b>)</p>
+    <div class="cols">
+      <div><h3>🤖 By difficulty (your win rate)</h3>${tbl(["Difficulty", "Games", "You won"], spDiff, 3)}</div>
+      <div><h3>🗂 Top single-player categories</h3>${tbl(["Category", "Plays"], spCats, 2)}</div>
     </div>`;
 }
 
@@ -313,6 +325,36 @@ app.get("/admin/announce", (req, res) => {
   const text = String(req.query.msg || "").replace(/\s+/g, " ").trim().slice(0, 200);
   if (text) { io.emit("announce", { text }); console.log(`📢 announce: ${text}`); }
   res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));
+});
+
+// Single-player phones home here (no socket). Public, fire-and-forget, validated + size-capped.
+app.post("/track", (req, res) => {
+  res.json({ ok: true });
+  if (!analytics.enabled()) return;
+  const e = req.body || {};
+  const str = (v, n = 60) => (typeof v === "string" ? v.slice(0, n) : null);
+  const int = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
+  const device = /Mobile|Android|iPhone|iPad|iPod/i.test(req.get("user-agent") || "") ? "mobile" : "desktop";
+  const now = Date.now();
+  try {
+    if (e.type === "spRound") {
+      analytics.recordRound({ code: "SP", category: str(e.category), grp: str(e.grp), winner_id: e.won ? "you" : "bot",
+        winner_name: e.won ? "You" : "Bot", claim: int(e.claim), proven: int(e.proven), at: now, mode: "sp", difficulty: str(e.difficulty, 10) });
+      if (Array.isArray(e.answers)) e.answers.slice(0, 50).forEach((d) =>
+        analytics.recordAnswer({ code: "SP", category: str(e.category), grp: str(e.grp), display: str(d), offList: false, at: now, mode: "sp" }));
+    } else if (e.type === "spSkip") {
+      analytics.recordEvent("categorySkipped", "SP", str(e.category), "sp");
+    } else if (e.type === "spGame") {
+      const result = str(e.result, 8); // "win" | "loss" | "tie"
+      analytics.recordGame({ code: "SP", p1_id: "you", p1_name: "You", p1_score: int(e.scoreMe), p2_id: "bot", p2_name: "Bot", p2_score: int(e.scoreBot),
+        winner_id: result === "win" ? "you" : result === "loss" ? "bot" : null, winner_name: result === "win" ? "You" : result === "loss" ? "Bot" : null,
+        groups: str(e.groups, 200), timer: int(e.timer), target: str(e.target, 10), rounds: int(e.rounds), reason: result,
+        started_at: int(e.startedAt), ended_at: now, duration_ms: int(e.durationMs), mode: "sp", difficulty: str(e.difficulty, 10) });
+    } else if (e.type === "spSession") {
+      const dur = int(e.durationMs) || 0;
+      analytics.recordSession({ connected_at: now - dur, disconnected_at: now, duration_ms: dur, device, played: !!e.played, joined: false, spectated: false, name: "SP", reason: "sp", mode: "sp" });
+    }
+  } catch (err) { /* ignore bad payloads */ }
 });
 
 app.use(express.static(path.join(__dirname)));

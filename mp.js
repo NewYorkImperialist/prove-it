@@ -417,12 +417,13 @@ socket.on("gameState", (state) => {
 });
 
 // 🎯 Easter egg: someone answered "Prove It!" in the Video Games round → +5 + a party for everyone.
+let crownPartyTs = 0; // crowns live in the re-rendered sidebar, so keep shaking them across renders for ~1s
+function partyCrowns() { document.querySelectorAll(".crown").forEach((el) => { el.classList.remove("party"); void el.offsetWidth; el.classList.add("party"); }); }
 socket.on("easterEgg", ({ name, phrase, fx }) => {
   confettiBurst();
   sfx.sparkle();
-  const restart = (el) => { if (!el) return; el.classList.remove("party"); void el.offsetWidth; el.classList.add("party"); };
-  if (fx === "crown") document.querySelectorAll(".crown").forEach(restart); // "Jayden Lin" → only the crown reacts
-  else restart($("mpLogo"));                                                // "Prove It!" → only the logo reacts
+  if (fx === "crown") { crownPartyTs = Date.now(); partyCrowns(); } // "Jayden Lin" → the crown shakes (survives the re-render)
+  else { const el = $("mpLogo"); el.classList.remove("party"); void el.offsetWidth; el.classList.add("party"); } // "Prove It!" → the logo
   flashStatus(`🎯 ${name} said "${phrase || "the magic words"}" — +5 bonus points!`);
 });
 $("mpLogo").addEventListener("animationend", () => $("mpLogo").classList.remove("party"));
@@ -483,6 +484,7 @@ function render() {
       <div class="name">${p.name}${p.crown ? '<span class="crown">👑</span>' : ""}</div><div class="pts">${gs.scores[p.id] ?? 0}</div>`;
     sidePlayers.appendChild(d);
   });
+  if (Date.now() - crownPartyTs < 1100) partyCrowns(); // keep the easter-egg crown shaking through re-renders
 
   // banner
   $("catLabel").textContent = `${gs.category.emoji} ${gs.category.group}`;

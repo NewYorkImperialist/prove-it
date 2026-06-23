@@ -218,6 +218,7 @@ app.get("/admin", async (req, res) => {
     ` : `<div class="g">In the waiting room.</div>`;
     return `<div class="card ${r.status}">
       <div class="hd"><span class="code">${esc(r.code)}</span><span class="badge">${r.status === "playing" ? "🟢 playing" : "🟡 lobby"}</span>
+        <a class="watch" href="/?ghost=${encodeURIComponent(r.code)}&key=${k}" target="_blank">👻 ghost</a>
         <a class="watch" href="/?spectate=${encodeURIComponent(r.code)}" target="_blank">👀 watch</a>
         <a class="close" href="/admin/close?key=${k}&code=${encodeURIComponent(r.code)}" onclick="return confirm('Close room ${esc(r.code)}? This kicks everyone out.')">✕ close</a></div>
       <div class="g players">${ps} &nbsp;·&nbsp; 👀 ${r.spectators}</div>
@@ -523,6 +524,23 @@ io.on("connection", (socket) => {
     if (room.game) engine.resync(io, room); // push current game state to the new spectator
   });
 
+  // 👻 Owner-only INVISIBLE watch: joins the room's broadcast feed without ever appearing
+  // in the players/spectators list, the online count, chat, or typing. Gated by OWNER_KEY.
+  socket.on("ghostWatch", ({ code, key } = {}, ack) => {
+    if (!process.env.OWNER_KEY || key !== process.env.OWNER_KEY) return ack?.({ ok: false, error: "Not authorized." });
+    code = String(code || "").toUpperCase().trim();
+    const room = rooms.get(code);
+    if (!room) return ack?.({ ok: false, error: "No room with that code." });
+    leaveCurrentRoom(socket);
+    socket.join(code); // receive all future roomState/gameState/chat broadcasts…
+    socket.data.roomCode = code; socket.data.playerId = genId(); socket.data.spectator = true; socket.data.ghost = true;
+    if (!socket.data.ghostUncounted) { socket.data.ghostUncounted = true; online = Math.max(0, online - 1); broadcastPresence(); } // …but stay out of the online count
+    console.log(`👻 ghost-watching room ${code}`);
+    ack?.({ ok: true, code, you: socket.data.playerId, ghost: true, inGame: !!room.game });
+    socket.emit("roomState", roomState(room));  // current lobby/players, to the ghost only
+    if (room.game) engine.resync(io, room);     // current game state (re-broadcast is idempotent for players)
+  });
+
   // Reconnect to an existing slot (after refresh / network drop).
   socket.on("resume", ({ code, playerId } = {}, ack) => {
     code = String(code || "").toUpperCase().trim();
@@ -641,7 +659,7 @@ io.on("connection", (socket) => {
   // Disconnect ≠ leave: hold the slot, pause the game, give them GRACE_MS to return.
   socket.on("disconnect", (reason) => {
     console.log(`👋 disconnected: ${socket.id} (${reason})`);
-    online = Math.max(0, online - 1); broadcastPresence();
+    if (!socket.data.ghostUncounted) { online = Math.max(0, online - 1); broadcastPresence(); } // ghosts were already uncounted
     const sess = socket.data.session; // log the whole visit (records nothing if persistence is off)
     if (sess) { const end = Date.now(); analytics.recordSession({ connected_at: sess.connectedAt, disconnected_at: end, duration_ms: end - sess.connectedAt, device: sess.device, played: sess.played, joined: sess.joined, spectated: sess.spectated, name: sess.name, reason, singleplayer: sess.singleplayer }); }
     const code = socket.data.roomCode, pid = socket.data.playerId;

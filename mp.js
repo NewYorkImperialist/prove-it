@@ -60,6 +60,19 @@ function doSpectate(code) {
   });
 }
 
+// 👻 ?ghost=CODE&key=OWNER_KEY → INVISIBLE owner watch (admin dashboard "ghost" link).
+// Re-runs on every connect (param stays in the URL across reloads) so the ghost never
+// accidentally falls back to a visible spectator on refresh.
+const ghostParam = (new URLSearchParams(location.search).get("ghost") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+const ghostKey = new URLSearchParams(location.search).get("key") || "";
+let isGhost = false;
+function doGhost() {
+  socket.emit("ghostWatch", { code: ghostParam, key: ghostKey }, (res) => {
+    if (!res?.ok) { show("home"); $("homeErr").textContent = res?.error || "Could not ghost-watch."; return; }
+    isGhost = true; isSpectator = true; myId = res.you; show(res.inGame ? "game" : "room");
+  });
+}
+
 // ---------- owner crown 👑 (secret, key-gated server-side) ----------
 // Become the owner once by visiting  ?crown=YOUR_SECRET_KEY  (use ?crown=off to revoke).
 // The key is stored locally and validated by the server on every toggle, so it stays exclusive.
@@ -179,6 +192,7 @@ setInterval(measureLatency, 4000);
 socket.on("connect", () => {
   setConn("connected", "ok");
   measureLatency();
+  if (ghostParam) { doGhost(); return; } // invisible owner watch takes priority
   if (myRoom && isSpectator) {
     socket.emit("spectateRoom", { code: myRoom, name: nameValue(), playerId }, (res) => {
       if (!res?.ok) { setRoom(null); show("home"); }
@@ -529,6 +543,7 @@ function render() {
 
   $("gRoom").textContent = (myRoom ? "Room " + myRoom : "") + (gs.spectators ? "  ·  👀 " + gs.spectators : "");
   $("specBadge").classList.toggle("hidden", !isSpectator);
+  if (isSpectator) $("specBadge").textContent = isGhost ? "👻 Ghost" : "👀 Spectating";
 
   // sidebar players (you first), with turn highlight
   const sidePlayers = $("sidePlayers");
@@ -621,7 +636,7 @@ function render() {
   if (isSpectator) {
     actions.innerHTML = "";
     enable = false;
-    placeholder = "Say something… (you're spectating 👀)";
+    placeholder = isGhost ? "👻 Ghost mode — you're invisible (can't chat)" : "Say something… (you're spectating 👀)";
     if (gs.phase === "matchover") addBtn(actions, "🏠 Stop watching", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
   }
 
@@ -640,9 +655,10 @@ function render() {
   // input is always usable so chat works any time; game actions are gated in gameSend
   input.disabled = false;
   sendBtn.disabled = false;
+  if (isGhost) { input.disabled = true; sendBtn.disabled = true; } // a ghost can't type — staying invisible
   if (!chatMode) { // don't disturb the box while composing a chat message
     input.placeholder = placeholder;
-    if (enable) input.focus();
+    if (enable && !isGhost) input.focus();
   }
   $("inputbar").classList.toggle("answer-mode", enable && !chatMode); // amber "✏️ ANSWER" cue
   status.textContent = statusText;
@@ -721,6 +737,7 @@ function flashStatus(msg) { const s = $("gstatus"); s.textContent = msg; s.class
 
 // ---------- input send (context depends on phase) ----------
 function gameSend() {
+  if (isGhost) { $("input").value = ""; return; } // ghosts are silent — no chat, no actions
   if (isSpectator) { // spectators can only chat
     const msg = $("input").value.trim();
     $("input").value = "";

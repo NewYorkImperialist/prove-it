@@ -125,10 +125,17 @@ $("muteBtn").onclick = () => { setMuted(!muted); if (!muted) sfx.pop(); };
 setMuted(muted);
 
 // ---------- theme (amber default ⇄ cyan), persisted ----------
+function setFavicon(t) {
+  const rect = t === "cyan" ? "5cd6e0" : "f5a623";
+  const fg = t === "cyan" ? "04232a" : "241500";
+  const link = document.getElementById("favicon");
+  if (link) link.href = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='8' y='8' width='84' height='84' rx='20' fill='%23${rect}'/><text x='50' y='50' font-size='64' text-anchor='middle' dominant-baseline='central' fill='%23${fg}' stroke='%23${fg}' stroke-width='2.5'>◎</text></svg>`;
+}
 function setTheme(t) {
   document.body.classList.toggle("t-cyan", t === "cyan");
   localStorage.setItem("theme", t);
   document.querySelectorAll("[data-theme]").forEach((b) => b.classList.toggle("on", b.dataset.theme === t));
+  setFavicon(t);
 }
 document.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", () => setTheme(b.dataset.theme)));
 setTheme(localStorage.getItem("theme") || "amber");

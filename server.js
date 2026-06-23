@@ -26,6 +26,15 @@ function easternTime(ts) {
   try { return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(ts)); }
   catch { return new Date(ts).toISOString().slice(0, 16).replace("T", " "); }
 }
+function easternFull(ts) {
+  try { return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", dateStyle: "medium", timeStyle: "medium" }).format(new Date(ts)) + " ET"; }
+  catch { return new Date(ts).toISOString(); }
+}
+function easternDay(ts) {
+  try { return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(ts)); }
+  catch { return new Date(ts).toISOString().slice(0, 10); }
+}
+const fmtHour12 = (h) => `${h % 12 || 12} ${h < 12 ? "AM" : "PM"}`;
 const TIMERS = [15, 30, 45, 60];
 const TARGETS = [3, 5, 10]; // plus null = endless
 
@@ -130,6 +139,14 @@ function histHtml(h, k) {
   const dev = (ses.devices || []).map((d) => `<tr><td>${esc(d.device)}</td><td>${num(d.n)}</td><td>${fmtMs(num(d.avg))}</td></tr>`).join("");
   const sesRecent = (ses.recent || []).map((r) => `<tr><td>${easternTime(num(r.connected_at))}</td><td>${fmtMs(num(r.duration_ms))}</td><td>${esc(r.device)}</td><td>${r.played ? "🎮 played" : r.spectated ? "👀 watched" : r.joined ? "lobby" : "browsed"}</td></tr>`).join("");
   const b = ses.buckets || {};
+  // sessions per day + busiest hour, in Eastern; plus the browse-and-leave drop-off
+  const stimes = ses.times || [];
+  const sHours = Array.from({ length: 24 }, () => 0); stimes.forEach((ts) => { sHours[easternHour(ts)]++; });
+  const peakH = sHours.some((n) => n) ? sHours.indexOf(Math.max(...sHours)) : null;
+  const sDay = {}; stimes.forEach((ts) => { const d = easternDay(ts); sDay[d] = (sDay[d] || 0) + 1; });
+  const sDayRows = Object.keys(sDay).sort().reverse().slice(0, 14).map((d) => `<tr><td>${d}</td><td>${sDay[d]}</td></tr>`).join("");
+  const browseOnly = num(ses.total) - num(ses.joined);
+  const browsePct = ses.total ? Math.round(browseOnly / num(ses.total) * 100) : 0;
   const s = h.superlatives;
   const sup = [
     s.longestGame ? `Longest game: <b>${fmtMs(num(s.longestGame.duration_ms))}</b> (${esc(s.longestGame.p1_name)} vs ${esc(s.longestGame.p2_name)})` : "",
@@ -144,8 +161,13 @@ function histHtml(h, k) {
     <h3>🧑‍💻 Sessions (visits) — when people arrive & how long they stay</h3>
     <p class="stats"><b>${ses.total || 0}</b> sessions · avg stay <b>${fmtMs(ses.avgMs)}</b> · <b>${ses.played || 0}</b> played a game · <b>${ses.joined || 0}</b> entered a room ·
       engagement: ${num(b.bounce)} bounced (&lt;30s) · ${num(b.short)} short (&lt;2m) · ${num(b.med)} medium (&lt;10m) · ${num(b.long)} long (10m+)</p>
+    <div class="pills">
+      <span class="pill">🚪 <b>${browseOnly}</b> browsed &amp; left without joining (<b>${browsePct}%</b> of visits)</span>
+      ${peakH != null ? `<span class="pill">⏰ Busiest hour: <b>${fmtHour12(peakH)} ET</b> (${sHours[peakH]} sessions)</span>` : ""}
+    </div>
     <div class="cols">
       <div><h3>📱 Device</h3>${tbl(["Device", "Sessions", "Avg stay"], dev, 3)}</div>
+      <div><h3>📈 Sessions per day (Eastern)</h3>${tbl(["Day", "Sessions"], sDayRows, 2)}</div>
       <div><h3>🕒 Recent sessions (Eastern)</h3>${tbl(["Arrived", "Stayed", "Device", "Did"], sesRecent, 4)}</div>
     </div>
     <div class="cols">
@@ -215,7 +237,7 @@ app.get("/admin", async (req, res) => {
     .announce button,.announce a.preset{background:#2a3040;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none}
     .announce a.preset{background:#3a2030;color:#ffb4b4} .announce .lbl{font-size:12px;color:#8a92a6;margin-right:4px}</style></head>
     <body><h1>🎯 Prove It! — live server</h1>
-    <p class="sub">🟢 <b style="color:#3ecf8e">${online}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${new Date().toISOString()}</p>
+    <p class="sub">🟢 <b style="color:#3ecf8e">${online}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${easternFull(now)}</p>
     <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
     <div class="announce">
       <form action="/admin/announce" method="get">

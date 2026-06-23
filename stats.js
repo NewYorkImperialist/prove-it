@@ -122,6 +122,7 @@ async function sessionStats() {
     joined: agg ? Number(agg.joined) : 0,
     buckets: { bounce: Number(b?.bounce || 0), short: Number(b?.short || 0), med: Number(b?.med || 0), long: Number(b?.long || 0) },
     devices: await q(`SELECT device, COUNT(*) n, AVG(duration_ms) avg FROM sessions WHERE duration_ms IS NOT NULL GROUP BY device`),
+    times: (await q(`SELECT connected_at FROM sessions ORDER BY id DESC LIMIT 5000`)).map((r) => Number(r.connected_at)),
     recent: await q(`SELECT connected_at, duration_ms, device, played, joined, spectated, name FROM sessions ORDER BY id DESC LIMIT 20`),
   };
 }

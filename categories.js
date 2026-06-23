@@ -395,6 +395,15 @@ const CATEGORY_GROUPS = {
       ["Micronesia","micronesia","federated states of micronesia","fsm"], ["Marshall Islands","marshall islands","marshalls"],
       "Palau","Nauru","Tuvalu",
     ]},
+    { name: "Tourist Attractions in America", items: [
+      ["Statue of Liberty","statue of liberty"], ["Grand Canyon","grand canyon"], ["Times Square","times square"], ["Golden Gate Bridge","golden gate bridge"],
+      ["Mount Rushmore","mount rushmore","rushmore"], ["Walt Disney World","walt disney world","disney world"], "Disneyland", "Yellowstone", ["Niagara Falls","niagara falls","niagara"],
+      ["Las Vegas Strip","las vegas strip","the strip"], ["Empire State Building","empire state building"], ["Hollywood Sign","hollywood sign","hollywood"], "Yosemite",
+      ["White House","white house"], ["Lincoln Memorial","lincoln memorial"], ["Washington Monument","washington monument"], ["Central Park","central park"], ["Brooklyn Bridge","brooklyn bridge"],
+      ["Space Needle","space needle"], "Alcatraz", ["Hoover Dam","hoover dam"], ["Liberty Bell","liberty bell"], ["Gateway Arch","gateway arch","st louis arch"], ["French Quarter","french quarter"],
+      ["National Mall","national mall"], ["Universal Studios","universal studios"], ["Mall of America","mall of america"], ["Willis Tower","willis tower","sears tower"], ["One World Trade Center","one world trade center","freedom tower"],
+      ["Pearl Harbor","pearl harbor"], "Graceland", ["Kennedy Space Center","kennedy space center"], "Zion", ["Death Valley","death valley"], ["Bourbon Street","bourbon street"],
+    ]},
   ]},
   History: { emoji: "🏛️", cats: [
     { name: "Soviet Leaders", items: [
@@ -594,6 +603,28 @@ const CATEGORY_GROUPS = {
       ["[Redacted]","[redacted]","redacted"], "Classified", ["The Whole List","the whole list","everyone"], "Anonymous", ["John Doe","john doe","jane doe"],
       ["A Florida Man","a florida man","florida man"], ["Your Ex","your ex","ur ex"], ["The Person Reading This","the person reading this","you"], ["Bill from Accounting","bill from accounting","bill"],
       ["Some Guy","some guy"], ["Still Sealed","still sealed","sealed"], "Nobody", ["The Algorithm","the algorithm"], ["Area 51 Guy","area 51 guy"], ["A Random Crypto Bro","a random crypto bro","crypto bro"],
+    ]},
+    { name: "Countries Jews Have Been Persecuted From", items: [
+      "England", "France", "Spain", "Portugal", "Germany", "Austria", ["Russia","russia","soviet union","ussr"], "Poland", "Ukraine", "Lithuania",
+      "Hungary", "Romania", "Italy", "Egypt", "Iraq", ["Iran","iran","persia"], "Yemen", "Morocco", "Libya", "Algeria",
+      "Tunisia", "Syria", ["Babylon","babylon","babylonia"], ["Rome","rome","roman empire"], ["Czechia","czechia","bohemia","czech republic"], "Greece", "Ethiopia", "Netherlands",
+    ]},
+    { name: "Nobel Peace Prize Winners", items: [
+      ["Martin Luther King Jr","martin luther king jr","mlk","martin luther king"], ["Nelson Mandela","nelson mandela","mandela"], ["Mother Teresa","mother teresa"], ["Malala Yousafzai","malala yousafzai","malala"],
+      ["Barack Obama","barack obama","obama"], ["Desmond Tutu","desmond tutu","tutu"], ["Mikhail Gorbachev","mikhail gorbachev","gorbachev"], ["Al Gore","al gore","gore"], ["Jimmy Carter","jimmy carter","carter"],
+      ["Theodore Roosevelt","theodore roosevelt","teddy roosevelt"], ["Woodrow Wilson","woodrow wilson","wilson"], ["Dalai Lama","dalai lama"], ["Aung San Suu Kyi","aung san suu kyi"], ["Henry Kissinger","henry kissinger","kissinger"],
+      ["Yasser Arafat","yasser arafat","arafat"], ["Yitzhak Rabin","yitzhak rabin","rabin"], ["Shimon Peres","shimon peres","peres"], ["Kofi Annan","kofi annan","annan"], ["Muhammad Yunus","muhammad yunus","yunus"],
+      ["Wangari Maathai","wangari maathai"], ["Liu Xiaobo","liu xiaobo"], ["Lech Walesa","lech walesa","walesa"], ["Albert Schweitzer","albert schweitzer","schweitzer"], ["Linus Pauling","linus pauling","pauling"],
+      ["Elie Wiesel","elie wiesel"], ["Anwar Sadat","anwar sadat","sadat"], ["Menachem Begin","menachem begin","begin"], ["F.W. de Klerk","f.w. de klerk","de klerk"], ["Jane Addams","jane addams"],
+      ["Norman Borlaug","norman borlaug","borlaug"], ["Red Cross","red cross","international red cross"], ["Doctors Without Borders","doctors without borders","medecins sans frontieres","msf"], ["European Union","european union","eu"],
+    ]},
+    { name: "Nobel Peace Prize Loser", items: [
+      ["Donald Trump","donald trump","trump"],
+    ]},
+    { name: "Historical Empires That Claimed to Be Rome", items: [
+      ["Byzantine Empire","byzantine empire","byzantium","eastern roman empire"], ["Holy Roman Empire","holy roman empire","hre"], ["Ottoman Empire","ottoman empire","ottomans"], ["Russian Empire","russian empire","third rome","tsardom of russia"],
+      ["Carolingian Empire","carolingian empire","frankish empire","franks"], ["Bulgarian Empire","bulgarian empire","bulgaria"], ["Serbian Empire","serbian empire","serbia"], ["Latin Empire","latin empire"],
+      ["Empire of Nicaea","empire of nicaea","nicaea"], ["Empire of Trebizond","empire of trebizond","trebizond"], ["German Empire","german empire","second reich","kaiserreich"], ["Austrian Empire","austrian empire","habsburg empire","habsburgs"],
     ]},
   ]},
   Entertainment: { emoji: "🎬", cats: [
@@ -1605,6 +1636,16 @@ const CATEGORY_GROUPS = {
       "Cancer", "Virgo", "Libra", "Aries", "Sagittarius", ["Capricornus","capricornus","capricorn"], "Aquarius", "Pisces", "Andromeda", "Pegasus", "Draco", "Cygnus",
       "Centaurus", ["Canis Major","canis major"], ["Crux","crux","southern cross"], "Hercules", "Perseus", "Lyra", "Aquila", "Hydra",
     ]},
+    { name: "Nobel Prize Winners", items: [
+      ["Albert Einstein","albert einstein","einstein"], ["Marie Curie","marie curie","curie"], ["Niels Bohr","niels bohr","bohr"], ["Max Planck","max planck","planck"],
+      ["Richard Feynman","richard feynman","feynman"], ["Werner Heisenberg","werner heisenberg","heisenberg"], ["Erwin Schrödinger","erwin schrodinger","schrodinger","schrödinger"], ["Ernest Rutherford","ernest rutherford","rutherford"],
+      ["Alexander Fleming","alexander fleming","fleming"], ["Linus Pauling","linus pauling","pauling"], ["James Watson","james watson","watson"], ["Francis Crick","francis crick","crick"],
+      ["Peter Higgs","peter higgs","higgs"], ["Roger Penrose","roger penrose","penrose"], ["Ernest Hemingway","ernest hemingway","hemingway"], ["Gabriel Garcia Marquez","gabriel garcia marquez","garcia marquez"],
+      ["Toni Morrison","toni morrison","morrison"], ["Bob Dylan","bob dylan","dylan"], ["Winston Churchill","winston churchill","churchill"], ["John Steinbeck","john steinbeck","steinbeck"],
+      ["William Faulkner","william faulkner","faulkner"], ["Rudyard Kipling","rudyard kipling","kipling"], ["Nelson Mandela","nelson mandela","mandela"], ["Martin Luther King Jr","martin luther king jr","mlk"],
+      ["Mother Teresa","mother teresa"], ["Malala Yousafzai","malala yousafzai","malala"], ["Barack Obama","barack obama","obama"], ["Niels Bohr","niels bohr"], ["Enrico Fermi","enrico fermi","fermi"],
+      ["Paul Dirac","paul dirac","dirac"], ["Subrahmanyan Chandrasekhar","chandrasekhar"], ["Kary Mullis","kary mullis","mullis"],
+    ]},
   ]},
   Art: { emoji: "🎨", cats: [
     { name: "Art Mediums", items: [
@@ -1867,12 +1908,47 @@ const CATEGORY_GROUPS = {
       "Clearance", "Desperado", ["Perpetual Check","perpetual check"], "Stalemate", ["Discovered Check","discovered check"], ["Fool's Mate","fool's mate","fools mate"],
       ["Scholar's Mate","scholar's mate","scholars mate"], ["Boden's Mate","boden's mate","bodens mate"],
     ]},
-    { name: "Rubik's Cube Brands", items: [
+    { name: "Rubik's Cubes", items: [
       "GAN", "MoYu", "QiYi", ["YJ","yj","yongjun"], "Dayan", "ShengShou", "Yuxin", ["X-Man","x-man","xman","x-man design"], "MGC",
       ["Cyclone Boys","cyclone boys"], "DianSheng", ["Rubik's","rubik's","rubiks","rubik"], ["V-Cube","v-cube","vcube"], "LanLan",
       ["The Valk","the valk","valk"], ["Weilong","weilong","moyu weilong"], ["The Cubicle","the cubicle","cubicle"], "GoCube",
       ["Z-Cube","z-cube","zcube"], "Maru", ["RS3M","rs3m","rs3 m"], ["GAN 356","gan 356","gan356"], "Tornado V3", ["Little Magic","little magic"],
       ["Tengyun","tengyun"], "Witeden", ["Calvin's Puzzle","calvin's puzzle","calvins puzzle"],
+    ]},
+    { name: "Monopoly Properties", exact: true, items: [
+      ["Mediterranean Avenue","mediterranean avenue","mediterranean"], ["Baltic Avenue","baltic avenue","baltic"], ["Oriental Avenue","oriental avenue","oriental"], ["Vermont Avenue","vermont avenue","vermont"],
+      ["Connecticut Avenue","connecticut avenue","connecticut"], ["St. Charles Place","st. charles place","st charles place","st charles"], ["States Avenue","states avenue","states"], ["Virginia Avenue","virginia avenue","virginia"],
+      ["St. James Place","st. james place","st james place","st james"], ["Tennessee Avenue","tennessee avenue","tennessee"], ["New York Avenue","new york avenue"], ["Kentucky Avenue","kentucky avenue","kentucky"],
+      ["Indiana Avenue","indiana avenue","indiana"], ["Illinois Avenue","illinois avenue","illinois"], ["Atlantic Avenue","atlantic avenue","atlantic"], ["Ventnor Avenue","ventnor avenue","ventnor"],
+      ["Marvin Gardens","marvin gardens"], ["Pacific Avenue","pacific avenue","pacific"], ["North Carolina Avenue","north carolina avenue","north carolina"], ["Pennsylvania Avenue","pennsylvania avenue"],
+      ["Park Place","park place"], ["Boardwalk","boardwalk"], ["Reading Railroad","reading railroad","reading"], ["Pennsylvania Railroad","pennsylvania railroad"], ["B&O Railroad","b&o railroad","b and o railroad"],
+      ["Short Line","short line","short line railroad"], ["Electric Company","electric company"], ["Water Works","water works"],
+    ]},
+    { name: "Fortnite Locations", items: [
+      ["Tilted Towers","tilted towers","tilted"], ["Pleasant Park","pleasant park"], ["Retail Row","retail row"], ["Salty Springs","salty springs"], ["Loot Lake","loot lake"],
+      ["Dusty Depot","dusty depot"], ["Dusty Divot","dusty divot"], ["Greasy Grove","greasy grove"], ["Lonely Lodge","lonely lodge"], ["Wailing Woods","wailing woods"],
+      ["Fatal Fields","fatal fields"], ["Lucky Landing","lucky landing"], ["Paradise Palms","paradise palms"], ["Snobby Shores","snobby shores"], ["Haunted Hills","haunted hills"],
+      ["Junk Junction","junk junction"], ["Frosty Flights","frosty flights"], ["Polar Peak","polar peak"], ["Happy Hamlet","happy hamlet"], ["Mega Mall","mega mall"],
+      ["Sweaty Sands","sweaty sands"], ["Holly Hedges","holly hedges"], ["Slurpy Swamp","slurpy swamp"], ["Misty Meadows","misty meadows"], ["Steamy Stacks","steamy stacks"],
+      ["Craggy Cliffs","craggy cliffs"], ["Catty Corner","catty corner"], ["Coral Castle","coral castle"], ["Weeping Woods","weeping woods"], ["Lazy Lake","lazy lake"],
+    ]},
+  ]},
+  "Just for Fun": { emoji: "🎈", cats: [
+    { name: "Seasons of the Year", exact: true, items: [
+      "Spring", "Summer", ["Fall","fall","autumn"], "Winter",
+    ]},
+    { name: "Months of the Year", exact: true, items: [
+      "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
+    ]},
+    { name: "Counting Numbers", items: [
+      "1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+      "11", "12", "13", "14", "15", "16", "17", "18", "19", "20",
+      "21", "22", "23", "24", "25", "26", "27", "28", "29", "30",
+      "31", "32", "33", "34", "35", "36", "37", "38", "39", "40",
+      "41", "42", "43", "44", "45", "46", "47", "48", "49", "50",
+    ]},
+    { name: "Cities Mistaken for Australia's Capital", items: [
+      "Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide", ["Gold Coast","gold coast"], "Newcastle", "Hobart", "Darwin", "Cairns",
     ]},
   ]},
   // 🤫 Personal category — OFF by default (defaultOff). Friends guess facts about you.

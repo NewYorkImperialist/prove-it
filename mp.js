@@ -16,11 +16,12 @@ sessionStorage.setItem("pid", playerId);
 let myId = playerId;
 let myRoom = isReload ? (sessionStorage.getItem("room") || null) : null;
 let isSpectator = isReload && sessionStorage.getItem("spectator") === "1";
+let prevPlayers = null; // last known player count, for the "someone joined" chime
 if (!isReload) { sessionStorage.removeItem("room"); sessionStorage.removeItem("spectator"); }
 function setRoom(code) {
   myRoom = code;
   if (code) sessionStorage.setItem("room", code);
-  else { sessionStorage.removeItem("room"); sessionStorage.removeItem("spectator"); isSpectator = false; }
+  else { sessionStorage.removeItem("room"); sessionStorage.removeItem("spectator"); isSpectator = false; prevPlayers = null; }
 }
 function setSpectator(on) { isSpectator = on; on ? sessionStorage.setItem("spectator", "1") : sessionStorage.removeItem("spectator"); }
 
@@ -113,6 +114,7 @@ const sfx = {
   roundLose: () => [392, 311].forEach((f, i) => tone(f, 0.24, { gain: 0.16, delay: i * 0.11 })),
   fanfare: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, 0.3, { type: "square", gain: 0.15, delay: i * 0.12 })),
   sparkle: () => [784, 988, 1175, 1568].forEach((f, i) => tone(f, 0.14, { type: "triangle", gain: 0.14, delay: i * 0.06 })),
+  join: () => { tone(587, 0.1, { type: "triangle", gain: 0.16 }); tone(880, 0.15, { type: "triangle", gain: 0.16, delay: 0.09 }); },
 };
 function setMuted(m) {
   muted = m; localStorage.setItem("muted", m ? "1" : "0");
@@ -232,6 +234,9 @@ $("leaveBtn").onclick = () => { socket.emit("leaveRoom"); setRoom(null); show("h
 
 const AV = ["#2f5fd0", "#7a4dd6"];
 socket.on("roomState", (room) => {
+  // chime when someone new joins (baseline silently on the first state so you don't hear your own arrival)
+  if (prevPlayers !== null && room.players.length > prevPlayers) sfx.join();
+  prevPlayers = room.players.length;
   iAmHost = room.hostId === myId;
   if (room.status === "waiting") show("room");
   $("roomCode").textContent = room.code;

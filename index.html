@@ -12,30 +12,42 @@
 <meta property="og:description" content="Brag how many you can name, then back it up against the clock. Play free in your browser.">
 <meta property="og:url" content="https://proveit.fly.dev/">
 <meta name="twitter:card" content="summary">
-<meta name="theme-color" content="#0e1016">
+<meta name="theme-color" content="#0c0a07">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
 
 <style>
   :root {
-    --bg: #0e1016;
-    --panel: #161a24;
-    --panel2: #1c2130;
-    --line: #262c3b;
-    --accent: #5b8cff;
-    --accent2: #3ecf8e;
-    --bad: #ff5b6e;
-    --gold: #ffcf5b;
-    --text: #e7e9f0;
-    --muted: #888fa3;
+    /* amber (default theme) */
+    --bg:#0c0a07; --panel:#14110c; --panel2:#1a1610; --line:rgba(255,220,170,.10); --line2:rgba(255,220,170,.18);
+    --accent:#f5a623; --accent2:#f5a623; --bad:#ff6b5e; --gold:#f5a623; --text:#efe6d6; --muted:#9d8c72;
+    --acc-dim:rgba(245,166,35,.14); --mark:linear-gradient(140deg,#f5a623,#e0801a); --markfg:#241500;
+    --ui:"Inter",system-ui,sans-serif; --display:"Space Grotesk","Inter",sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  body.t-cyan {
+    --bg:#04080a; --panel:#070b0c; --panel2:#0b1113; --line:rgba(120,220,230,.12); --line2:rgba(120,220,230,.22);
+    --accent:#5cd6e0; --accent2:#5cd6e0; --bad:#ff6166; --gold:#5cd6e0; --text:#eef6f7; --muted:#7e9499;
+    --acc-dim:rgba(92,214,224,.13); --mark:linear-gradient(140deg,#5cd6e0,#2bb6c2); --markfg:#04232a;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-family: var(--ui);
     background: var(--bg);
     color: var(--text);
     overflow: hidden;
+    transition: background-color .25s ease, color .25s ease;
   }
   button { font-family: inherit; }
+  h1, #setup h1 { font-family: var(--display); }
+  #timer, .player .pts, #scoreMe, #scoreBot, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  .logobadge { display:inline-grid; place-items:center; width:30px; height:30px; border-radius:8px; background:var(--mark);
+    color:var(--markfg); font-size:16px; line-height:1; -webkit-text-stroke:.9px var(--markfg); flex:0 0 auto; }
+  .wd { font-family:var(--display); font-weight:700; letter-spacing:-.3px; }
+  .tsw { display:inline-flex; align-items:center; gap:5px; border:1px solid var(--line2); border-radius:9px; padding:3px; background:var(--panel2); }
+  .tsw button { font-family:var(--mono); font-size:12px; font-weight:600; color:var(--muted); background:transparent; border:0; border-radius:6px; padding:5px 10px; cursor:pointer; }
+  .tsw button.on { background:var(--acc-dim); color:var(--accent); }
 
   /* ---------- App shell (full screen) ---------- */
   #app {
@@ -52,10 +64,11 @@
     align-items: center;
     gap: 18px;
     padding: 0 20px;
-    background: linear-gradient(90deg, #1a2032, #14171f);
+    background: var(--panel2);
     border-bottom: 1px solid var(--line);
   }
-  #topbar .logo { font-size: 18px; font-weight: 800; letter-spacing: 0.5px; }
+  #topbar .logo { display: flex; align-items: center; gap: 9px; font-family: var(--display); font-size: 16px; font-weight: 700; letter-spacing: -.3px; }
+  #topbar .logo .logobadge { width: 28px; height: 28px; font-size: 15px; }
   #topbar .room { color: var(--muted); font-size: 13px; padding: 4px 10px; background: var(--panel2); border-radius: 8px; }
   #topbar .spacer { flex: 1; }
   #endBtn, #catBtn, #muteBtn {
@@ -91,12 +104,12 @@
   #banner {
     margin: 16px 20px 0;
     padding: 18px 22px;
-    background: linear-gradient(135deg, #232a40, #1a1f2e);
+    background: radial-gradient(120% 140% at 0 0,var(--acc-dim),transparent 55%),var(--panel2);
     border: 1px solid var(--line);
     border-radius: 14px;
   }
-  #banner .label { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--muted); }
-  #banner .cat { font-size: 26px; font-weight: 800; margin-top: 4px; }
+  #banner .label { font-family: var(--mono); font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--muted); }
+  #banner .cat { font-family: var(--display); font-size: 27px; font-weight: 700; letter-spacing: -.5px; margin-top: 5px; }
   #banner .claim { margin-top: 6px; font-size: 14px; color: var(--gold); min-height: 18px; }
 
   #feed {
@@ -106,8 +119,8 @@
   .msg { max-width: 78%; padding: 9px 13px; border-radius: 13px; font-size: 14px; line-height: 1.4; word-wrap: break-word; animation: pop .14s ease; }
   @keyframes pop { from { transform: translateY(4px); opacity: 0; } to { transform: none; opacity: 1; } }
   .msg.bot { background: var(--panel2); align-self: flex-start; border-bottom-left-radius: 4px; }
-  .msg.me { background: #2f5fd0; align-self: flex-end; border-bottom-right-radius: 4px; }
-  .msg.ok { background: rgba(62,207,142,.16); border: 1px solid var(--accent2); align-self: flex-end; border-bottom-right-radius: 4px; }
+  .msg.me { background: var(--acc-dim); border: 1px solid var(--line2); align-self: flex-end; border-bottom-right-radius: 4px; }
+  .msg.ok { background: var(--acc-dim); border: 1px solid var(--accent); align-self: flex-end; border-bottom-right-radius: 4px; }
   .msg.bad { background: rgba(255,91,110,.14); border: 1px solid var(--bad); align-self: flex-end; border-bottom-right-radius: 4px; }
   .msg.system { align-self: center; background: transparent; color: var(--muted); font-size: 12px; font-style: italic; }
   .sender { font-size: 11px; color: var(--muted); margin: 2px 6px -4px; }
@@ -125,7 +138,7 @@
   #actions button.raise:hover { background: var(--gold); border-color: var(--gold); color: #1a1a1a; }
   #actions button.danger:hover { background: var(--bad); border-color: var(--bad); }
 
-  #inputbar { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); background: #12151d; }
+  #inputbar { display: flex; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--line); background: var(--panel); }
   #input { flex: 1; background: var(--bg); border: 1px solid var(--line); border-radius: 10px; color: var(--text); padding: 11px 13px; font-size: 14px; outline: none; }
   #input:focus { border-color: var(--accent); }
   #input.shake { animation: shake .4s; border-color: var(--bad); }
@@ -138,7 +151,7 @@
     75% { transform: translateX(-3px); }
     90% { transform: translateX(3px); }
   }
-  #send { background: var(--accent); color: #fff; border: none; border-radius: 10px; padding: 0 18px; font-weight: 700; cursor: pointer; }
+  #send { background: var(--accent); color: var(--markfg); border: none; border-radius: 10px; padding: 0 18px; font-weight: 700; cursor: pointer; }
   #send:disabled { opacity: .4; cursor: not-allowed; }
 
   /* ---------- Sidebar ---------- */
@@ -148,7 +161,7 @@
   .player .avatar { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; font-weight: 800; color: #fff; }
   .player .name { flex: 1; font-size: 14px; font-weight: 600; }
   .player .pts { font-variant-numeric: tabular-nums; font-weight: 800; font-size: 16px; color: var(--gold); }
-  .player.turn { background: rgba(91,140,255,.08); }
+  .player.turn { background: var(--acc-dim); }
   #side .note { margin-top: auto; padding: 14px 16px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--line); }
   .note a, .credit a { color: var(--accent); text-decoration: none; font-weight: 600; }
   .note a:hover, .credit a:hover { text-decoration: underline; }
@@ -179,7 +192,7 @@
     border-radius: 10px; cursor: pointer; background: var(--panel2); user-select: none; transition: .12s;
   }
   .check:hover { border-color: var(--accent); }
-  .check.on { border-color: var(--accent); background: rgba(91,140,255,.12); }
+  .check.on { border-color: var(--accent); background: var(--acc-dim); }
   .check input { accent-color: var(--accent); width: 16px; height: 16px; }
   .check .emoji { font-size: 18px; }
   .seg { display: flex; gap: 8px; }
@@ -187,7 +200,7 @@
     flex: 1; padding: 11px; background: var(--panel2); border: 1px solid var(--line); border-radius: 10px;
     color: var(--text); font-weight: 700; cursor: pointer; transition: .12s;
   }
-  .seg button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .seg button.on { background: var(--accent); border-color: var(--accent); color: var(--markfg); }
   .modes { display: flex; gap: 10px; margin-top: 24px; }
   .modes button {
     flex: 1; padding: 14px; border: none; border-radius: 12px;
@@ -243,7 +256,7 @@
 
 <div id="app">
   <div id="topbar">
-    <span class="logo" id="logo" title="Back to lobby" style="cursor:pointer">🎯 Prove It!</span>
+    <span class="logo" id="logo" title="Back to lobby" style="cursor:pointer"><span class="logobadge">◎</span><span class="wd">prove it!</span></span>
     <span class="room" id="roomName">Lobby</span>
     <span class="spacer"></span>
     <button id="muteBtn" title="Sound on">🔊</button>
@@ -273,12 +286,12 @@
   <div id="side">
     <h2>Players</h2>
     <div class="player" id="pMe">
-      <div class="avatar" style="background:#2f5fd0">Y</div>
+      <div class="avatar" style="background:var(--accent);color:var(--markfg)">Y</div>
       <div class="name">You</div>
       <div class="pts" id="scoreMe">0</div>
     </div>
     <div class="player" id="pBot">
-      <div class="avatar" style="background:#7a4dd6">B</div>
+      <div class="avatar" style="background:#8a9aa0;color:#0c0a07">B</div>
       <div class="name">Bot</div>
       <div class="pts" id="scoreBot">0</div>
     </div>
@@ -290,7 +303,11 @@
 <div id="overlay">
   <div id="setup">
     <a href="mp.html" class="mplink">← Multiplayer</a>
-    <h1>🎯 Prove It! <span style="color:var(--muted);font-weight:600;font-size:16px">Singleplayer</span></h1>
+    <div style="display:flex;align-items:center;gap:12px">
+      <h1 style="display:flex;align-items:center;gap:11px;margin:0"><span class="logobadge" style="width:36px;height:36px;font-size:20px">◎</span><span class="wd" style="font-size:25px">prove it!</span><span style="color:var(--muted);font-family:var(--ui);font-weight:600;font-size:15px">solo</span></h1>
+      <span style="flex:1"></span>
+      <span class="tsw"><button data-theme="amber" class="on">Amber</button><button data-theme="cyan">Cyan</button></span>
+    </div>
     <p class="sub">How many can you actually name? Say a number, then prove it before the clock runs out.</p>
 
     <div class="group-title">Categories</div>

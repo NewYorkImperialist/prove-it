@@ -124,6 +124,15 @@ function setMuted(m) {
 $("muteBtn").onclick = () => { setMuted(!muted); if (!muted) sfx.pop(); };
 setMuted(muted);
 
+// ---------- theme (amber default ⇄ cyan), persisted ----------
+function setTheme(t) {
+  document.body.classList.toggle("t-cyan", t === "cyan");
+  localStorage.setItem("theme", t);
+  document.querySelectorAll("[data-theme]").forEach((b) => b.classList.toggle("on", b.dataset.theme === t));
+}
+document.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", () => setTheme(b.dataset.theme)));
+setTheme(localStorage.getItem("theme") || "amber");
+
 // ---------- connection indicator + auto-resume ----------
 // Two indicators: the floating one (lobby) and the sidebar one (in game).
 function setConn(text, cls) {
@@ -251,7 +260,7 @@ $("lobbyName").addEventListener("keydown", (e) => { if (e.key === "Enter") $("lo
 $("startBtn").onclick = () => socket.emit("startMatch", {}, (r) => { if (!r?.ok) $("roomStatus").textContent = r?.error || "Could not start."; });
 $("leaveBtn").onclick = () => { socket.emit("leaveRoom"); setRoom(null); show("home"); };
 
-const AV = ["#2f5fd0", "#7a4dd6"];
+const AV = ["var(--accent)", "#8a9aa0"];
 socket.on("roomState", (room) => {
   // chime when someone new joins (baseline silently on the first state so you don't hear your own arrival)
   if (prevPlayers !== null && room.players.length > prevPlayers) sfx.join();
@@ -267,7 +276,7 @@ socket.on("roomState", (room) => {
     const div = document.createElement("div");
     div.className = "player";
     const tag = p.connected === false ? ' <span style="color:var(--bad)">(reconnecting…)</span>' : (p.isHost ? '<span class="tag">HOST</span>' : "");
-    div.innerHTML = `<div class="avatar" style="background:${AV[i % AV.length]}">${p.name[0].toUpperCase()}</div>
+    div.innerHTML = `<div class="avatar" style="background:${AV[i % AV.length]};color:var(--markfg)">${p.name[0].toUpperCase()}</div>
       <div class="name">${p.name}${p.crown ? '<span class="crown">👑</span>' : ""}${p.id === myId ? " (you)" : ""}</div>${tag}`;
     list.appendChild(div);
   });
@@ -464,13 +473,13 @@ function render() {
   // sidebar players (you first), with turn highlight
   const sidePlayers = $("sidePlayers");
   sidePlayers.innerHTML = "";
-  const colors = ["#2f5fd0", "#7a4dd6"];
+  const colors = ["var(--accent)", "#8a9aa0"];
   const live = gs.phase !== "roundover" && gs.phase !== "matchover" && !gs.paused;
   [me, opp].forEach((p, i) => {
     if (!p) return;
     const d = document.createElement("div");
     d.className = "player" + (live && gs.turnId === p.id ? " turn" : "");
-    d.innerHTML = `<div class="avatar" style="background:${colors[i]}">${p.name[0].toUpperCase()}</div>
+    d.innerHTML = `<div class="avatar" style="background:${colors[i]};color:var(--markfg)">${p.name[0].toUpperCase()}</div>
       <div class="name">${p.name}${p.crown ? '<span class="crown">👑</span>' : ""}</div><div class="pts">${gs.scores[p.id] ?? 0}</div>`;
     sidePlayers.appendChild(d);
   });

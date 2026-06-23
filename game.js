@@ -689,6 +689,15 @@ input.addEventListener("animationend", () => input.classList.remove("shake"));
 buildSetup();
 $("muteBtn").onclick = () => setMuted(!muted);
 setMuted(muted);
+
+// theme (amber default ⇄ cyan), persisted — shares the key with multiplayer
+function setTheme(t) {
+  document.body.classList.toggle("t-cyan", t === "cyan");
+  localStorage.setItem("theme", t);
+  document.querySelectorAll("[data-theme]").forEach(b => b.classList.toggle("on", b.dataset.theme === t));
+}
+document.querySelectorAll("[data-theme]").forEach(b => b.addEventListener("click", () => setTheme(b.dataset.theme)));
+setTheme(localStorage.getItem("theme") || "amber");
 $("startBtn").onclick = startGame;
 $("logo").onclick = returnToMenu;
 $("againBtn").onclick = beginMatch;

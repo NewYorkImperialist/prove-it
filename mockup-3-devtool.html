@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prove It! — Mockup 3: Dev-tool</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0b0c0f; --panel:#121319; --panel2:#15171e; --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.12);
+    --fg:#e6e8ee; --dim:#8a90a0; --faint:#5a6070; --acc:#34d399; --acc-dim:rgba(52,211,153,.14); --vio:#a78bfa; --amber:#fbbf24; --red:#fb6f84;
+    --ui:"Inter",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:var(--bg);color:var(--fg);font-family:var(--ui);
+    display:grid;place-items:center;padding:24px;
+    background-image:radial-gradient(60% 50% at 50% -10%,rgba(52,211,153,.06),transparent 70%)}
+  .lbl{font-family:var(--mono);font-size:10.5px;letter-spacing:1.4px;text-transform:uppercase;color:var(--faint)}
+  .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  kbd{font-family:var(--mono);font-size:11px;color:var(--dim);background:#1a1d25;border:1px solid var(--line2);border-radius:5px;padding:1px 6px;box-shadow:0 1px 0 rgba(0,0,0,.4)}
+
+  .app{width:min(1080px,100%);height:600px;background:var(--panel);border:1px solid var(--line2);border-radius:14px;overflow:hidden;
+    box-shadow:0 30px 90px rgba(0,0,0,.55);display:grid;grid-template-rows:56px 1fr;grid-template-columns:1fr 248px;grid-template-areas:"top top" "main side"}
+  /* top */
+  .top{grid-area:top;display:flex;align-items:center;gap:16px;padding:0 18px;border-bottom:1px solid var(--line);background:linear-gradient(180deg,#14161d,#101218)}
+  .mark{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:-.2px}
+  .mark .sq{width:22px;height:22px;border-radius:6px;background:linear-gradient(140deg,var(--acc),#0e9f6e);display:grid;place-items:center;color:#06231a;font-size:13px;box-shadow:0 0 0 1px rgba(255,255,255,.08) inset}
+  .mark b{font-size:15px} .mark .dot-it{color:var(--acc)}
+  .chip{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:8px;padding:5px 10px;background:var(--panel2)}
+  .chip .lbl{color:var(--faint)} .chip .v{font-family:var(--mono);font-size:13px;letter-spacing:1px}
+  .top .sp{flex:1}
+  .btn{font-family:var(--ui);font-size:13px;font-weight:600;color:var(--dim);background:transparent;border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer;transition:.12s}
+  .btn:hover{color:var(--fg);border-color:var(--line2);background:var(--panel2)}
+  .btn.icon{padding:7px 9px}
+  /* main */
+  .main{grid-area:main;display:flex;flex-direction:column;min-width:0}
+  .banner{margin:18px 20px 0;padding:18px 20px;border:1px solid var(--line);border-radius:12px;background:
+    radial-gradient(120% 140% at 0% 0%,rgba(167,139,250,.10),transparent 55%),var(--panel2)}
+  .banner .lbl{margin-bottom:8px}
+  .banner .cat{font-size:28px;font-weight:800;letter-spacing:-.5px}
+  .banner .claim{margin-top:10px;display:flex;align-items:center;gap:10px;color:var(--dim);font-size:13px}
+  .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);border-radius:999px;padding:3px 10px;font-family:var(--mono);font-size:12px;color:var(--fg)}
+  .pill b{color:var(--acc)}
+  .feed{flex:1;overflow:auto;padding:16px 20px;display:flex;flex-direction:column;gap:11px}
+  .msg{display:flex;gap:11px;align-items:flex-start}
+  .av{flex:0 0 26px;height:26px;border-radius:7px;display:grid;place-items:center;font-family:var(--mono);font-weight:700;font-size:12px;color:#06120d}
+  .av.you{background:var(--acc)} .av.bot{background:var(--vio);color:#1a103a}
+  .msg .b .nm{font-size:11px;color:var(--faint);font-weight:600;margin-bottom:1px}
+  .msg .b .tx{font-size:14px}
+  .sys{align-self:center;color:var(--faint);font-size:12px}
+  .tag{font-family:var(--mono);font-size:12px;border:1px solid var(--line2);border-radius:6px;padding:1px 7px;margin-left:6px}
+  .tag.ok{color:var(--acc);border-color:rgba(52,211,153,.4)} .tag.bad{color:var(--red);border-color:rgba(251,111,132,.4)}
+  /* timer + input */
+  .timerwrap{padding:0 20px}
+  .timer{height:4px;background:var(--panel2);border-radius:999px;overflow:hidden}
+  .timer i{display:block;height:100%;width:60%;background:linear-gradient(90deg,var(--acc),var(--amber))}
+  .timer + .tmeta{display:flex;justify-content:space-between;margin-top:6px;color:var(--dim);font-size:12px}
+  .inputbar{display:flex;gap:10px;align-items:center;padding:14px 20px 18px}
+  .field{flex:1;display:flex;align-items:center;gap:10px;border:1px solid var(--line2);border-radius:10px;padding:0 12px;background:var(--bg)}
+  .field:focus-within{border-color:var(--acc);box-shadow:0 0 0 3px var(--acc-dim)}
+  .field input{flex:1;background:transparent;border:0;outline:0;color:var(--fg);font:15px var(--ui);padding:11px 0}
+  .field input::placeholder{color:var(--faint)}
+  .send{font-weight:700;font-size:14px;color:#06231a;background:var(--acc);border:0;border-radius:10px;padding:11px 16px;cursor:pointer}
+  /* side */
+  .side{grid-area:side;border-left:1px solid var(--line);background:var(--panel2);display:flex;flex-direction:column;padding:16px 14px}
+  .side .lbl{padding:0 4px 10px}
+  .pcard{display:flex;align-items:center;gap:11px;padding:11px;border:1px solid var(--line);border-radius:10px;margin-bottom:9px;background:var(--bg)}
+  .pcard.turn{border-color:rgba(52,211,153,.45);box-shadow:0 0 0 3px var(--acc-dim)}
+  .pcard .nm{font-weight:600;font-size:14px} .pcard .sub{font-size:11px;color:var(--faint)}
+  .pcard .score{margin-left:auto;font-family:var(--mono);font-weight:700;font-size:22px;font-variant-numeric:tabular-nums}
+  .pcard.you .score{color:var(--acc)} .pcard.bot .score{color:var(--vio)}
+  .side .foot{margin-top:auto;border-top:1px solid var(--line);padding-top:12px;display:flex;flex-direction:column;gap:9px}
+  .side .conn{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:12px}
+  .side .conn .d{width:7px;height:7px;border-radius:50%;background:var(--acc);box-shadow:0 0 8px var(--acc)}
+  .legend{display:flex;flex-wrap:wrap;gap:6px}
+  .note{color:var(--dim);font-size:12px;text-align:center;margin-top:14px;width:min(1080px,100%)}
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="top">
+      <div class="mark"><span class="sq">◎</span><b>prove<span class="dot-it">.it</span></b></div>
+      <div class="chip"><span class="lbl">room</span><span class="v">K7P2</span></div>
+      <span class="sp"></span>
+      <button class="btn">Categories</button>
+      <button class="btn icon">⚙</button>
+      <button class="btn icon">🔊</button>
+      <button class="btn">Leave</button>
+    </div>
+
+    <div class="main">
+      <div class="banner">
+        <div class="lbl">Category · Computer Science · round 6</div>
+        <div class="cat">Programming Languages</div>
+        <div class="claim"><span class="pill">claim <b>7</b></span> held by Bot — call it or raise</div>
+      </div>
+
+      <div class="feed">
+        <div class="msg"><div class="av bot">B</div><div class="b"><div class="nm">Bot</div><div class="tx">Programming Languages. How many you got?</div></div></div>
+        <div class="msg"><div class="av you">Y</div><div class="b"><div class="nm">You</div><div class="tx">I can name 6.</div></div></div>
+        <div class="msg"><div class="av bot">B</div><div class="b"><div class="nm">Bot</div><div class="tx">Make it 7. Your move.</div></div></div>
+        <div class="msg"><div class="av you">Y</div><div class="b"><div class="nm">You</div><div class="tx">Prove it.</div></div></div>
+        <div class="sys">Bot is proving 7…</div>
+        <div class="msg"><div class="av bot">B</div><div class="b"><div class="nm">Bot</div><div class="tx">Python <span class="tag ok">✓ 1/7</span></div></div></div>
+        <div class="msg"><div class="av bot">B</div><div class="b"><div class="nm">Bot</div><div class="tx">Rust <span class="tag ok">✓ 2/7</span> &nbsp; Haskell <span class="tag ok">✓ 3/7</span></div></div></div>
+        <div class="msg"><div class="av bot">B</div><div class="b"><div class="nm">Bot</div><div class="tx">uh… that's all I got 😬 <span class="tag bad">3/7</span></div></div></div>
+        <div class="sys">Only 3 of 7 — point <b style="color:var(--acc)">You</b> · 4–2</div>
+      </div>
+
+      <div class="timerwrap">
+        <div class="timer"><i></i></div>
+        <div class="tmeta"><span>proving · 3 of 7 named</span><span class="mono">0:18</span></div>
+      </div>
+      <div class="inputbar">
+        <div class="field"><input placeholder="Name a Programming Language…"><kbd>↵</kbd></div>
+        <button class="send">Prove</button>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="lbl">Players · first to 5</div>
+      <div class="pcard you turn"><div class="av you">Y</div><div><div class="nm">You</div><div class="sub">your turn</div></div><div class="score">3</div></div>
+      <div class="pcard bot"><div class="av bot">B</div><div><div class="nm">Bot</div><div class="sub">hard</div></div><div class="score">2</div></div>
+      <div class="foot">
+        <div class="conn"><span class="d"></span> connected · 14ms</div>
+        <div class="legend"><kbd>↵ send</kbd><kbd>/ chat</kbd><kbd>P next</kbd></div>
+      </div>
+    </div>
+  </div>
+  <p class="note">Mockup 3 / 3 — “Dev-tool” (Linear / Vercel style). Clean sans + monospace numbers, one accent, hairline borders, kbd chips.</p>
+</body>
+</html>

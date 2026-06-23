@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Prove It! — Mockup 2: IDE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#15181e; --chrome:#1b1f27; --side:#181c23; --line:#262c37; --fg:#d6dde6; --dim:#6b7686;
+    --blue:#4aa3ff; --kw:#c586c0; --fn:#dcdcaa; --str:#7ec699; --num:#e0a458; --green:#3ecf8e; --red:#ff6b7a;
+    --ui:"Inter",system-ui,sans-serif; --mono:"JetBrains Mono",ui-monospace,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;background:#0c0e12;color:var(--fg);font-family:var(--ui);
+    display:grid;place-items:center;padding:24px}
+  .app{width:min(1080px,100%);height:600px;background:var(--bg);border:1px solid var(--line);border-radius:9px;overflow:hidden;
+    box-shadow:0 24px 80px rgba(0,0,0,.6);display:grid;grid-template-columns:48px 220px 1fr;grid-template-rows:1fr 24px}
+  /* activity bar */
+  .activity{grid-row:1/3;background:#13161c;border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;gap:18px;padding:14px 0;color:var(--dim);font-size:20px}
+  .activity .on{color:var(--fg);border-left:2px solid var(--blue);width:100%;text-align:center;margin-left:-2px}
+  /* sidebar */
+  .side{background:var(--side);border-right:1px solid var(--line);padding:12px 0;font-size:13px;overflow:hidden}
+  .side .h{padding:4px 14px;color:var(--dim);font-size:11px;letter-spacing:.8px;text-transform:uppercase;font-weight:600}
+  .side .row{display:flex;align-items:center;gap:8px;padding:5px 14px}
+  .side .row .pts{margin-left:auto;font-family:var(--mono);font-weight:700}
+  .side .row.you .pts{color:var(--green)} .side .row.bot .pts{color:var(--kw)}
+  .side .row .dot{width:8px;height:8px;border-radius:50%;background:var(--green)}
+  .side .row.turn{background:rgba(74,163,255,.10);border-left:2px solid var(--blue);padding-left:12px}
+  .side .file{display:flex;gap:8px;padding:4px 14px;color:var(--dim);font-family:var(--mono);font-size:12px}
+  .side .file.active{color:var(--fg);background:rgba(255,255,255,.03)}
+  /* editor column */
+  .main{display:flex;flex-direction:column;min-width:0}
+  .tabs{display:flex;background:var(--chrome);border-bottom:1px solid var(--line);font-size:13px}
+  .tab{display:flex;align-items:center;gap:8px;padding:9px 14px;color:var(--dim);border-right:1px solid var(--line)}
+  .tab.active{background:var(--bg);color:var(--fg);border-top:2px solid var(--blue);padding-top:7px}
+  .tab .x{color:var(--dim)}
+  .breadcrumb{padding:6px 16px;color:var(--dim);font-size:12px;font-family:var(--mono);border-bottom:1px solid var(--line)}
+  .breadcrumb b{color:var(--fn)}
+  .editor{flex:1;overflow:auto;font-family:var(--mono);font-size:13.5px;line-height:1.7;padding:8px 0}
+  .code{display:flex}
+  .gutter{flex:0 0 46px;text-align:right;color:#3c4654;padding-right:14px;user-select:none}
+  .lines{flex:1;padding-right:16px}
+  .l{white-space:pre-wrap}
+  .kw{color:var(--kw)} .fn{color:var(--fn)} .str{color:var(--str)} .num{color:var(--num)} .cm{color:#5a6677} .ok{color:var(--green)} .bad{color:var(--red)} .blue{color:var(--blue)}
+  /* input row styled as an editor line */
+  .inputline{display:flex;border-top:1px solid var(--line);font-family:var(--mono);font-size:13.5px}
+  .inputline .gutter{padding-top:9px}
+  .inputline input{flex:1;background:transparent;border:0;outline:0;color:var(--fg);font:inherit;padding:9px 16px 9px 0;caret-color:var(--blue)}
+  .inputline input::placeholder{color:#4d5867}
+  /* status bar */
+  .status{grid-column:2/4;background:var(--blue);color:#06121f;display:flex;align-items:center;font-size:11.5px;font-weight:600}
+  .status .seg{padding:0 10px;height:24px;display:flex;align-items:center;gap:5px}
+  .status .seg.alt{background:rgba(0,0,0,.18)}
+  .status .push{margin-left:auto}
+  .note{color:#6b7686;font-size:12px;text-align:center;margin-top:14px;width:min(1080px,100%);font-family:var(--ui)}
+</style>
+</head>
+<body>
+  <div class="app">
+    <div class="activity"><span class="on">📁</span><span>🔍</span><span>⎇</span><span>💬</span><span style="margin-top:auto">⚙</span></div>
+
+    <div class="side">
+      <div class="h">Players</div>
+      <div class="row you turn"><span class="dot"></span> You <span class="pts">3</span></div>
+      <div class="row bot"><span class="dot" style="background:#c586c0"></span> Bot <span class="pts">2</span></div>
+      <div class="h" style="margin-top:14px">Match</div>
+      <div class="file active">📄 round-6.prove</div>
+      <div class="file">📄 categories.js</div>
+      <div class="file">📄 first to 5</div>
+      <div class="h" style="margin-top:14px">Outline</div>
+      <div class="file">ƒ&nbsp; open(6)</div>
+      <div class="file">ƒ&nbsp; raise(7)</div>
+      <div class="file">ƒ&nbsp; proveIt()</div>
+    </div>
+
+    <div class="main">
+      <div class="tabs">
+        <div class="tab active">📄 round-6.prove <span class="x">×</span></div>
+        <div class="tab">📄 categories.js</div>
+      </div>
+      <div class="breadcrumb">prove-it &rsaquo; round 6 &rsaquo; <b>Programming Languages</b> &rsaquo; claim 7</div>
+      <div class="editor">
+        <div class="code">
+          <div class="gutter">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10</div>
+          <div class="lines">
+            <div class="l"><span class="cm">// Programming Languages — 57 entries · first to 5</span></div>
+            <div class="l"><span class="kw">const</span> <span class="fn">claim</span> = <span class="num">7</span>;  <span class="cm">// held by bot</span></div>
+            <div class="l"><span class="blue">bot</span>: <span class="str">"make it 7. your move."</span></div>
+            <div class="l"><span class="blue">you</span>: <span class="fn">proveIt</span>();</div>
+            <div class="l"><span class="cm">→ bot proving 7…</span></div>
+            <div class="l">  <span class="ok">Python</span>     <span class="cm">✓ 1/7</span></div>
+            <div class="l">  <span class="ok">Rust</span>       <span class="cm">✓ 2/7</span></div>
+            <div class="l">  <span class="ok">Haskell</span>    <span class="cm">✓ 3/7</span></div>
+            <div class="l">  <span class="bad">// uh… that's all I got 😬</span></div>
+            <div class="l"><span class="kw">return</span> <span class="str">"point: you"</span>;  <span class="cm">// 4–2</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="inputline">
+        <div class="gutter">11</div>
+        <input placeholder="name a Programming Language…  // press ↵ to submit">
+      </div>
+    </div>
+
+    <div class="status">
+      <span class="seg alt">⎇ round-6</span>
+      <span class="seg">● proving</span>
+      <span class="seg">⏱ 0:18</span>
+      <span class="seg">proved 3/7</span>
+      <span class="push seg alt">↵ submit · / chat</span>
+      <span class="seg">Prove It! v2</span>
+    </div>
+  </div>
+  <p class="note">Mockup 2 / 3 — “IDE”. Editor chrome, line-number gutter, syntax colors, status bar.</p>
+</body>
+</html>

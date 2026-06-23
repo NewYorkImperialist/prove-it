@@ -5,6 +5,7 @@ const http = require("http");
 const express = require("express");
 const { Server } = require("socket.io");
 const engine = require("./game-engine");
+const analytics = require("./stats"); // persistent game history (Turso); separate from the in-memory `stats` counters
 const CATEGORY_GROUPS = require("./categories.js");
 const ALL_GROUPS = Object.keys(CATEGORY_GROUPS);
 const DEFAULT_GROUPS = ALL_GROUPS.filter((k) => !CATEGORY_GROUPS[k].defaultOff); // Secret starts off
@@ -14,6 +15,26 @@ const TARGETS = [3, 5, 10]; // plus null = endless
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+// Persist game/round events for the admin board (fire-and-forget; no-ops if Turso isn't set).
+engine.setReporter((room, type, extra) => {
+  try {
+    if (type === "round") {
+      analytics.recordRound({ code: room.code, category: extra.category, grp: extra.grp,
+        winner_id: extra.winnerId, winner_name: extra.winnerName, claim: extra.claim, proven: extra.proven, at: Date.now() });
+    } else if (type === "end") {
+      const g = room.game; if (!g) return;
+      const [a, b] = g.order;
+      analytics.recordGame({ code: room.code,
+        p1_id: a, p1_name: g.names[a], p1_score: g.scores[a] || 0,
+        p2_id: b, p2_name: g.names[b], p2_score: g.scores[b] || 0,
+        winner_id: extra.winnerId || null, winner_name: extra.winnerId ? g.names[extra.winnerId] : null,
+        groups: (g.groups || []).join(","), timer: g.timer, target: g.target === Infinity ? "endless" : String(g.target),
+        rounds: g.round, reason: extra.reason || "win",
+        started_at: g.startedAt || null, ended_at: Date.now(), duration_ms: g.startedAt ? Date.now() - g.startedAt : null });
+    }
+  } catch (e) { console.error("reporter:", e.message); }
+});
 
 // Default page is Multiplayer; single-player lives at /index.html.
 app.get("/", (req, res) => res.sendFile(path.join(__dirname, "mp.html")));
@@ -56,11 +77,33 @@ function fmtDur(ms) {
 }
 function ownerOk(req) { const key = req.query.key || req.get("x-owner-key"); return process.env.OWNER_KEY && key === process.env.OWNER_KEY; }
 
-app.get("/admin", (req, res) => {
+function fmtMs(ms) { return ms ? fmtDur(ms) : "—"; }
+function histHtml(h) {
+  if (!h) return `<p class="stats" style="margin-top:22px">📦 Historical stats off — set <b>TURSO_URL</b> / <b>TURSO_TOKEN</b> to persist game history.</p>`;
+  const lb = h.leaderboard.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(r.name)}</td><td>${Number(r.wins)}</td><td>${Number(r.games)}</td><td>${r.games ? Math.round(Number(r.wins) / Number(r.games) * 100) : 0}%</td></tr>`).join("");
+  const cat = h.categories.map((r) => `<tr><td>${esc(r.grp)} — ${esc(r.category)}</td><td>${Number(r.plays)}</td><td>${r.avg_claim ? Number(r.avg_claim).toFixed(1) : "—"}</td><td>${r.avg_ratio != null ? Math.round(Number(r.avg_ratio) * 100) + "%" : "—"}</td></tr>`).join("");
+  const day = h.perDay.map((r) => `<tr><td>${esc(r.day)}</td><td>${Number(r.n)}</td></tr>`).join("");
+  const rec = h.recent.map((r) => `<tr><td>${esc(r.code)}</td><td>${esc(r.p1_name)} ${Number(r.p1_score)}–${Number(r.p2_score)} ${esc(r.p2_name)}</td><td>${esc(r.winner_name || "tie")}</td><td>${esc((r.groups || "").split(",")[0] || "")}…</td><td>${Number(r.rounds)}r</td><td>${esc(r.reason)}</td><td>${fmtMs(Number(r.duration_ms))}</td></tr>`).join("");
+  return `
+    <h2>All-time history</h2>
+    <p class="stats"><b>${h.games}</b> games · <b>${h.rounds}</b> rounds · <b>${h.players}</b> unique players · avg game <b>${fmtMs(h.avgDurationMs)}</b></p>
+    <div class="cols">
+      <div><h3>🏆 Leaderboard</h3><table><tr><th>#</th><th>Player</th><th>W</th><th>G</th><th>Win%</th></tr>${lb || '<tr><td colspan=5>—</td></tr>'}</table></div>
+      <div><h3>🗂 Categories (plays · avg claim · solve%)</h3><table><tr><th>Category</th><th>Plays</th><th>Claim</th><th>Solve%</th></tr>${cat || '<tr><td colspan=4>—</td></tr>'}</table></div>
+      <div><h3>📅 Games per day</h3><table><tr><th>Day</th><th>Games</th></tr>${day || '<tr><td colspan=2>—</td></tr>'}</table></div>
+      <div><h3>🕑 Recent games</h3><table><tr><th>Code</th><th>Result</th><th>Winner</th><th>Cat</th><th>Rds</th><th>End</th><th>Len</th></tr>${rec || '<tr><td colspan=7>—</td></tr>'}</table></div>
+    </div>`;
+}
+
+app.get("/admin", async (req, res) => {
   if (!ownerOk(req)) return res.status(404).send("Not found");
   const now = Date.now();
   const list = adminData();
-  if (req.query.json) return res.json({ now, uptimeMs: now - serverStartedAt, online, stats, roomCount: list.length, rooms: list });
+  if (req.query.json) {
+    const hist = analytics.enabled() ? await analytics.summary().catch(() => null) : null;
+    return res.json({ now, uptimeMs: now - serverStartedAt, online, stats, history: hist, roomCount: list.length, rooms: list });
+  }
+  const hist = analytics.enabled() ? await analytics.summary().catch(() => null) : null;
   const playing = list.filter((r) => r.status === "playing").length;
   const k = encodeURIComponent(req.query.key || "");
   const card = (r) => {
@@ -96,11 +139,16 @@ app.get("/admin", (req, res) => {
     .badge{font-size:12px;color:#8a92a6} .watch{margin-left:auto;color:#5b8cff;text-decoration:none;font-weight:700;font-size:13px}
     .close{color:#e5484d;text-decoration:none;font-weight:700;font-size:13px} .watch:hover,.close:hover{text-decoration:underline}
     .g{font-size:13px;color:#c6ccda;margin:3px 0} .g.players{color:#fff;font-weight:600} .g.meta{color:#6b7382;font-size:12px}
-    .g.pend{color:#ffb454} b{color:#fff}</style></head>
+    .g.pend{color:#ffb454} b{color:#fff}
+    h2{font-size:17px;margin:26px 0 4px} h3{font-size:13px;margin:14px 0 6px;color:#c6ccda}
+    .cols{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
+    table{width:100%;border-collapse:collapse;font-size:12px} th{text-align:left;color:#8a92a6;font-weight:600;border-bottom:1px solid #262b38;padding:4px 6px}
+    td{padding:4px 6px;border-bottom:1px solid #1c2029;color:#dfe4ee}</style></head>
     <body><h1>🎯 Prove It! — live server</h1>
     <p class="sub">🟢 <b style="color:#3ecf8e">${online}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${new Date().toISOString()}</p>
     <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
     <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
+    ${histHtml(hist)}
     </body></html>`);
 });
 

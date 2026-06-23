@@ -13,6 +13,10 @@ const MAX_PENDING = 6;          // max off-list answers awaiting a ruling at onc
 const MAX_OFFLIST = 15;         // max off-list answers a prover can queue per round
 const DEFAULTS = { timer: 30, target: 5, autoAdvance: true }; // prove seconds, points to win, auto next round
 
+// Optional analytics hook — server.js sets this to persist game/round events. No-op by default.
+let report = () => {};
+function setReporter(fn) { report = typeof fn === "function" ? fn : () => {}; }
+
 // ---------- matching helpers (mirror the client) ----------
 function norm(s) {
   return String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
@@ -106,7 +110,7 @@ function handleVoteEnd(io, room, socket) {
       log(io, room, "system", null, `🏁 Game ended by vote — it's a tie! (${sa}–${sb})`);
       return emit(io, room);
     }
-    return matchOver(io, room, sa > sb ? a : b);
+    return matchOver(io, room, sa > sb ? a : b, "vote-end");
   }
   // first vote → pause any auto-advance so the other player can respond
   if (g.phase === "roundover" && g.autoAdvance && !g.intermission) { clearTimer(room); g.intermission = true; }
@@ -171,6 +175,7 @@ function startMatch(io, room) {
     claim: 0, holderId: null, turnId: null, proven: [], current: null,
     phase: "starting", deadline: null, timeout: null,
     lastResult: null, matchWinnerId: null, challengerId: null,
+    startedAt: Date.now(),
   };
   io.to(room.code).emit("gameStarted", { players: snapshot.length });
   beginRound(io, room);
@@ -400,6 +405,7 @@ function roundOver(io, room, winnerId, reason) {
   g.lastResult = { winnerId, winnerName: g.names[winnerId], reason, claim: g.claim, proven: g.proven.length };
   g.intermission = false;
   log(io, room, "system", null, `${reason} — point ${g.names[winnerId]} (${g.scores[g.order[0]]}–${g.scores[g.order[1]]})`);
+  report(room, "round", { winnerId, winnerName: g.names[winnerId], category: g.current.name, grp: g.current.group, claim: g.claim, proven: total(g) });
   if (g.target !== Infinity && g.scores[winnerId] >= g.target) return matchOver(io, room, winnerId);
   if (g.autoAdvance) {
     setTimer(room, ROUNDOVER_MS, () => beginRound(io, room), { deadline: false });
@@ -409,11 +415,12 @@ function roundOver(io, room, winnerId, reason) {
   emit(io, room);
 }
 
-function matchOver(io, room, winnerId) {
+function matchOver(io, room, winnerId, reason) {
   clearTimer(room);
   const g = room.game;
   g.phase = "matchover"; g.deadline = null; g.matchWinnerId = winnerId;
-  log(io, room, "system", null, `🏆 ${g.names[winnerId]} wins the match! (${g.scores[g.order[0]]}–${g.scores[g.order[1]]})`);
+  log(io, room, "system", null, winnerId ? `🏆 ${g.names[winnerId]} wins the match! (${g.scores[g.order[0]]}–${g.scores[g.order[1]]})` : "🏁 Match over.");
+  report(room, "end", { winnerId, reason: reason || "win" });
   emit(io, room);
 }
 
@@ -435,7 +442,7 @@ function applyLiveSettings(io, room, { timer, target, autoAdvance } = {}) {
   // lowering the win target may already decide the match
   if (g.phase !== "matchover" && g.target !== Infinity) {
     const leader = g.order.find((id) => (g.scores[id] || 0) >= g.target);
-    if (leader) return matchOver(io, room, leader);
+    if (leader) return matchOver(io, room, leader, "target-changed");
   }
   emit(io, room);
 }
@@ -456,13 +463,15 @@ function setGroups(io, room, groups) {
 function endGameForLeaver(io, room, leaverId) {
   if (!room.game) return;
   clearTimer(room);
-  const name = room.game.names[leaverId] || "Your opponent";
+  const g = room.game;
+  const name = g.names[leaverId] || "Your opponent";
+  report(room, "end", { winnerId: other(g, leaverId), reason: "forfeit" }); // the player who stayed wins by forfeit
   room.game = null;
   room.status = "waiting";
   io.to(room.code).emit("opponentLeft", { name });
 }
 
 module.exports = {
-  startMatch, handleOpen, handleRaise, handleProveIt, handleAnswer, handleJudge, handleRejectAll, handleGiveUp, handleRematch, endGameForLeaver, pauseGame, resumeGame, setGroups, applyLiveSettings, handlePauseRound, handleNextRound, handleVoteSkip, handleVoteEnd,
+  startMatch, handleOpen, handleRaise, handleProveIt, handleAnswer, handleJudge, handleRejectAll, handleGiveUp, handleRematch, endGameForLeaver, pauseGame, resumeGame, setGroups, applyLiveSettings, handlePauseRound, handleNextRound, handleVoteSkip, handleVoteEnd, setReporter,
   resync: (io, room) => { if (room.game) emit(io, room); },
 };

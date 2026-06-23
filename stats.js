@@ -79,17 +79,6 @@ async function summary() {
     rounds: tot ? Number(tot.rounds) : 0,
     avgDurationMs: tot ? Number(tot.avgdur) : 0,
     players: pl ? Number(pl.n) : 0,
-    leaderboard: await q(`SELECT name, COUNT(*) games, SUM(won) wins FROM (
-        SELECT p1_name name, (winner_id = p1_id) won FROM games
-        UNION ALL SELECT p2_name name, (winner_id = p2_id) won FROM games)
-      WHERE name IS NOT NULL GROUP BY name ORDER BY wins DESC, games DESC LIMIT 25`),
-    headToHead: await q(`SELECT
-        CASE WHEN p1_name<p2_name THEN p1_name ELSE p2_name END a,
-        CASE WHEN p1_name<p2_name THEN p2_name ELSE p1_name END b,
-        SUM(winner_name = (CASE WHEN p1_name<p2_name THEN p1_name ELSE p2_name END)) awins,
-        SUM(winner_name = (CASE WHEN p1_name<p2_name THEN p2_name ELSE p1_name END)) bwins,
-        COUNT(*) n
-      FROM games WHERE winner_name IS NOT NULL GROUP BY a,b ORDER BY n DESC LIMIT 20`),
     categories: await q(`SELECT grp, category, COUNT(*) plays, AVG(claim) avg_claim,
         AVG(CAST(proven AS REAL)/NULLIF(claim,0)) avg_ratio
       FROM rounds GROUP BY grp, category ORDER BY plays DESC LIMIT 30`),
@@ -110,21 +99,4 @@ async function summary() {
   };
 }
 
-async function playerProfile(name) {
-  if (!client) return null;
-  const agg = await one(`SELECT COUNT(*) games, SUM(winner_name=?) wins FROM games WHERE p1_name=? OR p2_name=?`, [name, name, name]);
-  return {
-    name,
-    games: agg ? Number(agg.games) : 0,
-    wins: agg ? Number(agg.wins) : 0,
-    opponents: await q(`SELECT opp, COUNT(*) games, SUM(won) wins FROM (
-        SELECT p2_name opp, (winner_name=?) won FROM games WHERE p1_name=?
-        UNION ALL SELECT p1_name opp, (winner_name=?) won FROM games WHERE p2_name=?)
-      WHERE opp IS NOT NULL GROUP BY opp ORDER BY games DESC`, [name, name, name, name]),
-    bestCategories: await q(`SELECT grp, category, COUNT(*) round_wins FROM rounds WHERE winner_name=? GROUP BY grp,category ORDER BY round_wins DESC LIMIT 12`, [name]),
-    recent: await q(`SELECT code,p1_name,p2_name,p1_score,p2_score,winner_name,rounds,reason,ended_at
-      FROM games WHERE p1_name=? OR p2_name=? ORDER BY id DESC LIMIT 15`, [name, name]),
-  };
-}
-
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, summary, playerProfile };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, summary };

@@ -89,8 +89,6 @@ const tbl = (head, rows, cols) => `<table><tr>${head.map((h) => `<th>${h}</th>`)
 function histHtml(h, k) {
   if (!h) return `<p class="stats" style="margin-top:22px">📦 Historical stats off — set <b>TURSO_URL</b> / <b>TURSO_TOKEN</b> to persist game history.</p>`;
   const num = (x) => Number(x || 0);
-  const lb = h.leaderboard.map((r, i) => `<tr><td>${i + 1}</td><td><a href="/admin/player?key=${k}&name=${encodeURIComponent(r.name)}">${esc(r.name)}</a></td><td>${num(r.wins)}</td><td>${num(r.games)}</td><td>${r.games ? Math.round(num(r.wins) / num(r.games) * 100) : 0}%</td></tr>`).join("");
-  const h2h = h.headToHead.map((r) => `<tr><td>${esc(r.a)} vs ${esc(r.b)}</td><td>${num(r.awins)}–${num(r.bwins)}</td><td>${num(r.n)}</td></tr>`).join("");
   const cat = h.categories.map((r) => `<tr><td>${esc(r.grp)} — ${esc(r.category)}</td><td>${num(r.plays)}</td><td>${r.avg_claim ? num(r.avg_claim).toFixed(1) : "—"}</td><td>${r.avg_ratio != null ? Math.round(num(r.avg_ratio) * 100) + "%" : "—"}</td></tr>`).join("");
   const cov = h.namedPerCat.map((r) => ({ cat: r.category, c: num(r.c), total: CAT_SIZES[r.category] || 0 })).filter((x) => x.total)
     .map((x) => ({ ...x, pct: x.c / x.total })).sort((a, b) => a.pct - b.pct).slice(0, 15)
@@ -115,8 +113,6 @@ function histHtml(h, k) {
     <p class="stats"><b>${h.games}</b> games · <b>${h.rounds}</b> rounds · <b>${h.players}</b> unique players · avg game <b>${fmtMs(h.avgDurationMs)}</b></p>
     <div class="pills">${sup}</div>
     <div class="cols">
-      <div><h3>🏆 Leaderboard</h3>${tbl(["#", "Player", "W", "G", "Win%"], lb, 5)}</div>
-      <div><h3>⚔️ Head-to-head</h3>${tbl(["Matchup", "Record", "Games"], h2h, 3)}</div>
       <div><h3>🗂 Categories — plays · claim · solve%</h3>${tbl(["Category", "Plays", "Claim", "Solve%"], cat, 4)}</div>
       <div><h3>🔍 Least-explored categories</h3>${tbl(["Category", "Named", "Coverage"], cov, 3)}</div>
       <div><h3>💬 Most-named answers</h3>${tbl(["Answer", "Category", "×"], ta, 3)}</div>
@@ -213,31 +209,6 @@ app.get("/admin/announce", (req, res) => {
   const text = String(req.query.msg || "").replace(/\s+/g, " ").trim().slice(0, 200);
   if (text) { io.emit("announce", { text }); console.log(`📢 announce: ${text}`); }
   res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));
-});
-
-// Owner drill-down: one player's history.
-app.get("/admin/player", async (req, res) => {
-  if (!ownerOk(req)) return res.status(404).send("Not found");
-  const k = encodeURIComponent(req.query.key || "");
-  const name = String(req.query.name || "");
-  const p = analytics.enabled() ? await analytics.playerProfile(name).catch(() => null) : null;
-  const back = `<a href="/admin?key=${k}" style="color:#5b8cff;text-decoration:none">← back to dashboard</a>`;
-  const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-    h1{font-size:20px} h3{font-size:13px;margin:18px 0 6px;color:#c6ccda} .stats{color:#c6ccda} b{color:#ffd34d}
-    table{border-collapse:collapse;font-size:12px;min-width:280px} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:4px 8px}
-    td{padding:4px 8px;border-bottom:1px solid #1c2029}</style>`;
-  if (!p || !p.games) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>${esc(name)}</h1><p class="stats">No games recorded.</p></body>`);
-  const num = (x) => Number(x || 0);
-  const opp = p.opponents.map((o) => `<tr><td>${esc(o.opp)}</td><td>${num(o.wins)}–${num(o.games) - num(o.wins)}</td><td>${num(o.games)}</td></tr>`).join("");
-  const bc = p.bestCategories.map((c) => `<tr><td>${esc(c.grp)} — ${esc(c.category)}</td><td>${num(c.round_wins)}</td></tr>`).join("");
-  const rec = p.recent.map((r) => `<tr><td>${esc(r.code)}</td><td>${esc(r.p1_name)} ${num(r.p1_score)}–${num(r.p2_score)} ${esc(r.p2_name)}</td><td>${esc(r.winner_name || "tie")}</td><td>${num(r.rounds)}r</td><td>${esc(r.reason)}</td></tr>`).join("");
-  res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
-    <h1>${esc(p.name)}</h1>
-    <p class="stats"><b>${p.games}</b> games · <b>${p.wins}</b> wins · <b>${p.games - p.wins}</b> losses · <b>${p.games ? Math.round(p.wins / p.games * 100) : 0}%</b> win rate</p>
-    <h3>⚔️ vs each opponent</h3><table><tr><th>Opponent</th><th>W–L</th><th>Games</th></tr>${opp || "<tr><td colspan=3>—</td></tr>"}</table>
-    <h3>🗂 Best categories (round wins)</h3><table><tr><th>Category</th><th>Round wins</th></tr>${bc || "<tr><td colspan=2>—</td></tr>"}</table>
-    <h3>🕑 Recent games</h3><table><tr><th>Code</th><th>Result</th><th>Winner</th><th>Rds</th><th>End</th></tr>${rec || "<tr><td colspan=5>—</td></tr>"}</table>
-    </body>`);
 });
 
 app.use(express.static(path.join(__dirname)));

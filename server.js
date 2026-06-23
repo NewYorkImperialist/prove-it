@@ -357,7 +357,13 @@ app.post("/track", (req, res) => {
   } catch (err) { /* ignore bad payloads */ }
 });
 
-app.use(express.static(path.join(__dirname)));
+// Always revalidate HTML/JS so the inlined CSS + game logic are never served stale
+// (matters because we push UI tweaks frequently and the link is shared publicly).
+app.use(express.static(path.join(__dirname), {
+  setHeaders(res, filePath) {
+    if (/\.(html|js)$/.test(filePath)) res.setHeader("Cache-Control", "no-cache");
+  },
+}));
 
 // ---------- Rooms ----------
 // code -> { code, hostId, status, settings, players: Map<playerId, {id,name,socketId,connected}>, graceTimeout }

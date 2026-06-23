@@ -589,6 +589,12 @@ const CATEGORY_GROUPS = {
       "Kuwait", "Iraq", "Jordan", "Zambia", "Botswana", ["Sierra Leone","sierra leone"], ["Gambia","gambia","the gambia"], "Malawi", "Brunei",
       "Bahrain", "Qatar", ["United Arab Emirates","united arab emirates","uae"], ["Papua New Guinea","papua new guinea"], "Gibraltar",
     ]},
+    { name: "People in the Epstein Files", items: [
+      ["Your Mom","your mom","ur mom","yo mama"], ["Your Dad","your dad","ur dad"], ["Jeffrey Epstein","jeffrey epstein","epstein"], ["Ghislaine Maxwell","ghislaine maxwell","maxwell"],
+      ["[Redacted]","[redacted]","redacted"], "Classified", ["The Whole List","the whole list","everyone"], "Anonymous", ["John Doe","john doe","jane doe"],
+      ["A Florida Man","a florida man","florida man"], ["Your Ex","your ex","ur ex"], ["The Person Reading This","the person reading this","you"], ["Bill from Accounting","bill from accounting","bill"],
+      ["Some Guy","some guy"], ["Still Sealed","still sealed","sealed"], "Nobody", ["The Algorithm","the algorithm"], ["Area 51 Guy","area 51 guy"], ["A Random Crypto Bro","a random crypto bro","crypto bro"],
+    ]},
   ]},
   Entertainment: { emoji: "🎬", cats: [
     { name: "Minecraft Blocks", items: [
@@ -1714,6 +1720,11 @@ const CATEGORY_GROUPS = {
       ["Moo Deng","moo deng"], ["Salt Bae","salt bae"], ["Hide the Pain Harold","hide the pain harold"],
       ["Mocking SpongeBob","mocking spongebob"], ["Roll Safe","roll safe"], ["Disaster Girl","disaster girl"],
       ["Side Eye","side eye"], ["Crying Jordan","crying jordan"], ["Gangnam Style","gangnam style"],
+      ["John Pork","john pork"], ["21","21","twenty one","21 savage"], ["Sigma","sigma","sigma male"], "Ohio", ["Rizz","rizz","rizzler"],
+      ["Gyat","gyat","gyatt"], ["Fanum Tax","fanum tax"], ["Baby Gronk","baby gronk"], ["NPC","npc"], "Mewing", "Looksmaxxing",
+      ["Hawk Tuah","hawk tuah"], ["Sad Hamster","sad hamster","hampter"], ["Goofy Ahh","goofy ahh","goofy ah"], ["Among Us","among us","amogus","sus"],
+      ["Costco Guys","costco guys","costco guy"], ["Aura","aura","aura points"], ["Just Put the Fries in the Bag","just put the fries in the bag","fries in the bag"],
+      ["Maxwell the Cat","maxwell the cat","spinning cat","maxwell cat"], ["Edgar","edgar","edgar haircut"], ["Sticking Out Your Gyat","sticking out your gyat for the rizzler","for the rizzler"],
     ]},
     { name: "Italian Brainrot", items: [
       ["Tung Tung Tung Sahur","tung tung tung sahur","tung tung sahur","tung tung tung tung sahur"],

@@ -32,13 +32,17 @@ let lastCatName = null;    // last category, to avoid an immediate repeat after 
 let usedNames = [];        // categories already played this match (no repeats until exhausted)
 let difficulty = "medium"; // bot difficulty: easy | medium | hard
 
-// Bot difficulty presets. botMax = how many it can actually name (its bluff ceiling);
-// raiseUnder = chance it raises (vs makes you prove) when it's still within its skill;
-// raiseBluff = chance it bluffs a raise past its skill; ceiling = how far past skill it'll bluff.
+// Bot difficulty presets.
+//   frac      = the fraction of the CURRENT category it actually knows (its bluff ceiling),
+//               so it's beatable on tiny lists and fair on big ones (clamped to [min,max]).
+//   raiseUnder= chance it pressures you with a raise when your claim still looks safe.
+//   bluffStep = how far past its own skill it'll gamble a raise it might not back up.
+//   callMargin= how close to its skill your claim must get before it calls your bluff
+//               (higher = sharper bluff-detection on harder bots).
 const DIFF = {
-  easy:   { lo: 3, hi: 6,  raiseUnder: 0.30, raiseBluff: 0.05, ceiling: 1 },
-  medium: { lo: 5, hi: 12, raiseUnder: 0.45, raiseBluff: 0.15, ceiling: 2 },
-  hard:   { lo: 9, hi: 16, raiseUnder: 0.62, raiseBluff: 0.28, ceiling: 3 },
+  easy:   { frac: 0.35, min: 3, max: 7,  raiseUnder: 0.30, bluffStep: 1, callMargin: 1 },
+  medium: { frac: 0.55, min: 4, max: 12, raiseUnder: 0.45, bluffStep: 2, callMargin: 2 },
+  hard:   { frac: 0.78, min: 6, max: 18, raiseUnder: 0.62, bluffStep: 3, callMargin: 3 },
 };
 
 // ---------- sound effects (synthesized; shares the mute setting with multiplayer) ----------
@@ -329,9 +333,13 @@ function newRound() {
   lastCatName = c.name;
   current = c;
 
-  // The bot secretly "knows" this many (range set by difficulty, capped to the list) — its bluff ceiling.
+  // Category-aware skill: the bot knows a difficulty-scaled fraction of THIS category (±1),
+  // clamped to a human-realistic band and never more than the list holds.
   const d = DIFF[difficulty] || DIFF.medium;
-  botMax = Math.min(c.entries.length, d.lo + Math.floor(Math.random() * (d.hi - d.lo + 1)));
+  const size = c.entries.length;
+  let bm = Math.round(size * d.frac) + (Math.floor(Math.random() * 3) - 1); // ±1 jitter
+  bm = Math.min(bm, d.max, size);
+  botMax = Math.max(bm, Math.min(d.min, size));
 
   catNameEl.textContent = c.name;
   $("catLabel").textContent = `${c.emoji} ${c.group}`;
@@ -444,13 +452,16 @@ function botDecide() {
   const size = current.entries.length;
   const canRaise = claim + 1 <= size;
   const d = DIFF[difficulty] || DIFF.medium;
-  // The bot is challenge-happy: even when it could safely raise, it often
-  // calls your bluff instead. Higher difficulty raises more and bluffs further.
+  // It treats its own botMax as a proxy for "what a person can probably name."
+  // If your standing claim gets near/above that, it smells a bluff → makes YOU prove it.
+  const suspicious = claim >= botMax - (d.callMargin - 1);
+  // It only pushes a raise it could plausibly back up itself (skill + a small bluff buffer).
+  const canBackUp = claim + 1 <= botMax + d.bluffStep;
   let wantRaise;
-  if (claim < botMax) {
-    wantRaise = Math.random() < d.raiseUnder;
+  if (suspicious || !canBackUp) {
+    wantRaise = Math.random() < 0.12;          // your number looks shaky → mostly call it
   } else {
-    wantRaise = Math.random() < d.raiseBluff && claim < botMax + d.ceiling;  // bluff beyond its skill
+    wantRaise = Math.random() < d.raiseUnder;  // still safe → pressure you higher
   }
   if (canRaise && wantRaise) {
     claim += 1;

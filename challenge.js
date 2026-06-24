@@ -96,7 +96,9 @@ function pickGenreRounds(genre, n) {
 }
 async function createChallenge() {
   $("createErr").textContent = "";
-  const by = $("byName").value.trim().slice(0, 20) || "A friend"; rememberName(by);
+  const by = $("byName").value.trim().slice(0, 20);
+  if (!by) { $("createErr").textContent = "Enter your name first."; $("byName").focus(); return; }
+  rememberName(by);
   let rounds;
   if (mode === "genre") rounds = pickGenreRounds($("genreSel").value, numRounds);
   else rounds = [...$("customRounds").querySelectorAll("select")].map((s) => s.value);
@@ -220,7 +222,12 @@ async function initJoin() {
   $("joinName").value = myName;
   $("joinName").focus(); $("joinName").select(); // reprompt the player to (re)write their name
 }
-$("joinStart").onclick = () => { const n = $("joinName").value.trim().slice(0, 20) || "Anon"; startPlaying(n); };
+$("joinStart").onclick = () => {
+  const n = $("joinName").value.trim().slice(0, 20);
+  if (!n) { $("joinErr").textContent = "Enter your name first."; $("joinName").focus(); return; }
+  $("joinErr").textContent = "";
+  startPlaying(n);
+};
 $("joinLB").onclick = async () => {
   let box = $("joinLBWrap");
   if (!box) { box = document.createElement("div"); box.id = "joinLBWrap"; box.style.marginTop = "16px"; $("join").appendChild(box); }

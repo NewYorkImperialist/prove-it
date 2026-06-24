@@ -618,9 +618,9 @@ function render() {
     if (myTurn) {
       enable = true; placeholder = `Name a ${gs.category.name}…`;
       addBtn(actions, "🏳️ Give up", "danger", () => socket.emit("giveUp"));
-      statusText = `Proving ${gs.proven}/${gs.claim}`;
+      statusText = `Proving ${gs.proven}/${gs.claim}${gs.wpm ? ` · ${gs.wpm} wpm` : ""}`;
     } else {
-      statusText = `${nameOf(gs.turnId)} is proving… (${gs.proven}/${gs.claim})`;
+      statusText = `${nameOf(gs.turnId)} is proving… (${gs.proven}/${gs.claim}${gs.wpm ? ` · ${gs.wpm} wpm` : ""})`;
     }
   } else if (gs.phase === "judging") {
     statusText = gs.challengerId === myId

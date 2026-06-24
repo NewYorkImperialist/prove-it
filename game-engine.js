@@ -144,6 +144,7 @@ function snapshot(room) {
     category: { name: g.current.name, group: g.current.group, emoji: g.current.emoji, size: g.current.entries.length },
     claim: g.claim, holderId: g.holderId, turnId: g.turnId, challengerId: g.challengerId || null, deadline: g.deadline || null,
     proven: g.proven ? total(g) : 0,
+    wpm: g.wpm || 0, // live typing speed of whoever's proving (chars/5 over time since first answer)
     pending: g.pending ? [...g.pending.values()].map((p) => ({ id: p.id, text: p.text })) : [],
     judgeActive: g.judgeActive ? { id: g.judgeActive.id, text: g.judgeActive.text } : null,
     judgeRemaining: g.judgeQueue ? g.judgeQueue.length : 0,
@@ -247,6 +248,7 @@ function startProving(io, room, challengerId) {
   g.phase = "proving"; g.turnId = proverId; g.challengerId = challengerId;
   g.proven = []; g.granted = []; g.pending = new Map(); g.answerSeq = 0; g.lastAnswerAt = 0;
   g.judgeQueue = []; g.judgeActive = null; g.offListCount = 0; g.bonus = 0;
+  g.wpmChars = 0; g.wpmStart = 0; g.wpm = 0; // typing-speed tracking for the prover
   log(io, room, challengerId, g.names[challengerId], `Prove it! ${g.names[proverId]}, name ${g.claim}.`);
   setTimer(room, g.timer * 1000, () => onProveTimeout(io, room));
   emit(io, room);
@@ -287,6 +289,10 @@ function handleAnswer(io, room, socket, text, ack) {
   const now = Date.now();
   if (g.lastAnswerAt && now - g.lastAnswerAt < ANSWER_COOLDOWN_MS) return ack?.({ ok: false, reason: "cooldown" });
   g.lastAnswerAt = now;
+  // live typing speed (prover): chars/5 over time since their first answer this round
+  g.wpmChars = (g.wpmChars || 0) + String(text || "").trim().length;
+  if (!g.wpmStart) g.wpmStart = now;
+  g.wpm = Math.round((g.wpmChars / 5) / Math.max(1 / 60, (now - g.wpmStart) / 60000));
   const me = g.names[socket.data.playerId];
 
   // 🇮🇱 Troll easter egg: on US Presidents, "Benjamin Netanyahu" is worth +50 toward the claim.

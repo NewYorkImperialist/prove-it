@@ -107,11 +107,11 @@
   <main>
     <!-- CREATE -->
     <section class="card" id="create" hidden>
-      <h1>⚡ Build a challenge</h1>
+      <h1>Build a challenge</h1>
       <p class="sub">Set up rounds, send the link to friends, and see who tops the leaderboard. Each round is a timed sprint — name as many as you can.</p>
       <div class="seg" id="modeSeg">
-        <button data-mode="genre" class="on">🎲 One genre</button>
-        <button data-mode="custom">🎯 Custom rounds</button>
+        <button data-mode="genre" class="on">One genre</button>
+        <button data-mode="custom">Custom rounds</button>
       </div>
       <label class="fld">Rounds</label>
       <div class="seg" id="roundsSeg"></div>
@@ -138,7 +138,7 @@
       <label class="fld" for="joinName">Your name</label>
       <input id="joinName" type="text" maxlength="20" placeholder="e.g. Sam">
       <button class="btn" id="joinStart">Start the challenge</button>
-      <button class="btn ghost" id="joinLB">👀 View leaderboard</button>
+      <button class="btn ghost" id="joinLB">View leaderboard</button>
     </section>
 
     <!-- SPRINT -->
@@ -148,7 +148,7 @@
         <div><div class="catlabel" id="sprintGroup">Round</div><div class="cat" id="sprintCat">—</div></div>
         <div id="timer">45</div>
       </div>
-      <div><span id="count">0</span></div>
+      <div style="display:flex;align-items:baseline;gap:14px"><span id="count">0</span><span id="wpm" class="catlabel"></span></div>
       <input id="cinput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type a name and hit Enter…">
       <div id="cmsg"></div>
       <div id="chips"></div>
@@ -168,14 +168,14 @@
       <div class="big"><span id="doneTotal">0</span></div>
       <p class="sub" id="doneSub"></p>
       <div id="lbWrap"></div>
-      <button class="btn" id="shareBtn">🔗 Send this challenge to more friends</button>
-      <div class="row"><button class="btn ghost" id="refreshLB">🔄 Refresh leaderboard</button><button class="btn ghost" id="newChallenge">⚡ New challenge</button></div>
+      <button class="btn" id="shareBtn">Send this challenge to more friends</button>
+      <div class="row"><button class="btn ghost" id="refreshLB">Refresh leaderboard</button><button class="btn ghost" id="newChallenge">New challenge</button></div>
     </section>
   </main>
 
   <footer>
-    <a href="/">🆚 Multiplayer</a>
-    <a href="index.html">🤖 Play vs bot</a>
+    <a href="/">Multiplayer</a>
+    <a href="index.html">Play with bot</a>
   </footer>
 
   <script src="categories.js"></script>

@@ -29,6 +29,7 @@ let timerId = null, timeLeft = 0;      // prove-phase countdown
 let reactId = null, reactLeft = 0;     // 10s timer for your turn (open / raise / call)
 let proven = [];           // canonical entry ids correctly named this round
 let bonus = 0;             // extra credited guesses this round (troll easter egg)
+let spChars = 0, spT0 = 0; // live typing-speed tracking for the current proving round
 let lastCatName = null;    // last category, to avoid an immediate repeat after a reset
 let usedNames = [];        // categories already played this match (no repeats until exhausted)
 let difficulty = "medium"; // bot difficulty: easy | medium | hard
@@ -532,6 +533,7 @@ function startProving() {
   state = "proving";
   proven = [];
   bonus = 0;
+  spChars = 0; spT0 = 0;
   timeLeft = timerLength;
   setTurn("me");
   setActions([{ label: "🏳️ Give up", cls: "danger", onClick: giveUp }]);
@@ -548,7 +550,7 @@ function startProving() {
 
 function updateTimer() {
   if (state === "proving") {
-    timerEl.textContent = `⏱ ${timeLeft}s · ${proven.length + bonus}/${claim}`;
+    timerEl.textContent = `⏱ ${timeLeft}s · ${proven.length + bonus}/${claim}${spT0 ? ` · ${Math.round((spChars / 5) / Math.max(1 / 60, (Date.now() - spT0) / 60000))} wpm` : ""}`;
     timerEl.classList.toggle("danger", timeLeft <= 10);
   } else {
     timerEl.textContent = "";
@@ -591,6 +593,7 @@ function oilRain() {
 
 function submitAnswer(p) {
   if (state !== "proving") return;
+  spChars += String(p || "").trim().length; if (!spT0) spT0 = Date.now(); // typing-speed accounting
   // 🇮🇱 Troll easter egg: on US Presidents, "Benjamin Netanyahu" is worth +50 toward the claim.
   if (current.name === "US Presidents" && ["benjamin netanyahu", "netanyahu", "bibi"].includes(norm(p))) {
     bonus += 50;

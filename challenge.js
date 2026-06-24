@@ -49,6 +49,9 @@ let def = null;            // { id, rounds:[names], by, type, genre }
 let roundCats = [], roundScores = [], cur = 0;
 let mode = "genre", numRounds = 5;
 let named = new Set(), count = 0, tid = null, timeLeft = 0;
+let rChars = 0, rT0 = 0, roundWpm = []; // live typing-speed tracking (chars since first keystroke)
+function liveWpm() { return rT0 ? Math.round((rChars / 5) / Math.max(1 / 60, (Date.now() - rT0) / 60000)) : 0; }
+function showWpm() { $("wpm").textContent = rT0 ? liveWpm() + " wpm" : ""; }
 
 function show(sec) { ["create", "join", "sprint", "between", "done"].forEach((s) => { $(s).hidden = s !== sec; }); }
 
@@ -57,7 +60,7 @@ function buildGenreSelect() { const sel = $("genreSel"); sel.innerHTML = ""; GEN
 function catOptions(selectedName) {
   const groups = {}; CATS.forEach((c) => { (groups[c.group] = groups[c.group] || []).push(c); });
   const sel = document.createElement("select");
-  Object.keys(groups).forEach((g) => { const og = document.createElement("optgroup"); og.label = g; groups[g].forEach((c) => { const o = document.createElement("option"); o.value = c.name; o.textContent = `${c.emoji} ${c.name}${nonSprint(c) ? " ⚠️ non-sprint" : ""}`; if (c.name === selectedName) o.selected = true; og.appendChild(o); }); sel.appendChild(og); });
+  Object.keys(groups).forEach((g) => { const og = document.createElement("optgroup"); og.label = g; groups[g].forEach((c) => { const o = document.createElement("option"); o.value = c.name; o.textContent = `${c.name}${nonSprint(c) ? " — non-sprint" : ""}`; if (c.name === selectedName) o.selected = true; og.appendChild(o); }); sel.appendChild(og); });
   return sel;
 }
 function buildCustomRounds() {
@@ -72,7 +75,7 @@ function buildCustomRounds() {
 }
 function buildRoundsSeg() {
   const seg = $("roundsSeg"); seg.innerHTML = "";
-  [3, 5, 10].forEach((n) => { const b = document.createElement("button"); b.textContent = n; if (n === numRounds) b.classList.add("on"); b.onclick = () => { numRounds = n; [...seg.children].forEach((c) => c.classList.remove("on")); b.classList.add("on"); if (mode === "custom") buildCustomRounds(); }; seg.appendChild(b); });
+  [1, 3, 5, 10].forEach((n) => { const b = document.createElement("button"); b.textContent = n; if (n === numRounds) b.classList.add("on"); b.onclick = () => { numRounds = n; [...seg.children].forEach((c) => c.classList.remove("on")); b.classList.add("on"); if (mode === "custom") buildCustomRounds(); }; seg.appendChild(b); });
 }
 function buildTimeSeg() {
   const seg = $("timeSeg"); seg.innerHTML = "";
@@ -117,8 +120,8 @@ function startPlaying(playerName) {
   startRound(0);
 }
 function startRound(i) {
-  cur = i; named = new Set(); count = 0;
-  show("sprint");
+  cur = i; named = new Set(); count = 0; rChars = 0; rT0 = 0;
+  show("sprint"); $("wpm").textContent = "";
   const cat = roundCats[i];
   const pips = $("roundpips"); pips.innerHTML = "";
   roundCats.forEach((_, j) => { const s = document.createElement("span"); s.className = j < i ? "done" : j === i ? "cur" : ""; pips.appendChild(s); });
@@ -128,9 +131,10 @@ function startRound(i) {
   $("cinput").value = ""; $("cinput").disabled = false; $("cinput").focus();
   timeLeft = perRound; $("timer").textContent = timeLeft; $("timer").classList.remove("low");
   clearInterval(tid);
-  tid = setInterval(() => { timeLeft--; $("timer").textContent = Math.max(0, timeLeft); if (timeLeft <= 10) $("timer").classList.add("low"); if (timeLeft <= 0) endRound(); }, 1000);
+  tid = setInterval(() => { timeLeft--; $("timer").textContent = Math.max(0, timeLeft); showWpm(); if (timeLeft <= 10) $("timer").classList.add("low"); if (timeLeft <= 0) endRound(); }, 1000);
 }
 function submit(q) {
+  rChars += q.length; if (!rT0) rT0 = Date.now(); showWpm(); // typing-speed accounting (all submissions count)
   const cat = roundCats[cur];
   const m = cat.entries.find((e) => e.aliases.includes(norm(q)));
   if (!m) { flash("✗ not on the list"); return; }
@@ -141,12 +145,12 @@ function submit(q) {
 function flash(msg) { $("cmsg").textContent = msg; const i = $("cinput"); i.classList.remove("shake"); void i.offsetWidth; i.classList.add("shake"); }
 function endRound() {
   clearInterval(tid); $("cinput").disabled = true;
-  roundScores[cur] = count;
+  roundScores[cur] = count; roundWpm[cur] = liveWpm();
   const last = cur + 1 >= roundCats.length;
   show("between");
   $("betweenLabel").textContent = `Round ${cur + 1} of ${roundCats.length} done`;
   $("betweenCount").textContent = count;
-  $("betweenCat").textContent = `${roundCats[cur].name} — running total ${roundScores.reduce((a, n) => a + n, 0)}`;
+  $("betweenCat").textContent = `${roundCats[cur].name} — ${roundWpm[cur]} wpm · running total ${roundScores.reduce((a, n) => a + n, 0)}`;
   $("nextBtn").textContent = last ? "See results & leaderboard →" : "Next round →";
 }
 $("nextBtn").onclick = () => { if (cur + 1 >= roundCats.length) finish(); else startRound(cur + 1); };
@@ -154,12 +158,13 @@ $("nextBtn").onclick = () => { if (cur + 1 >= roundCats.length) finish(); else s
 // ============ FINISH + LEADERBOARD ============
 async function finish() {
   const total = roundScores.reduce((a, n) => a + n, 0);
+  const avgWpm = roundWpm.length ? Math.round(roundWpm.reduce((a, n) => a + n, 0) / roundWpm.length) : 0;
   show("done");
-  $("doneVerdict").innerHTML = "🎉 Your run is in!"; $("doneVerdict").className = "verdict win";
+  $("doneVerdict").innerHTML = "Your run is in!"; $("doneVerdict").className = "verdict win";
   $("doneTotal").parentElement.hidden = false;
   $("doneTotal").textContent = total;
-  $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds. Send the link to friends — same questions, same leaderboard.`;
-  await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, visitorId: VISITOR_ID });
+  $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds at ${avgWpm} wpm avg. Send the link to friends — same questions, same leaderboard.`;
+  await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID });
   renderLeaderboard($("lbWrap"));
 }
 async function renderLeaderboard(el) {
@@ -177,14 +182,26 @@ async function renderLeaderboard(el) {
   const body = players.map((p, idx) => {
     const mine = p.visitor_id && p.visitor_id === VISITOR_ID;
     const cells = rounds.map((_, i) => { const v = p.scores[i] || 0; return `<td class="${v === colMax[i] && v > 0 ? "hi" : ""}">${v}</td>`; }).join("");
-    return `<tr class="${mine ? "me" : ""}"><td>${idx === 0 ? "🏆" : idx + 1}</td><td>${esc(p.name)}${mine ? " (you)" : ""}</td>${cells}<td class="tot">${p.total}</td></tr>`;
+    return `<tr class="${mine ? "me" : ""}"><td>${idx + 1}</td><td>${esc(p.name)}${mine ? " (you)" : ""}</td>${cells}<td class="tot">${p.total}</td></tr>`;
+  }).join("");
+  // typing speed (WPM): per-round + average
+  const wpmOf = (p) => Array.isArray(p.wpms) ? p.wpms : [];
+  const avgWpm = (p) => { const w = wpmOf(p).filter((n) => n > 0); return w.length ? Math.round(w.reduce((a, n) => a + n, 0) / w.length) : 0; };
+  const wpmMax = rounds.map((_, i) => Math.max(0, ...players.map((p) => wpmOf(p)[i] || 0)));
+  const anyWpm = players.some((p) => wpmOf(p).some((n) => n > 0));
+  const wpmHead = `<tr><th>Player</th>${rounds.map((_, i) => `<th title="${esc(rounds[i])}">R${i + 1}</th>`).join("")}<th>Avg</th></tr>`;
+  const wpmBody = players.map((p) => {
+    const mine = p.visitor_id && p.visitor_id === VISITOR_ID;
+    const cells = rounds.map((_, i) => { const v = wpmOf(p)[i] || 0; return `<td class="${v === wpmMax[i] && v > 0 ? "hi" : ""}">${v || "—"}</td>`; }).join("");
+    return `<tr class="${mine ? "me" : ""}"><td>${esc(p.name)}${mine ? " (you)" : ""}</td>${cells}<td class="tot">${avgWpm(p)}</td></tr>`;
   }).join("");
   const legend = rounds.map((r, i) => `R${i + 1} ${esc(r)}`).join(" · ");
   const qWinners = rounds.map((r, i) => { const w = players.find((p) => (p.scores[i] || 0) === colMax[i] && colMax[i] > 0); return w ? `<b>R${i + 1}</b> ${esc(w.name)} (${colMax[i]})` : null; }).filter(Boolean).join(" · ");
   el.innerHTML = `<table class="lb">${head}${body}</table>
-    <p class="lb-note">🏆 <b>${esc(players[0].name)}</b> leads with ${players[0].total} · ${players.length} player${players.length > 1 ? "s" : ""}.</p>
+    <p class="lb-note"><b>${esc(players[0].name)}</b> leads with ${players[0].total} · ${players.length} player${players.length > 1 ? "s" : ""}.</p>
     <p class="lb-note">Question winners: ${qWinners || "—"}</p>
-    <p class="lb-note" style="opacity:.7">${legend}</p>`;
+    ${anyWpm ? `<p class="lb-note" style="margin-top:14px;color:var(--text)"><b>Typing speed (WPM)</b></p><table class="lb">${wpmHead}${wpmBody}</table>` : ""}
+    <p class="lb-note" style="opacity:.7;margin-top:12px">${legend}</p>`;
 }
 
 // ============ JOIN (opened a ?id= link) ============
@@ -196,7 +213,7 @@ async function initJoin() {
   if (!c.ok) { show("create"); $("createErr").textContent = "That challenge link is invalid or expired — build a new one."; initCreate(); return; }
   def = { id: c.id, rounds: c.rounds || [], by: c.by, type: c.type, genre: c.genre, timer: c.timer || 45 };
   perRound = def.timer;
-  $("joinInfo").innerHTML = `💪 <b>${esc(def.by || "A friend")}</b> challenges you — <b>${def.rounds.length}</b> rounds${def.genre ? ` of <b>${esc(def.genre)}</b>` : ""}, <b>${def.timer}s</b> each. Beat the leaderboard!`;
+  $("joinInfo").innerHTML = `<b>${esc(def.by || "A friend")}</b> challenges you — <b>${def.rounds.length}</b> rounds${def.genre ? ` of <b>${esc(def.genre)}</b>` : ""}, <b>${def.timer}s</b> each. Beat the leaderboard!`;
   $("joinRounds").innerHTML = def.rounds.map((n, i) => { const cat = findCat(n); const ns = cat && nonSprint(cat); return `<li><span>R${i + 1} · ${esc(n)}</span>${ns ? `<span class="badge-ns">non-sprint</span>` : ""}</li>`; }).join("");
   $("joinName").value = myName;
 }
@@ -222,7 +239,7 @@ $("shareBtn").onclick = () => {
   const total = roundScores.reduce((a, n) => a + n, 0);
   const text = `Beat my Prove It! challenge — I scored ${total} across ${roundCats.length} rounds!`;
   if (navigator.share) navigator.share({ title: "Prove It! Challenge", text, url }).catch(() => {});
-  else if (navigator.clipboard) navigator.clipboard.writeText(`${text} ${url}`).then(() => { $("shareBtn").textContent = "✅ Link copied — send it to friends!"; }).catch(() => prompt("Copy this link:", `${text} ${url}`));
+  else if (navigator.clipboard) navigator.clipboard.writeText(`${text} ${url}`).then(() => { $("shareBtn").textContent = "Link copied — send it to friends!"; }).catch(() => prompt("Copy this link:", `${text} ${url}`));
   else prompt("Copy this link:", `${text} ${url}`);
 };
 $("refreshLB").onclick = () => renderLeaderboard($("lbWrap"));

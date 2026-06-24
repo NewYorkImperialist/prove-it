@@ -42,7 +42,7 @@ async function init() {
       `CREATE TABLE IF NOT EXISTS challenges (
         id TEXT PRIMARY KEY, type TEXT, genre TEXT, rounds TEXT, by_name TEXT, created_at INTEGER, timer INTEGER DEFAULT 45)`,
       `CREATE TABLE IF NOT EXISTS challenge_results (
-        id INTEGER PRIMARY KEY AUTOINCREMENT, challenge_id TEXT, name TEXT, visitor_id TEXT, scores TEXT, total INTEGER, at INTEGER)`,
+        id INTEGER PRIMARY KEY AUTOINCREMENT, challenge_id TEXT, name TEXT, visitor_id TEXT, scores TEXT, total INTEGER, at INTEGER, wpms TEXT)`,
     ], "write");
     // migrate existing tables: mode (mp/sp) + difficulty. ALTER fails harmlessly if the column already exists.
     for (const [t, c] of [["games", "mode TEXT DEFAULT 'mp'"], ["games", "difficulty TEXT"], ["rounds", "mode TEXT DEFAULT 'mp'"],
@@ -50,7 +50,7 @@ async function init() {
       ["sessions", "singleplayer INTEGER DEFAULT 0"],
       ["games", "gid TEXT"], ["rounds", "gid TEXT"], ["answers", "gid TEXT"], ["answers", "player TEXT"], ["events", "gid TEXT"],
       ["sessions", "ip TEXT"], ["sessions", "visitor_id TEXT"], ["sessions", "tz TEXT"], ["sessions", "locale TEXT"], ["sessions", "geo TEXT"],
-      ["challenges", "timer INTEGER DEFAULT 45"]]) {
+      ["challenges", "timer INTEGER DEFAULT 45"], ["challenge_results", "wpms TEXT"]]) {
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
     console.log("📊 stats: connected to Turso ✓");
@@ -227,14 +227,14 @@ async function getChallenge(id) {
 async function addChallengeResult(x) {
   if (!client) return false;
   try {
-    await client.execute({ sql: `INSERT INTO challenge_results (challenge_id,name,visitor_id,scores,total,at) VALUES (?,?,?,?,?,?)`,
-      args: [x.challenge_id, x.name || "Anon", x.visitor_id || null, JSON.stringify(x.scores || []), x.total || 0, Date.now()] });
+    await client.execute({ sql: `INSERT INTO challenge_results (challenge_id,name,visitor_id,scores,total,at,wpms) VALUES (?,?,?,?,?,?,?)`,
+      args: [x.challenge_id, x.name || "Anon", x.visitor_id || null, JSON.stringify(x.scores || []), x.total || 0, Date.now(), JSON.stringify(x.wpms || [])] });
     return true;
   } catch (e) { console.error("📊 challenge result:", e.message); return false; }
 }
 async function getChallengeResults(id) {
-  const rows = await q(`SELECT name, visitor_id, scores, total, at FROM challenge_results WHERE challenge_id=? ORDER BY total DESC, at ASC`, [id]);
-  return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } return r; });
+  const rows = await q(`SELECT name, visitor_id, scores, total, at, wpms FROM challenge_results WHERE challenge_id=? ORDER BY total DESC, at ASC`, [id]);
+  return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } return r; });
 }
 
 module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, createChallenge, getChallenge, addChallengeResult, getChallengeResults };

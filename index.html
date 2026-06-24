@@ -97,8 +97,9 @@
     font-family:var(--ui); font-size:13px; font-weight:700; padding:0; margin:0 0 14px; cursor:pointer; }
   .backbtn:hover { color:var(--accent); }
   /* laurel leaderboard icon — sits in the card's top-right, vertically centered with the wordmark */
-  #laurel { margin-left:auto; flex:0 0 auto; display:grid; place-items:center; width:40px; height:40px;
+  #laurel { margin-left:auto; flex:0 0 auto; display:grid; place-items:center; width:40px; height:40px; padding:0;
     background:var(--panel2); border:1px solid var(--line2); border-radius:11px; color:var(--gold); cursor:pointer; transition:.14s; }
+  #laurel svg { display:block; } /* kill the inline-baseline gap so the wreath sits dead-center */
   #laurel:hover { border-color:var(--accent); color:var(--accent); transform:translateY(-1px); }
   /* leaderboard modal tabs */
   .lbtabs { display:flex; gap:8px; margin:2px 28px 14px 0; }

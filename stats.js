@@ -243,6 +243,19 @@ async function dailyAllTime(limit = 50) {
             GROUP BY COALESCE(visitor_id, name) ORDER BY total DESC, at ASC LIMIT ?`, [limit]);
 }
 
+// Recent leaderboard entries across all challenges (for owner moderation), each with its row id.
+async function recentResults(limit = 300) {
+  return q(`SELECT cr.id, cr.challenge_id, cr.name, cr.visitor_id, cr.total, cr.at, c.type, c.genre
+            FROM challenge_results cr LEFT JOIN challenges c ON c.id = cr.challenge_id
+            ORDER BY cr.id DESC LIMIT ?`, [limit]);
+}
+// Delete a single leaderboard entry by its row id (owner moderation).
+async function deleteResult(rowId) {
+  if (!client) return 0;
+  try { const r = await client.execute({ sql: `DELETE FROM challenge_results WHERE id=?`, args: [rowId] }); return r.rowsAffected || 0; }
+  catch (e) { console.error("📊 delete result:", e.message); return 0; }
+}
+
 // ---- async challenges (link-based, with a shared per-challenge leaderboard) ----
 async function createChallenge(c) {
   if (!client) return false;
@@ -271,4 +284,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult };

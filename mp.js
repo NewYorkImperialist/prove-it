@@ -792,16 +792,23 @@ function gameSend() {
     if (msg) socket.emit("chat", { text: emojify(msg) });
     return;
   }
-  if (!gs || gs.turnId !== myId) return; // game actions require it to be your turn
-  if (gs.phase === "opening") {
-    const n = parseInt(raw, 10);
-    if (isNaN(n)) return flashStatus("Type a number.");
-    $("input").value = ""; socket.emit("open", { n }, ackErr);
-  } else if (gs.phase === "bidding") {
-    const n = parseInt(raw, 10);
-    if (isNaN(n)) return flashStatus("Type a higher number, or use the buttons.");
-    $("input").value = ""; socket.emit("raise", { toN: n }, ackErr);
-  } else if (gs.phase === "proving") {
+  const myMove = !!gs && gs.turnId === myId;
+  // Number mode (opening/bidding): a plain number on your turn is the game action —
+  // anything else (text, or not your turn) just becomes a chat message instead of erroring.
+  if (gs && (gs.phase === "opening" || gs.phase === "bidding")) {
+    if (myMove && /^\d+$/.test(raw)) {
+      const n = parseInt(raw, 10);
+      $("input").value = "";
+      if (gs.phase === "opening") socket.emit("open", { n }, ackErr);
+      else socket.emit("raise", { toN: n }, ackErr);
+      return;
+    }
+    $("input").value = "";
+    socket.emit("chat", { text: emojify(raw) });
+    return;
+  }
+  // Proving (your turn): the text is your answer.
+  if (gs && gs.phase === "proving" && myMove) {
     const now = Date.now();
     if (now - lastSendAt < 350) { shakeInput(); flashStatus("Slow down!"); return; } // typed too fast
     lastSendAt = now;
@@ -814,7 +821,11 @@ function gameSend() {
         else flashStatus("Slow down!");
       }
     });
+    return;
   }
+  // Anything else (waiting for your opponent, between rounds, match over…) → chat.
+  $("input").value = "";
+  socket.emit("chat", { text: emojify(raw) });
 }
 
 function shakeInput() {

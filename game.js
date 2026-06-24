@@ -94,13 +94,19 @@ function openingCue(on) {
 // ---------- single-player analytics (phones home to /track; silently no-ops if the server isn't recording) ----------
 const spLoadedAt = Date.now();
 let spPlayed = false, sessionSent = false, matchStart = 0, roundsPlayed = 0, spGid = "";
+// Persistent anonymous visitor id (shared with the multiplayer page via the same localStorage key) + tz/locale.
+const VISITOR_ID = (() => {
+  try { let v = localStorage.getItem("pi_visitor"); if (!v) { v = "v-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8); localStorage.setItem("pi_visitor", v); } return v; }
+  catch { return null; }
+})();
+const CLIENT_META = (() => { try { return { visitorId: VISITOR_ID, tz: Intl.DateTimeFormat().resolvedOptions().timeZone, lang: navigator.language }; } catch { return { visitorId: VISITOR_ID }; } })();
 function track(type, data) {
   try { fetch("/track", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, ...data }), keepalive: true }).catch(() => {}); } catch {}
 }
 function sendSpSession() {
   if (sessionSent) return; sessionSent = true;
-  const body = JSON.stringify({ type: "spSession", durationMs: Date.now() - spLoadedAt, played: spPlayed });
-  try { navigator.sendBeacon("/track", new Blob([body], { type: "application/json" })); } catch { track("spSession", { durationMs: Date.now() - spLoadedAt, played: spPlayed }); }
+  const body = JSON.stringify({ type: "spSession", durationMs: Date.now() - spLoadedAt, played: spPlayed, ...CLIENT_META });
+  try { navigator.sendBeacon("/track", new Blob([body], { type: "application/json" })); } catch { track("spSession", { durationMs: Date.now() - spLoadedAt, played: spPlayed, ...CLIENT_META }); }
 }
 addEventListener("pagehide", sendSpSession);
 

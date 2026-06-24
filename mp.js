@@ -189,9 +189,20 @@ function measureLatency() {
   });
 }
 setInterval(measureLatency, 4000);
+
+// Persistent anonymous visitor id (survives across visits) + timezone/locale → owner analytics.
+const VISITOR_ID = (() => {
+  try { let v = localStorage.getItem("pi_visitor"); if (!v) { v = "v-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8); localStorage.setItem("pi_visitor", v); } return v; }
+  catch { return null; }
+})();
+function sendClientMeta() {
+  try { socket.emit("clientMeta", { visitorId: VISITOR_ID, tz: Intl.DateTimeFormat().resolvedOptions().timeZone, locale: navigator.language }); } catch (e) {}
+}
+
 socket.on("connect", () => {
   setConn("connected", "ok");
   measureLatency();
+  sendClientMeta();
   if (ghostParam) { doGhost(); return; } // invisible owner watch takes priority
   if (myRoom && isSpectator) {
     socket.emit("spectateRoom", { code: myRoom, name: nameValue(), playerId }, (res) => {

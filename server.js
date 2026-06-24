@@ -120,6 +120,29 @@ function fmtDur(ms) {
 function ownerOk(req) { const key = req.query.key || req.get("x-owner-key"); return process.env.OWNER_KEY && key === process.env.OWNER_KEY; }
 
 function fmtMs(ms) { return ms ? fmtDur(ms) : "—"; }
+
+// ---- client IP + rough geolocation (owner-only analytics) ----
+function clientIp(headers, fallback) {
+  const h = headers || {};
+  const xff = (h["x-forwarded-for"] || "").split(",")[0].trim();
+  return (h["fly-client-ip"] || xff || fallback || "").replace(/^::ffff:/, "").trim() || null;
+}
+const geoCache = new Map(); // ip -> "City, Region, Country" (null = looked up, unknown)
+async function geoLookup(ip) {
+  if (!ip || /^(127\.|10\.|192\.168\.|::1|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)) return null; // skip local/private
+  if (geoCache.has(ip)) return geoCache.get(ip);
+  if (typeof fetch !== "function") return null;
+  let out = null;
+  try {
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 2500);
+    const r = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, { signal: ctrl.signal });
+    clearTimeout(t);
+    const j = await r.json();
+    if (j && j.success) out = [j.city, j.region, j.country].filter(Boolean).join(", ") || j.country || null;
+  } catch { /* network/timeout → leave unknown */ }
+  geoCache.set(ip, out);
+  return out;
+}
 function bar(n, max) { const w = max ? Math.round((n / max) * 100) : 0; return `<span style="display:inline-block;height:9px;width:${w}%;min-width:${n ? 3 : 0}px;background:#5b8cff;border-radius:2px;vertical-align:middle"></span>`; }
 const tbl = (head, rows, cols) => `<table><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr>${rows || `<tr><td colspan=${cols}>—</td></tr>`}</table>`;
 function histHtml(h, k) {
@@ -139,7 +162,7 @@ function histHtml(h, k) {
   const rec = h.recent.map((r) => `<tr><td>${esc(r.code)}</td><td>${esc(r.p1_name)} ${num(r.p1_score)}–${num(r.p2_score)} ${esc(r.p2_name)}</td><td>${esc(r.winner_name || "tie")}</td><td>${num(r.rounds)}r</td><td>${esc(r.reason)}</td><td>${fmtMs(num(r.duration_ms))}</td></tr>`).join("");
   const ses = h.sessions || {};
   const dev = (ses.devices || []).map((d) => `<tr><td>${esc(d.device)}</td><td>${num(d.n)}</td><td>${fmtMs(num(d.avg))}</td></tr>`).join("");
-  const sesRecent = (ses.recent || []).map((r) => `<tr><td>${easternTime(num(r.connected_at))}</td><td>${fmtMs(num(r.duration_ms))}</td><td>${esc(r.device)}</td><td>${r.singleplayer ? "🕹️ singleplayer" : r.played ? "🎮 played" : r.spectated ? "👀 watched" : r.joined ? "lobby" : "browsed"}</td></tr>`).join("");
+  const sesRecent = (ses.recent || []).map((r) => `<tr><td>${easternTime(num(r.connected_at))}</td><td>${fmtMs(num(r.duration_ms))}</td><td>${esc(r.device)}</td><td>${esc(r.geo || r.tz || "—")}${r.ip ? `<br><span style="color:#566;font-size:11px">${esc(r.ip)}</span>` : ""}</td><td>${r.singleplayer ? "🕹️ singleplayer" : r.played ? "🎮 played" : r.spectated ? "👀 watched" : r.joined ? "lobby" : "browsed"}</td></tr>`).join("");
   const b = ses.buckets || {};
   // sessions per day + busiest hour, in Eastern; plus the browse-and-leave drop-off
   const stimes = ses.times || [];
@@ -174,7 +197,7 @@ function histHtml(h, k) {
     <div class="cols">
       <div><h3>📱 Device</h3>${tbl(["Device", "Sessions", "Avg stay"], dev, 3)}</div>
       <div><h3>📈 Sessions per day (Eastern)</h3>${tbl(["Day", "Sessions"], sDayRows, 2)}</div>
-      <div><h3>🕒 Recent sessions (Eastern)</h3>${tbl(["Arrived", "Stayed", "Device", "Did"], sesRecent, 4)}</div>
+      <div><h3>🕒 Recent sessions (Eastern)</h3>${tbl(["Arrived", "Stayed", "Device", "Location / IP", "Did"], sesRecent, 5)}</div>
     </div>
     <div class="cols">
       <div><h3>🗂 Categories — plays · claim · solve%</h3>${tbl(["Category", "Plays", "Claim", "Solve%"], cat, 4)}</div>
@@ -264,6 +287,8 @@ app.get("/admin", async (req, res) => {
     </div>
     <p style="margin:0 0 16px"><a href="/admin/health?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🩺 Category health → which answers never get named</a></p>
     <p style="margin:0 0 16px"><a href="/admin/games?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🎞 Game history → drill into any past game: every guess, chat, and exact timestamp</a></p>
+    <p style="margin:0 0 16px"><a href="/admin/chat?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">💬 All chat → every message across the whole server (searchable)</a></p>
+    <p style="margin:0 0 16px"><a href="/admin/visitors?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🧭 Visitors → repeat visitors, IP, location & timezone</a></p>
     <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
     ${(() => { const live = liveSessions(); return `<h2>🌐 Live connections (${live.length})</h2>${tbl(["Connected for", "Name", "Doing", "Device"],
       live.map((s) => `<tr><td>${fmtDur(now - s.connectedAt)}</td><td>${esc(s.name || "—")}</td><td>${s.role}${s.room ? " · " + esc(s.room) : ""}</td><td>${s.device}</td></tr>`).join(""), 4)}`; })()}
@@ -378,6 +403,58 @@ app.get("/admin/game", async (req, res) => {
     </body>`);
 });
 
+// 💬 Server-wide chat feed (newest first) with a name/keyword search.
+app.get("/admin/chat", async (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const k = encodeURIComponent(req.query.key || "");
+  const num = (x) => Number(x || 0);
+  const search = String(req.query.q || "").slice(0, 60);
+  const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
+    a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 14px}
+    input{background:#141823;border:1px solid #2a3040;border-radius:8px;color:#e8ecf4;padding:8px 11px;font-size:14px;width:240px} button{background:#5b8cff;border:0;border-radius:8px;color:#08130d;font-weight:700;padding:8px 14px;cursor:pointer;margin-left:6px}
+    table{border-collapse:collapse;font-size:13px;width:100%;max-width:900px;margin-top:14px} td{padding:5px 9px;border-bottom:1px solid #1c2029;vertical-align:top} td.t{color:#8a92a6;white-space:nowrap;font-variant-numeric:tabular-nums} .dim{color:#8a92a6}</style>`;
+  const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
+  if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>All chat</h1><p class="sub">Persistence not configured.</p></body>`);
+  const rows = (await analytics.allChat(300, search).catch(() => [])).map((c) =>
+    `<tr><td class="t">${easternFull(num(c.at))}</td><td><b>${esc(c.name || "?")}${c.spectator ? " 👀" : ""}</b> <span class="dim">${c.gid ? `<a href="/admin/game?key=${k}&gid=${encodeURIComponent(c.gid)}">${esc(c.code || "")}</a>` : esc(c.code || "lobby")}</span></td><td>${esc(c.text || "")}</td></tr>`).join("");
+  res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    <h1>💬 All chat</h1>
+    <p class="sub">Every chat message across the whole server, newest first. Click a room code to open that game's full timeline.</p>
+    <form method="get"><input type="hidden" name="key" value="${k}"><input name="q" placeholder="search name or message…" value="${esc(search)}" autofocus><button>Search</button>${search ? ` <a href="/admin/chat?key=${k}">clear</a>` : ""}</form>
+    <table>${rows || `<tr><td class="dim">No messages${search ? " match that search" : " yet"}.</td></tr>`}</table>
+    </body>`);
+});
+
+// 🧭 Visitors — repeat-visitor rollup keyed by the persistent anonymous device id.
+app.get("/admin/visitors", async (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const k = encodeURIComponent(req.query.key || "");
+  const num = (x) => Number(x || 0);
+  const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
+    a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
+    table{border-collapse:collapse;font-size:13px;width:100%;max-width:1040px} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:6px 9px} td{padding:6px 9px;border-bottom:1px solid #1c2029;vertical-align:top}
+    tr:hover td{background:#141823} .big{color:#3ecf8e;font-weight:700} .dim{color:#8a92a6}</style>`;
+  const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
+  if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Visitors</h1><p class="sub">Persistence not configured.</p></body>`);
+  const list = await analytics.visitors(150).catch(() => []);
+  const repeat = list.filter((v) => num(v.visits) > 1).length;
+  const rows = list.map((v) => `<tr>
+      <td>${num(v.visits) > 1 ? `<span class="big">↩︎ ${num(v.visits)}</span>` : num(v.visits)}</td>
+      <td>${esc(v.names || "—")}</td>
+      <td>${esc(v.geo || v.tz || "—")}</td>
+      <td class="dim">${esc(v.ip || "—")}</td>
+      <td>${esc(v.device || "")}</td>
+      <td>${num(v.played)}🎮 ${num(v.joined)}🚪</td>
+      <td class="dim">${easternFull(num(v.first_seen))}</td>
+      <td class="dim">${easternFull(num(v.last_seen))}</td>
+    </tr>`).join("");
+  res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    <h1>🧭 Visitors</h1>
+    <p class="sub">Grouped by a persistent anonymous device id (localStorage). <b>${repeat}</b> of ${list.length} have visited more than once. Names are self-entered and unverified; IP/location come from the network.</p>
+    <table><tr><th>Visits</th><th>Names used</th><th>Location</th><th>IP</th><th>Device</th><th>Played/Joined</th><th>First seen</th><th>Last seen</th></tr>${rows || `<tr><td class="dim" colspan="8">No visitors recorded yet.</td></tr>`}</table>
+    </body>`);
+});
+
 app.get("/admin/close", (req, res) => {
   if (!ownerOk(req)) return res.status(404).send("Not found");
   const code = String(req.query.code || "").toUpperCase().trim();
@@ -394,7 +471,7 @@ app.get("/admin/announce", (req, res) => {
 });
 
 // Single-player phones home here (no socket). Public, fire-and-forget, validated + size-capped.
-app.post("/track", (req, res) => {
+app.post("/track", async (req, res) => {
   res.json({ ok: true });
   if (!analytics.enabled()) return;
   const e = req.body || {};
@@ -419,7 +496,10 @@ app.post("/track", (req, res) => {
         started_at: int(e.startedAt), ended_at: now, duration_ms: int(e.durationMs), mode: "sp", difficulty: str(e.difficulty, 10), gid });
     } else if (e.type === "spSession") {
       const dur = int(e.durationMs) || 0;
-      analytics.recordSession({ connected_at: now - dur, disconnected_at: now, duration_ms: dur, device, played: !!e.played, joined: false, spectated: false, name: "SP", reason: "sp", mode: "sp" });
+      const ip = clientIp(req.headers, req.socket && req.socket.remoteAddress);
+      const geo = await geoLookup(ip);
+      analytics.recordSession({ connected_at: now - dur, disconnected_at: now, duration_ms: dur, device, played: !!e.played, joined: false, spectated: false, name: "SP", reason: "sp", mode: "sp",
+        ip, geo, visitor_id: str(e.visitorId, 40), tz: str(e.tz, 40), locale: str(e.lang, 20) });
     }
   } catch (err) { /* ignore bad payloads */ }
 });
@@ -527,7 +607,16 @@ io.on("connection", (socket) => {
   online++; broadcastPresence();
   socket.on("latencyPing", (ack) => { if (typeof ack === "function") ack(); }); // RTT probe for the client's "X ms" indicator
   socket.on("enterSingleplayer", () => { if (socket.data.session) socket.data.session.singleplayer = true; }); // they left the lobby to play the bot
-  socket.data.session = { connectedAt: Date.now(), device: deviceOf(socket), joined: false, spectated: false, played: false, name: null };
+  const ip = clientIp(socket.handshake.headers, socket.handshake.address);
+  socket.data.session = { connectedAt: Date.now(), device: deviceOf(socket), joined: false, spectated: false, played: false, name: null, ip, visitor_id: null, tz: null, locale: null, geo: null };
+  geoLookup(ip).then((g) => { if (socket.data.session) socket.data.session.geo = g; }); // async; resolved well before disconnect
+  // Client reports its persistent visitor id + timezone/locale right after connecting.
+  socket.on("clientMeta", (m = {}) => {
+    const ss = socket.data.session; if (!ss) return;
+    if (m.visitorId) ss.visitor_id = String(m.visitorId).slice(0, 40);
+    if (m.tz) ss.tz = String(m.tz).slice(0, 40);
+    if (m.locale) ss.locale = String(m.locale).slice(0, 20);
+  });
 
   function doResume(room, pid, ack) {
     attach(room, socket, pid);
@@ -731,7 +820,7 @@ io.on("connection", (socket) => {
     console.log(`👋 disconnected: ${socket.id} (${reason})`);
     if (!socket.data.ghostUncounted) { online = Math.max(0, online - 1); broadcastPresence(); } // ghosts were already uncounted
     const sess = socket.data.session; // log the whole visit (records nothing if persistence is off)
-    if (sess) { const end = Date.now(); analytics.recordSession({ connected_at: sess.connectedAt, disconnected_at: end, duration_ms: end - sess.connectedAt, device: sess.device, played: sess.played, joined: sess.joined, spectated: sess.spectated, name: sess.name, reason, singleplayer: sess.singleplayer }); }
+    if (sess) { const end = Date.now(); analytics.recordSession({ connected_at: sess.connectedAt, disconnected_at: end, duration_ms: end - sess.connectedAt, device: sess.device, played: sess.played, joined: sess.joined, spectated: sess.spectated, name: sess.name, reason, singleplayer: sess.singleplayer, ip: sess.ip, visitor_id: sess.visitor_id, tz: sess.tz, locale: sess.locale, geo: sess.geo }); }
     const code = socket.data.roomCode, pid = socket.data.playerId;
     if (!code) return;
     const room = rooms.get(code);

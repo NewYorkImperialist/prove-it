@@ -44,7 +44,8 @@ async function init() {
     for (const [t, c] of [["games", "mode TEXT DEFAULT 'mp'"], ["games", "difficulty TEXT"], ["rounds", "mode TEXT DEFAULT 'mp'"],
       ["rounds", "difficulty TEXT"], ["answers", "mode TEXT DEFAULT 'mp'"], ["events", "mode TEXT DEFAULT 'mp'"], ["sessions", "mode TEXT DEFAULT 'mp'"],
       ["sessions", "singleplayer INTEGER DEFAULT 0"],
-      ["games", "gid TEXT"], ["rounds", "gid TEXT"], ["answers", "gid TEXT"], ["answers", "player TEXT"], ["events", "gid TEXT"]]) {
+      ["games", "gid TEXT"], ["rounds", "gid TEXT"], ["answers", "gid TEXT"], ["answers", "player TEXT"], ["events", "gid TEXT"],
+      ["sessions", "ip TEXT"], ["sessions", "visitor_id TEXT"], ["sessions", "tz TEXT"], ["sessions", "locale TEXT"], ["sessions", "geo TEXT"]]) {
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
     console.log("📊 stats: connected to Turso ✓");
@@ -82,8 +83,9 @@ function recordChat(c) {
     [c.gid || null, c.code || null, c.name || null, c.text || null, c.at || Date.now(), c.spectator ? 1 : 0, c.mode || "mp"]);
 }
 function recordSession(s) {
-  fire(`INSERT INTO sessions (connected_at,disconnected_at,duration_ms,device,played,joined,spectated,name,reason,mode,singleplayer) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    [s.connected_at, s.disconnected_at, s.duration_ms, s.device, s.played ? 1 : 0, s.joined ? 1 : 0, s.spectated ? 1 : 0, s.name || null, s.reason || null, s.mode || "mp", s.singleplayer ? 1 : 0]);
+  fire(`INSERT INTO sessions (connected_at,disconnected_at,duration_ms,device,played,joined,spectated,name,reason,mode,singleplayer,ip,visitor_id,tz,locale,geo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [s.connected_at, s.disconnected_at, s.duration_ms, s.device, s.played ? 1 : 0, s.joined ? 1 : 0, s.spectated ? 1 : 0, s.name || null, s.reason || null, s.mode || "mp", s.singleplayer ? 1 : 0,
+     s.ip || null, s.visitor_id || null, s.tz || null, s.locale || null, s.geo || null]);
 }
 
 async function q(sql, args) { if (!client) return []; try { return (await client.execute(args ? { sql, args } : sql)).rows; } catch (e) { console.error("📊 stats read:", e.message); return []; } }
@@ -153,7 +155,7 @@ async function sessionStats() {
     buckets: { bounce: Number(b?.bounce || 0), short: Number(b?.short || 0), med: Number(b?.med || 0), long: Number(b?.long || 0) },
     devices: await q(`SELECT device, COUNT(*) n, AVG(duration_ms) avg FROM sessions WHERE mode='mp' AND duration_ms IS NOT NULL GROUP BY device`),
     times: (await q(`SELECT connected_at FROM sessions WHERE mode='mp' ORDER BY id DESC LIMIT 5000`)).map((r) => Number(r.connected_at)),
-    recent: await q(`SELECT connected_at, duration_ms, device, played, joined, spectated, name, singleplayer FROM sessions WHERE mode='mp' ORDER BY id DESC LIMIT 20`),
+    recent: await q(`SELECT connected_at, duration_ms, device, played, joined, spectated, name, singleplayer, ip, geo, tz, visitor_id FROM sessions WHERE mode='mp' ORDER BY id DESC LIMIT 20`),
   };
 }
 
@@ -182,4 +184,24 @@ async function gameDetail(gid) {
   };
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail };
+// Server-wide chat feed (newest first), with optional name/text search.
+async function allChat(limit = 200, search = "") {
+  const s = String(search || "").trim();
+  if (s) {
+    const like = "%" + s + "%";
+    return q(`SELECT name, text, code, gid, spectator, at, mode FROM chat WHERE text LIKE ? OR name LIKE ? ORDER BY id DESC LIMIT ?`, [like, like, limit]);
+  }
+  return q(`SELECT name, text, code, gid, spectator, at, mode FROM chat ORDER BY id DESC LIMIT ?`, [limit]);
+}
+// Repeat-visitor rollup, keyed by the persistent anonymous visitor id.
+async function visitors(limit = 100) {
+  return q(`SELECT visitor_id,
+      COUNT(*) visits,
+      MIN(connected_at) first_seen, MAX(connected_at) last_seen,
+      COALESCE(SUM(played),0) played, COALESCE(SUM(joined),0) joined,
+      MAX(geo) geo, MAX(tz) tz, MAX(ip) ip, MAX(device) device,
+      GROUP_CONCAT(DISTINCT name) names
+    FROM sessions WHERE visitor_id IS NOT NULL GROUP BY visitor_id ORDER BY visits DESC, last_seen DESC LIMIT ?`, [limit]);
+}
+
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors };

@@ -1329,7 +1329,8 @@ async function renderLeaderboard(el, idArg) {
   const rounds = data.rounds || [];
   // best run per visitor (fallback: per name)
   const best = new Map();
-  (data.results || []).forEach((r) => { const key = r.visitor_id || ("name:" + r.name); const prev = best.get(key); if (!prev || r.total > prev.total) best.set(key, r); });
+  // the creator (crowned) always collapses to ONE entry, even across devices/names
+  (data.results || []).forEach((r) => { const key = r.crown ? "__creator__" : (r.visitor_id || ("name:" + r.name)); const prev = best.get(key); if (!prev || r.total > prev.total) best.set(key, r); });
   const players = [...best.values()].sort((a, b) => b.total - a.total);
   if (!players.length) { el.innerHTML = `<p class="lb-note">No one has played yet · be the first!</p>`; return; }
   const colMax = rounds.map((_, i) => Math.max(...players.map((p) => p.scores[i] || 0)));

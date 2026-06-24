@@ -241,7 +241,8 @@ async function sessionsList(limit = 300) {
 async function dailyAllTime(limit = 50) {
   return q(`SELECT name, visitor_id, MAX(total) total, at, crown, challenge_id
             FROM challenge_results WHERE challenge_id LIKE 'd-%'
-            GROUP BY COALESCE(visitor_id, name) ORDER BY total DESC, at ASC LIMIT ?`, [limit]);
+            GROUP BY CASE WHEN crown=1 THEN '__creator__' ELSE COALESCE(visitor_id, name) END
+            ORDER BY total DESC, at ASC LIMIT ?`, [limit]);
 }
 
 // Per-category leaderboards (admin-only, private): every challenge round is "player named N in category C".

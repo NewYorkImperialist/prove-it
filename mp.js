@@ -747,20 +747,41 @@ function ackErr(r) { if (r && !r.ok && r.error) flashStatus(r.error); }
 function flashStatus(msg) { const s = $("gstatus"); s.textContent = msg; s.className = "err"; }
 
 // ---------- input send (context depends on phase) ----------
+// Discord-style :shortcode: → emoji in chat (no picker — just type it like Discord).
+const EMOJI = {
+  skull:"💀",fire:"🔥",joy:"😂",sob:"😭",cry:"😢",heart:"❤️",hearts:"💕",sparkling_heart:"💖",broken_heart:"💔",
+  thumbsup:"👍","+1":"👍",thumbsdown:"👎","-1":"👎","100":"💯",eyes:"👀",clown:"🤡",clown_face:"🤡",pray:"🙏",
+  tada:"🎉",party:"🥳",partying_face:"🥳",rofl:"🤣",smile:"😄",smiley:"😃",grin:"😁",laughing:"😆",sweat_smile:"😅",
+  wink:"😉",blush:"😊",sunglasses:"😎",cool:"😎",thinking:"🤔",thinking_face:"🤔",rage:"😡",angry:"😠",poop:"💩",
+  ok_hand:"👌",wave:"👋",clap:"👏",muscle:"💪",brain:"🧠",rocket:"🚀",star:"⭐",sparkles:"✨",crown:"👑",
+  moneybag:"💰",money_mouth:"🤑",nerd:"🤓",nerd_face:"🤓",flushed:"😳",pleading_face:"🥺",pleading:"🥺",smirk:"😏",
+  sleeping:"😴",nauseated_face:"🤢",sick:"🤢",vomiting:"🤮",exploding_head:"🤯",mind_blown:"🤯",cold_face:"🥶",
+  hot_face:"🥵",melting_face:"🫠",saluting_face:"🫡",salute:"🫡",ghost:"👻",alien:"👽",robot:"🤖",gem:"💎",zap:"⚡",
+  boom:"💥",v:"✌️",peace:"✌️",pinched_fingers:"🤌",handshake:"🤝",raised_hands:"🙌",facepalm:"🤦",shrug:"🤷",
+  dizzy:"💫",sweat_drops:"💦",zzz:"💤",checkered_flag:"🏁",trophy:"🏆",medal:"🏅",first_place:"🥇",second_place:"🥈",
+  third_place:"🥉",game_die:"🎲",dart:"🎯",soccer:"⚽",basketball:"🏀",football:"🏈",baseball:"⚾",goat:"🐐",
+  cat:"🐱",dog:"🐶",snake:"🐍",pig:"🐷",frog:"🐸",monkey:"🐵",fox:"🦊",bear:"🐻",lion:"🦁",unicorn:"🦄",
+  kiss:"😘",heart_eyes:"😍",drooling_face:"🤤",upside_down:"🙃",neutral_face:"😐",grimacing:"😬",zany_face:"🤪",
+  star_struck:"🤩",hugging:"🤗",raised_eyebrow:"🤨",monocle:"🧐",yawning_face:"🥱",woozy_face:"🥴",cowboy:"🤠",
+  fingers_crossed:"🤞",fist:"👊",punch:"👊",call_me:"🤙",white_check_mark:"✅",check:"✅",x:"❌",question:"❓",
+  exclamation:"❗",point_right:"👉",point_left:"👈",point_up:"👆",point_down:"👇",ok:"🆗",warning:"⚠️",
+};
+function emojify(s) { return s.replace(/:([a-z0-9_+-]+):/gi, (m, c) => EMOJI[c.toLowerCase()] || m); }
+
 function gameSend() {
   if (isGhost) { $("input").value = ""; return; } // ghosts are silent — no chat, no actions
   if (isSpectator) { // spectators can only chat
     const msg = $("input").value.trim();
     $("input").value = "";
     if (chatMode) exitChat();
-    if (msg) socket.emit("chat", { text: msg });
+    if (msg) socket.emit("chat", { text: emojify(msg) });
     return;
   }
   if (chatMode) { // we're in chat mode — send the message, no "/" needed
     const msg = $("input").value.trim();
     $("input").value = "";  // clear first so exitChat saves an empty draft
     exitChat();
-    if (msg) socket.emit("chat", { text: msg });
+    if (msg) socket.emit("chat", { text: emojify(msg) });
     return;
   }
   const raw = $("input").value.trim();
@@ -768,7 +789,7 @@ function gameSend() {
   if (raw[0] === "/") { // fallback: a "/"-prefixed message is chat
     const msg = raw.slice(1).trim();
     $("input").value = "";
-    if (msg) socket.emit("chat", { text: msg });
+    if (msg) socket.emit("chat", { text: emojify(msg) });
     return;
   }
   if (!gs || gs.turnId !== myId) return; // game actions require it to be your turn

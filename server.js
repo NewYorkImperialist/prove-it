@@ -293,6 +293,7 @@ app.get("/admin", async (req, res) => {
     <p style="margin:0 0 16px"><a href="/admin/games?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🎞 Game history → drill into any past game: every guess, chat, and exact timestamp</a></p>
     <p style="margin:0 0 16px"><a href="/admin/chat?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">💬 All chat → every message across the whole server (searchable)</a></p>
     <p style="margin:0 0 16px"><a href="/admin/leaderboards?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🏆 Leaderboards → moderate entries: remove junk/abusive names from any board</a></p>
+    <p style="margin:0 0 16px"><a href="/admin/category-leaderboards?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🥇 Category leaderboards (admin-only) → per-category top solo scores, watching before public</a></p>
     <p style="margin:0 0 16px"><a href="/admin/sessions?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🕒 Recent sessions → every visit in full: arrival, stay, device, location/IP, timezone</a></p>
     <p style="margin:0 0 16px"><a href="/admin/visitors?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🧭 Visitors → repeat visitors, IP, location & timezone</a></p>
     <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
@@ -535,6 +536,32 @@ app.get("/admin/result-delete", async (req, res) => {
   const rowId = parseInt(req.query.id, 10);
   if (rowId && analytics.enabled()) await analytics.deleteResult(rowId).catch(() => {});
   res.redirect(`/admin/leaderboards?key=${encodeURIComponent(req.query.key || "")}`);
+});
+
+// Private per-category leaderboards (not public yet — watching how solo play unfolds).
+app.get("/admin/category-leaderboards", async (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const k = encodeURIComponent(req.query.key || "");
+  const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
+    a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
+    .cats{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+    .cat{background:#171a23;border:1px solid #262b38;border-radius:12px;padding:12px 14px}
+    .cathd{font-weight:700;margin-bottom:8px} .cathd .dim{font-weight:400}
+    .dim{color:#8a92a6} table{width:100%;border-collapse:collapse;font-size:13px} td{padding:3px 6px;border-bottom:1px solid #1c2029}
+    .rk{color:#8a92a6;width:22px} .sc{text-align:right;font-weight:800;color:#ffd34d}</style>`;
+  const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
+  if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Category leaderboards</h1><p class="sub">Persistence not configured.</p></body>`);
+  const cats = await analytics.categoryLeaderboards(10).catch(() => []);
+  const totalRuns = cats.reduce((a, c) => a + c.runs, 0);
+  const blocks = cats.map((c) => `<div class="cat">
+      <div class="cathd">${esc(c.category)} <span class="dim">· ${c.runs} run${c.runs !== 1 ? "s" : ""} · ${c.players} player${c.players !== 1 ? "s" : ""}</span></div>
+      <table>${c.top.map((p, i) => `<tr><td class="rk">${i + 1}</td><td>${esc(p.name || "?")}</td><td class="sc">${p.score}</td></tr>`).join("")}</table>
+    </div>`).join("");
+  res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    <h1>🥇 Category leaderboards <span class="dim" style="font-size:13px">(admin-only)</span></h1>
+    <p class="sub">Each player's best score per category across all solo / daily / link runs — <b>${cats.length}</b> categories played, <b>${totalRuns}</b> total category-runs. Busiest first. Not public yet; this is to see how it unfolds.</p>
+    <div class="cats">${blocks || `<p class="dim">No solo runs recorded yet.</p>`}</div>
+    </body>`);
 });
 
 app.get("/admin/close", (req, res) => {

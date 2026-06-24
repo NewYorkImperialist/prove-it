@@ -243,6 +243,34 @@ async function dailyAllTime(limit = 50) {
             GROUP BY COALESCE(visitor_id, name) ORDER BY total DESC, at ASC LIMIT ?`, [limit]);
 }
 
+// Per-category leaderboards (admin-only, private): every challenge round is "player named N in category C".
+// Unpacks each result's parallel scores[]/rounds[] arrays in JS (small dataset), dedupes to each player's
+// best per category, and returns categories busiest-first.
+async function categoryLeaderboards(topN = 10) {
+  const chs = await q(`SELECT id, rounds FROM challenges`);
+  const roundsById = {};
+  for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } }
+  const results = await q(`SELECT challenge_id, name, visitor_id, scores, at FROM challenge_results`);
+  const byCat = {};
+  for (const r of results) {
+    const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
+    let scores; try { scores = JSON.parse(r.scores || "[]"); } catch (e) { scores = []; }
+    rounds.forEach((cat, i) => {
+      const sc = Number(scores[i]) || 0; if (sc <= 0) return;
+      (byCat[cat] = byCat[cat] || []).push({ name: r.name, visitor_id: r.visitor_id, score: sc, at: Number(r.at) });
+    });
+  }
+  const out = [];
+  for (const [cat, entries] of Object.entries(byCat)) {
+    const best = {};
+    for (const e of entries) { const key = e.visitor_id || ("name:" + e.name); if (!best[key] || e.score > best[key].score) best[key] = e; }
+    const players = Object.values(best).sort((a, b) => b.score - a.score || a.at - b.at);
+    out.push({ category: cat, runs: entries.length, players: players.length, top: players.slice(0, topN) });
+  }
+  out.sort((a, b) => b.runs - a.runs || b.players - a.players);
+  return out;
+}
+
 // Recent leaderboard entries across all challenges (for owner moderation), each with its row id.
 async function recentResults(limit = 300) {
   return q(`SELECT cr.id, cr.challenge_id, cr.name, cr.visitor_id, cr.total, cr.at, c.type, c.genre
@@ -284,4 +312,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards };

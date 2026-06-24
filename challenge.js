@@ -1,7 +1,7 @@
 // Prove It! — async multi-round challenges with a shared per-challenge leaderboard.
 const $ = (id) => document.getElementById(id);
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-const PER_ROUND = 45; // seconds per round — fixed so everyone's run is comparable
+let perRound = 45; // seconds per round — chosen by the host, then locked so every run is comparable
 
 // ---- theme + favicon ----
 function setFavicon(t) {
@@ -74,6 +74,10 @@ function buildRoundsSeg() {
   const seg = $("roundsSeg"); seg.innerHTML = "";
   [3, 5, 10].forEach((n) => { const b = document.createElement("button"); b.textContent = n; if (n === numRounds) b.classList.add("on"); b.onclick = () => { numRounds = n; [...seg.children].forEach((c) => c.classList.remove("on")); b.classList.add("on"); if (mode === "custom") buildCustomRounds(); }; seg.appendChild(b); });
 }
+function buildTimeSeg() {
+  const seg = $("timeSeg"); seg.innerHTML = "";
+  [20, 30, 45, 60, 90].forEach((s) => { const b = document.createElement("button"); b.textContent = s + "s"; if (s === perRound) b.classList.add("on"); b.onclick = () => { perRound = s; [...seg.children].forEach((c) => c.classList.remove("on")); b.classList.add("on"); }; seg.appendChild(b); });
+}
 function setMode(m) {
   mode = m;
   document.querySelectorAll("#modeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
@@ -96,7 +100,7 @@ async function createChallenge() {
   rounds = rounds.filter(Boolean);
   if (!rounds.length) { $("createErr").textContent = "Pick at least one category."; return; }
   $("createBtn").disabled = true; $("createBtn").textContent = "Creating…";
-  const res = await postJSON("/challenge", { type: mode, genre: mode === "genre" ? $("genreSel").value : "", rounds, by });
+  const res = await postJSON("/challenge", { type: mode, genre: mode === "genre" ? $("genreSel").value : "", rounds, by, timer: perRound });
   $("createBtn").disabled = false; $("createBtn").textContent = "Create & play";
   if (!res.ok) { $("createErr").textContent = res.error || "Could not create challenge."; return; }
   challengeId = res.id; def = { id: res.id, rounds, by, type: mode };
@@ -122,7 +126,7 @@ function startRound(i) {
   $("sprintCat").textContent = cat.name;
   $("count").textContent = "0"; $("chips").innerHTML = ""; $("cmsg").textContent = "";
   $("cinput").value = ""; $("cinput").disabled = false; $("cinput").focus();
-  timeLeft = PER_ROUND; $("timer").textContent = timeLeft; $("timer").classList.remove("low");
+  timeLeft = perRound; $("timer").textContent = timeLeft; $("timer").classList.remove("low");
   clearInterval(tid);
   tid = setInterval(() => { timeLeft--; $("timer").textContent = Math.max(0, timeLeft); if (timeLeft <= 10) $("timer").classList.add("low"); if (timeLeft <= 0) endRound(); }, 1000);
 }
@@ -190,8 +194,9 @@ async function initJoin() {
   def = null;
   const c = await getJSON(`/challenge/${challengeId}`);
   if (!c.ok) { show("create"); $("createErr").textContent = "That challenge link is invalid or expired — build a new one."; initCreate(); return; }
-  def = { id: c.id, rounds: c.rounds || [], by: c.by, type: c.type, genre: c.genre };
-  $("joinInfo").innerHTML = `💪 <b>${esc(def.by || "A friend")}</b> challenges you — <b>${def.rounds.length}</b> rounds${def.genre ? ` of <b>${esc(def.genre)}</b>` : ""}. Beat the leaderboard!`;
+  def = { id: c.id, rounds: c.rounds || [], by: c.by, type: c.type, genre: c.genre, timer: c.timer || 45 };
+  perRound = def.timer;
+  $("joinInfo").innerHTML = `💪 <b>${esc(def.by || "A friend")}</b> challenges you — <b>${def.rounds.length}</b> rounds${def.genre ? ` of <b>${esc(def.genre)}</b>` : ""}, <b>${def.timer}s</b> each. Beat the leaderboard!`;
   $("joinRounds").innerHTML = def.rounds.map((n, i) => { const cat = findCat(n); const ns = cat && nonSprint(cat); return `<li><span>R${i + 1} · ${esc(n)}</span>${ns ? `<span class="badge-ns">non-sprint</span>` : ""}</li>`; }).join("");
   $("joinName").value = myName;
 }
@@ -204,7 +209,7 @@ $("joinLB").onclick = async () => {
 
 function initCreate() {
   show("create");
-  buildRoundsSeg(); buildGenreSelect(); setMode("genre");
+  buildRoundsSeg(); buildTimeSeg(); buildGenreSelect(); setMode("genre");
   $("byName").value = myName;
 }
 

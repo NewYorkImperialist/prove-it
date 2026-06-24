@@ -40,7 +40,7 @@ async function init() {
       `CREATE TABLE IF NOT EXISTS chat (
         id INTEGER PRIMARY KEY AUTOINCREMENT, gid TEXT, code TEXT, name TEXT, text TEXT, at INTEGER, spectator INTEGER, mode TEXT DEFAULT 'mp')`,
       `CREATE TABLE IF NOT EXISTS challenges (
-        id TEXT PRIMARY KEY, type TEXT, genre TEXT, rounds TEXT, by_name TEXT, created_at INTEGER)`,
+        id TEXT PRIMARY KEY, type TEXT, genre TEXT, rounds TEXT, by_name TEXT, created_at INTEGER, timer INTEGER DEFAULT 45)`,
       `CREATE TABLE IF NOT EXISTS challenge_results (
         id INTEGER PRIMARY KEY AUTOINCREMENT, challenge_id TEXT, name TEXT, visitor_id TEXT, scores TEXT, total INTEGER, at INTEGER)`,
     ], "write");
@@ -49,7 +49,8 @@ async function init() {
       ["rounds", "difficulty TEXT"], ["answers", "mode TEXT DEFAULT 'mp'"], ["events", "mode TEXT DEFAULT 'mp'"], ["sessions", "mode TEXT DEFAULT 'mp'"],
       ["sessions", "singleplayer INTEGER DEFAULT 0"],
       ["games", "gid TEXT"], ["rounds", "gid TEXT"], ["answers", "gid TEXT"], ["answers", "player TEXT"], ["events", "gid TEXT"],
-      ["sessions", "ip TEXT"], ["sessions", "visitor_id TEXT"], ["sessions", "tz TEXT"], ["sessions", "locale TEXT"], ["sessions", "geo TEXT"]]) {
+      ["sessions", "ip TEXT"], ["sessions", "visitor_id TEXT"], ["sessions", "tz TEXT"], ["sessions", "locale TEXT"], ["sessions", "geo TEXT"],
+      ["challenges", "timer INTEGER DEFAULT 45"]]) {
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
     console.log("📊 stats: connected to Turso ✓");
@@ -212,13 +213,13 @@ async function visitors(limit = 100) {
 async function createChallenge(c) {
   if (!client) return false;
   try {
-    await client.execute({ sql: `INSERT INTO challenges (id,type,genre,rounds,by_name,created_at) VALUES (?,?,?,?,?,?)`,
-      args: [c.id, c.type, c.genre || null, JSON.stringify(c.rounds || []), c.by || null, Date.now()] });
+    await client.execute({ sql: `INSERT INTO challenges (id,type,genre,rounds,by_name,created_at,timer) VALUES (?,?,?,?,?,?,?)`,
+      args: [c.id, c.type, c.genre || null, JSON.stringify(c.rounds || []), c.by || null, Date.now(), c.timer || 45] });
     return true;
   } catch (e) { console.error("📊 challenge create:", e.message); return false; }
 }
 async function getChallenge(id) {
-  const r = await one(`SELECT id, type, genre, rounds, by_name, created_at FROM challenges WHERE id=?`, [id]);
+  const r = await one(`SELECT id, type, genre, rounds, by_name, created_at, timer FROM challenges WHERE id=?`, [id]);
   if (!r) return null;
   try { r.rounds = JSON.parse(r.rounds || "[]"); } catch { r.rounds = []; }
   return r;

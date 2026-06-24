@@ -1,8 +1,9 @@
-// Prove It! — async "beat my run" challenge mode (accountless, link-based).
+// Prove It! — async multi-round challenges with a shared per-challenge leaderboard.
 const $ = (id) => document.getElementById(id);
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+const PER_ROUND = 45; // seconds per round — fixed so everyone's run is comparable
 
-// ---- theme + favicon (match the rest of the app) ----
+// ---- theme + favicon ----
 function setFavicon(t) {
   const rect = t === "cyan" ? "5cd6e0" : "f5a623", fg = t === "cyan" ? "04232a" : "241500";
   const l = $("favicon"); if (l) l.href = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='8' y='8' width='84' height='84' rx='20' fill='%23${rect}'/><text x='50' y='50' font-size='64' text-anchor='middle' dominant-baseline='central' fill='%23${fg}'>◎</text></svg>`;
@@ -16,133 +17,211 @@ function setTheme(t) {
 document.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", () => setTheme(b.dataset.theme)));
 setTheme((() => { try { return localStorage.getItem("theme") || "amber"; } catch (e) { return "amber"; } })());
 
-// ---- mobile viewport (keyboard shrinks the feed, doesn't shift content) ----
-function setAppHeight() {
-  const vv = window.visualViewport;
-  const h = (vv && vv.height) || window.innerHeight;
-  document.documentElement.style.setProperty("--app-height", h + "px");
-}
+// ---- mobile viewport ----
+function setAppHeight() { const vv = window.visualViewport; document.documentElement.style.setProperty("--app-height", ((vv && vv.height) || window.innerHeight) + "px"); }
 if (window.visualViewport) { window.visualViewport.addEventListener("resize", setAppHeight); window.visualViewport.addEventListener("scroll", setAppHeight); }
 window.addEventListener("resize", setAppHeight); window.addEventListener("orientationchange", setAppHeight); setAppHeight();
 
-// ---- category data (reuses CATEGORY_GROUPS from categories.js) ----
+// ---- category data ----
 function norm(s) { return s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase().replace(/\s+/g, " "); }
-function buildCat(cat, group, emoji) {
-  return { name: cat.name, group, emoji, entries: cat.items.map((it, id) => { const names = Array.isArray(it) ? it : [it]; return { id, display: names[0], aliases: names.map(norm) }; }) };
-}
-// (norm strips combining diacritics via NFD + the ̀-ͯ range above.)
-const CATS = [];
-for (const [g, v] of Object.entries(CATEGORY_GROUPS)) { if (v.defaultOff) continue; for (const c of v.cats) CATS.push(buildCat(c, g, v.emoji)); }
+function buildCat(cat, group, emoji) { return { name: cat.name, group, emoji, entries: cat.items.map((it, id) => { const n = Array.isArray(it) ? it : [it]; return { id, display: n[0], aliases: n.map(norm) }; }) }; }
+const CATS = []; const GENRES = [];
+for (const [g, v] of Object.entries(CATEGORY_GROUPS)) { if (v.defaultOff) continue; GENRES.push(g); for (const c of v.cats) CATS.push(buildCat(c, g, v.emoji)); }
 const findCat = (name) => CATS.find((c) => c.name === name) || null;
-const randomCat = () => CATS[Math.floor(Math.random() * CATS.length)];
+// Troll / too-small categories make bad sprints → flagged "non-sprint" (excluded from genre mode, allowed in custom).
+const TROLL = new Set(["Things the Nyan Cat Says", "Counting Numbers", "Nobel Peace Prize Loser", "People in the Epstein Files", "Italian Brainrot", "Cities Mistaken for Australia's Capital", "Seasons of the Year", "Months of the Year"]);
+const nonSprint = (cat) => TROLL.has(cat.name) || cat.entries.length < 12;
+function shuffle(a) { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
 
-// ---- challenge params (?cat=&n=&by=&t=) ----
-const params = new URLSearchParams(location.search);
-const chCat = params.get("cat"), chN = parseInt(params.get("n"), 10), chBy = (params.get("by") || "").slice(0, 24), chT = parseInt(params.get("t"), 10);
-const isChallenge = !!(chCat && Number.isFinite(chN));
+// ---- identity ----
+const VISITOR_ID = (() => { try { let v = localStorage.getItem("pi_visitor"); if (!v) { v = "v-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8); localStorage.setItem("pi_visitor", v); } return v; } catch (e) { return null; } })();
+let myName = (() => { try { return localStorage.getItem("ch_name") || ""; } catch (e) { return ""; } })();
+function rememberName(n) { myName = n; try { localStorage.setItem("ch_name", n); } catch (e) {} }
+
+// ---- net helpers ----
+async function postJSON(url, body) { try { const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); return await r.json(); } catch (e) { return { ok: false }; } }
+async function getJSON(url) { try { return await (await fetch(url)).json(); } catch (e) { return { ok: false }; } }
 
 // ---- state ----
-let timer = 60, current = null, target = null, byName = "";
-const named = new Set(); let count = 0, tid = null, timeLeft = 0;
-let myName = (() => { try { return localStorage.getItem("ch_name") || ""; } catch (e) { return ""; } })();
+const params = new URLSearchParams(location.search);
+let challengeId = params.get("id");
+let def = null;            // { id, rounds:[names], by, type, genre }
+let roundCats = [], roundScores = [], cur = 0;
+let mode = "genre", numRounds = 5;
+let named = new Set(), count = 0, tid = null, timeLeft = 0;
 
-function buildSelect() {
-  const sel = $("catSel"); sel.innerHTML = "";
-  const groups = {};
-  CATS.forEach((c) => { (groups[c.group] = groups[c.group] || []).push(c); });
-  Object.keys(groups).forEach((g) => {
-    const og = document.createElement("optgroup"); og.label = g;
-    groups[g].forEach((o) => { const opt = document.createElement("option"); opt.value = o.name; opt.textContent = `${o.emoji} ${o.name}`; og.appendChild(opt); });
-    sel.appendChild(og);
-  });
+function show(sec) { ["create", "join", "sprint", "between", "done"].forEach((s) => { $(s).hidden = s !== sec; }); }
+
+// ============ CREATE ============
+function buildGenreSelect() { const sel = $("genreSel"); sel.innerHTML = ""; GENRES.forEach((g) => { const o = document.createElement("option"); o.value = g; const em = (CATS.find((c) => c.group === g) || {}).emoji || ""; o.textContent = `${em} ${g}`; sel.appendChild(o); }); }
+function catOptions(selectedName) {
+  const groups = {}; CATS.forEach((c) => { (groups[c.group] = groups[c.group] || []).push(c); });
+  const sel = document.createElement("select");
+  Object.keys(groups).forEach((g) => { const og = document.createElement("optgroup"); og.label = g; groups[g].forEach((c) => { const o = document.createElement("option"); o.value = c.name; o.textContent = `${c.emoji} ${c.name}${nonSprint(c) ? " ⚠️ non-sprint" : ""}`; if (c.name === selectedName) o.selected = true; og.appendChild(o); }); sel.appendChild(og); });
+  return sel;
 }
-function buildTimeSeg(selected) {
-  const seg = $("timeSeg"); seg.innerHTML = "";
-  [30, 60, 90].forEach((s) => {
-    const b = document.createElement("button"); b.textContent = s + "s"; if (s === selected) b.classList.add("on");
-    b.onclick = () => { [...seg.children].forEach((c) => c.classList.remove("on")); b.classList.add("on"); timer = s; };
-    seg.appendChild(b);
-  });
-}
-function initIntro() {
-  buildSelect();
-  if (isChallenge) {
-    timer = (chT === 30 || chT === 60 || chT === 90) ? chT : 60;
-    target = chN; byName = chBy || "A friend";
-    const c = findCat(chCat);
-    $("challengerBox").hidden = false; $("challengerBox").className = "challenger";
-    $("challengerBox").innerHTML = `💪 <b>${esc(byName)}</b> named <b>${chN}</b> ${esc(chCat)}${chT ? ` in ${chT}s` : ""}. Can you beat it?`;
-    $("introTitle").textContent = "⚡ You've been challenged!";
-    $("pickWrap").hidden = true;
-    if (c) { current = c; $("introSub").textContent = `Name as many ${chCat} as you can before the clock runs out.`; $("startBtn").hidden = false; $("surpriseBtn").hidden = true; }
-    else { current = null; $("introSub").textContent = `That category isn't available anymore — try a random one instead.`; $("startBtn").hidden = true; $("surpriseBtn").hidden = false; }
-  } else {
-    timer = 60; buildTimeSeg(60); $("startBtn").hidden = false;
+function buildCustomRounds() {
+  const wrap = $("customRounds"); wrap.innerHTML = "";
+  const sprintable = shuffle(CATS.filter((c) => !nonSprint(c)));
+  for (let i = 0; i < numRounds; i++) {
+    const row = document.createElement("div"); row.className = "crow";
+    const num = document.createElement("div"); num.className = "num"; num.textContent = `Question ${i + 1}`;
+    const sel = catOptions((sprintable[i] || CATS[0]).name); sel.dataset.round = i;
+    row.appendChild(num); row.appendChild(sel); wrap.appendChild(row);
   }
 }
+function buildRoundsSeg() {
+  const seg = $("roundsSeg"); seg.innerHTML = "";
+  [3, 5, 10].forEach((n) => { const b = document.createElement("button"); b.textContent = n; if (n === numRounds) b.classList.add("on"); b.onclick = () => { numRounds = n; [...seg.children].forEach((c) => c.classList.remove("on")); b.classList.add("on"); if (mode === "custom") buildCustomRounds(); }; seg.appendChild(b); });
+}
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll("#modeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
+  $("genreWrap").hidden = m !== "genre"; $("customWrap").hidden = m !== "custom";
+  if (m === "custom") buildCustomRounds();
+}
+function pickGenreRounds(genre, n) {
+  let pool = shuffle(CATS.filter((c) => c.group === genre && !nonSprint(c)));
+  if (!pool.length) pool = shuffle(CATS.filter((c) => c.group === genre));
+  const out = [];
+  while (out.length < n && pool.length) { out.push(...pool); }       // repeat-fill if the genre is small
+  return out.slice(0, n).map((c) => c.name);
+}
+async function createChallenge() {
+  $("createErr").textContent = "";
+  const by = $("byName").value.trim().slice(0, 20) || "A friend"; rememberName(by);
+  let rounds;
+  if (mode === "genre") rounds = pickGenreRounds($("genreSel").value, numRounds);
+  else rounds = [...$("customRounds").querySelectorAll("select")].map((s) => s.value);
+  rounds = rounds.filter(Boolean);
+  if (!rounds.length) { $("createErr").textContent = "Pick at least one category."; return; }
+  $("createBtn").disabled = true; $("createBtn").textContent = "Creating…";
+  const res = await postJSON("/challenge", { type: mode, genre: mode === "genre" ? $("genreSel").value : "", rounds, by });
+  $("createBtn").disabled = false; $("createBtn").textContent = "Create & play";
+  if (!res.ok) { $("createErr").textContent = res.error || "Could not create challenge."; return; }
+  challengeId = res.id; def = { id: res.id, rounds, by, type: mode };
+  history.replaceState({}, "", `challenge.html?id=${challengeId}`);
+  startPlaying(by);
+}
 
-function startSprint(cat) {
-  current = cat;
-  named.clear(); count = 0;
-  $("intro").hidden = true; $("result").hidden = true; $("sprint").hidden = false;
-  $("sprintCat").textContent = cat.name; $("sprintGroup").textContent = `${cat.emoji} ${cat.group}`;
+// ============ PLAY ============
+function startPlaying(playerName) {
+  rememberName(playerName);
+  roundCats = def.rounds.map(findCat).filter(Boolean);
+  if (!roundCats.length) { show("create"); $("createErr").textContent = "This challenge's categories are unavailable."; return; }
+  roundScores = []; cur = 0;
+  startRound(0);
+}
+function startRound(i) {
+  cur = i; named = new Set(); count = 0;
+  show("sprint");
+  const cat = roundCats[i];
+  const pips = $("roundpips"); pips.innerHTML = "";
+  roundCats.forEach((_, j) => { const s = document.createElement("span"); s.className = j < i ? "done" : j === i ? "cur" : ""; pips.appendChild(s); });
+  $("sprintGroup").textContent = `Round ${i + 1} of ${roundCats.length} · ${cat.emoji} ${cat.group}`;
+  $("sprintCat").textContent = cat.name;
   $("count").textContent = "0"; $("chips").innerHTML = ""; $("cmsg").textContent = "";
-  $("target").textContent = target != null ? `/ beat ${target}` : "";
   $("cinput").value = ""; $("cinput").disabled = false; $("cinput").focus();
-  timeLeft = timer; $("timer").textContent = timeLeft; $("timer").classList.remove("low");
+  timeLeft = PER_ROUND; $("timer").textContent = timeLeft; $("timer").classList.remove("low");
   clearInterval(tid);
-  tid = setInterval(() => { timeLeft--; $("timer").textContent = Math.max(0, timeLeft); if (timeLeft <= 10) $("timer").classList.add("low"); if (timeLeft <= 0) endSprint(); }, 1000);
+  tid = setInterval(() => { timeLeft--; $("timer").textContent = Math.max(0, timeLeft); if (timeLeft <= 10) $("timer").classList.add("low"); if (timeLeft <= 0) endRound(); }, 1000);
 }
 function submit(q) {
-  const m = current.entries.find((e) => e.aliases.includes(norm(q)));
+  const cat = roundCats[cur];
+  const m = cat.entries.find((e) => e.aliases.includes(norm(q)));
   if (!m) { flash("✗ not on the list"); return; }
   if (named.has(m.id)) { flash("already got that one"); return; }
   named.add(m.id); count++; $("count").textContent = count; $("cmsg").textContent = "";
   const sp = document.createElement("span"); sp.textContent = m.display; $("chips").prepend(sp);
 }
 function flash(msg) { $("cmsg").textContent = msg; const i = $("cinput"); i.classList.remove("shake"); void i.offsetWidth; i.classList.add("shake"); }
-function endSprint() {
+function endRound() {
   clearInterval(tid); $("cinput").disabled = true;
-  $("sprint").hidden = true; $("result").hidden = false;
-  $("finalCount").textContent = count;
-  if (target != null) {
-    if (count > target) { $("verdict").innerHTML = `🏆 You beat ${esc(byName)}!`; $("verdict").className = "verdict win"; }
-    else if (count === target) { $("verdict").innerHTML = `🤝 Dead tie with ${esc(byName)} — ${count} each!`; $("verdict").className = "verdict"; }
-    else { $("verdict").innerHTML = `😤 ${esc(byName)} got ${target}. So close!`; $("verdict").className = "verdict lose"; }
-    $("resultSub").textContent = `You named ${count} ${current.name} in ${timer}s. Now send YOUR score and keep the chain going.`;
-  } else {
-    $("verdict").innerHTML = `Nice run!`; $("verdict").className = "verdict win";
-    $("resultSub").textContent = `You named ${count} ${current.name} in ${timer}s. Challenge a friend to beat it.`;
-  }
-  $("nameInput").value = myName;
-  track();
+  roundScores[cur] = count;
+  const last = cur + 1 >= roundCats.length;
+  show("between");
+  $("betweenLabel").textContent = `Round ${cur + 1} of ${roundCats.length} done`;
+  $("betweenCount").textContent = count;
+  $("betweenCat").textContent = `${roundCats[cur].name} — running total ${roundScores.reduce((a, n) => a + n, 0)}`;
+  $("nextBtn").textContent = last ? "See results & leaderboard →" : "Next round →";
+}
+$("nextBtn").onclick = () => { if (cur + 1 >= roundCats.length) finish(); else startRound(cur + 1); };
+
+// ============ FINISH + LEADERBOARD ============
+async function finish() {
+  const total = roundScores.reduce((a, n) => a + n, 0);
+  show("done");
+  $("doneVerdict").innerHTML = "🎉 Your run is in!"; $("doneVerdict").className = "verdict win";
+  $("doneTotal").parentElement.hidden = false;
+  $("doneTotal").textContent = total;
+  $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds. Send the link to friends — same questions, same leaderboard.`;
+  await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, visitorId: VISITOR_ID });
+  renderLeaderboard($("lbWrap"));
+}
+async function renderLeaderboard(el) {
+  el.innerHTML = `<p class="lb-note">Loading leaderboard…</p>`;
+  const data = await getJSON(`/challenge/${challengeId}/results`);
+  if (!data.ok) { el.innerHTML = `<p class="lb-note">Couldn't load the leaderboard.</p>`; return; }
+  const rounds = data.rounds || [];
+  // best run per visitor (fallback: per name)
+  const best = new Map();
+  (data.results || []).forEach((r) => { const key = r.visitor_id || ("name:" + r.name); const prev = best.get(key); if (!prev || r.total > prev.total) best.set(key, r); });
+  const players = [...best.values()].sort((a, b) => b.total - a.total);
+  if (!players.length) { el.innerHTML = `<p class="lb-note">No one has played yet — be the first!</p>`; return; }
+  const colMax = rounds.map((_, i) => Math.max(...players.map((p) => p.scores[i] || 0)));
+  const head = `<tr><th>#</th><th>Player</th>${rounds.map((_, i) => `<th title="${esc(rounds[i])}">R${i + 1}</th>`).join("")}<th>Total</th></tr>`;
+  const body = players.map((p, idx) => {
+    const mine = p.visitor_id && p.visitor_id === VISITOR_ID;
+    const cells = rounds.map((_, i) => { const v = p.scores[i] || 0; return `<td class="${v === colMax[i] && v > 0 ? "hi" : ""}">${v}</td>`; }).join("");
+    return `<tr class="${mine ? "me" : ""}"><td>${idx === 0 ? "🏆" : idx + 1}</td><td>${esc(p.name)}${mine ? " (you)" : ""}</td>${cells}<td class="tot">${p.total}</td></tr>`;
+  }).join("");
+  const legend = rounds.map((r, i) => `R${i + 1} ${esc(r)}`).join(" · ");
+  const qWinners = rounds.map((r, i) => { const w = players.find((p) => (p.scores[i] || 0) === colMax[i] && colMax[i] > 0); return w ? `<b>R${i + 1}</b> ${esc(w.name)} (${colMax[i]})` : null; }).filter(Boolean).join(" · ");
+  el.innerHTML = `<table class="lb">${head}${body}</table>
+    <p class="lb-note">🏆 <b>${esc(players[0].name)}</b> leads with ${players[0].total} · ${players.length} player${players.length > 1 ? "s" : ""}.</p>
+    <p class="lb-note">Question winners: ${qWinners || "—"}</p>
+    <p class="lb-note" style="opacity:.7">${legend}</p>`;
 }
 
-function shareLink() {
-  myName = $("nameInput").value.trim().slice(0, 20) || "A friend";
-  try { localStorage.setItem("ch_name", myName); } catch (e) {}
-  const url = `${location.origin}/challenge.html?cat=${encodeURIComponent(current.name)}&n=${count}&by=${encodeURIComponent(myName)}&t=${timer}`;
-  const text = `I named ${count} ${current.name} on Prove It! Can you beat me?`;
-  if (navigator.share) { navigator.share({ title: "Prove It! Challenge", text, url }).catch(() => {}); }
-  else if (navigator.clipboard) { navigator.clipboard.writeText(`${text} ${url}`).then(() => { $("shareBtn").textContent = "✅ Link copied — paste it to a friend!"; }).catch(() => prompt("Copy this challenge link:", `${text} ${url}`)); }
-  else { prompt("Copy this challenge link:", `${text} ${url}`); }
+// ============ JOIN (opened a ?id= link) ============
+async function initJoin() {
+  show("join");
+  $("joinInfo").innerHTML = "Loading challenge…";
+  def = null;
+  const c = await getJSON(`/challenge/${challengeId}`);
+  if (!c.ok) { show("create"); $("createErr").textContent = "That challenge link is invalid or expired — build a new one."; initCreate(); return; }
+  def = { id: c.id, rounds: c.rounds || [], by: c.by, type: c.type, genre: c.genre };
+  $("joinInfo").innerHTML = `💪 <b>${esc(def.by || "A friend")}</b> challenges you — <b>${def.rounds.length}</b> rounds${def.genre ? ` of <b>${esc(def.genre)}</b>` : ""}. Beat the leaderboard!`;
+  $("joinRounds").innerHTML = def.rounds.map((n, i) => { const cat = findCat(n); const ns = cat && nonSprint(cat); return `<li><span>R${i + 1} · ${esc(n)}</span>${ns ? `<span class="badge-ns">non-sprint</span>` : ""}</li>`; }).join("");
+  $("joinName").value = myName;
 }
-
-function track() {
-  try { fetch("/track", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "challenge", category: current.name, grp: current.group, score: count, target: target, received: isChallenge, timer }), keepalive: true }).catch(() => {}); } catch (e) {}
-}
-
-$("cinput").addEventListener("keydown", (e) => { if (e.key !== "Enter") return; const q = $("cinput").value.trim(); $("cinput").value = ""; if (q) submit(q); });
-$("startBtn").onclick = () => startSprint(current || findCat($("catSel").value) || randomCat());
-$("surpriseBtn").onclick = () => startSprint(randomCat());
-$("againBtn").onclick = () => startSprint(current);
-$("newCatBtn").onclick = () => {
-  target = null; byName = ""; current = null;
-  $("challengerBox").hidden = true; $("introTitle").textContent = "⚡ Friend Challenge";
-  $("introSub").textContent = "Pick a category and name as many as you can before the clock runs out.";
-  $("pickWrap").hidden = false; $("surpriseBtn").hidden = true; $("startBtn").hidden = false;
-  $("result").hidden = true; $("intro").hidden = false; buildTimeSeg(timer);
+$("joinStart").onclick = () => { const n = $("joinName").value.trim().slice(0, 20) || "Anon"; startPlaying(n); };
+$("joinLB").onclick = async () => {
+  let box = $("joinLBWrap");
+  if (!box) { box = document.createElement("div"); box.id = "joinLBWrap"; box.style.marginTop = "16px"; $("join").appendChild(box); }
+  renderLeaderboard(box);
 };
-$("shareBtn").onclick = shareLink;
 
-initIntro();
+function initCreate() {
+  show("create");
+  buildRoundsSeg(); buildGenreSelect(); setMode("genre");
+  $("byName").value = myName;
+}
+
+// ---- wire ----
+$("cinput").addEventListener("keydown", (e) => { if (e.key !== "Enter") return; const q = $("cinput").value.trim(); $("cinput").value = ""; if (q) submit(q); });
+document.querySelectorAll("#modeSeg button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+$("createBtn").onclick = createChallenge;
+$("shareBtn").onclick = () => {
+  const url = `${location.origin}/challenge.html?id=${challengeId}`;
+  const total = roundScores.reduce((a, n) => a + n, 0);
+  const text = `Beat my Prove It! challenge — I scored ${total} across ${roundCats.length} rounds!`;
+  if (navigator.share) navigator.share({ title: "Prove It! Challenge", text, url }).catch(() => {});
+  else if (navigator.clipboard) navigator.clipboard.writeText(`${text} ${url}`).then(() => { $("shareBtn").textContent = "✅ Link copied — send it to friends!"; }).catch(() => prompt("Copy this link:", `${text} ${url}`));
+  else prompt("Copy this link:", `${text} ${url}`);
+};
+$("refreshLB").onclick = () => renderLeaderboard($("lbWrap"));
+$("newChallenge").onclick = () => { location.href = "challenge.html"; };
+
+// ---- boot ----
+if (challengeId) initJoin(); else initCreate();

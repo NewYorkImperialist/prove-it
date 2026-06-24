@@ -506,6 +506,46 @@ app.post("/track", async (req, res) => {
   } catch (err) { /* ignore bad payloads */ }
 });
 
+// ---------- async challenges (multi-round + shared leaderboard) ----------
+const ALL_CAT_NAMES = new Set();
+for (const v of Object.values(CATEGORY_GROUPS)) for (const c of v.cats) ALL_CAT_NAMES.add(c.name);
+const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char url-safe id
+
+app.post("/challenge", async (req, res) => {
+  const b = req.body || {};
+  if (!analytics.enabled()) return res.json({ ok: false, error: "Challenges need persistence (not configured)." });
+  const type = b.type === "custom" ? "custom" : "genre";
+  const rounds = (Array.isArray(b.rounds) ? b.rounds : []).filter((n) => ALL_CAT_NAMES.has(n)).slice(0, 10);
+  if (rounds.length < 1) return res.json({ ok: false, error: "Pick at least one valid category." });
+  const id = newChallengeId();
+  const ok = await analytics.createChallenge({ id, type, genre: String(b.genre || "").slice(0, 40), rounds, by: String(b.by || "A friend").slice(0, 24) });
+  res.json(ok ? { ok: true, id } : { ok: false, error: "Could not save challenge." });
+});
+app.get("/challenge/:id", async (req, res) => {
+  if (!analytics.enabled()) return res.json({ ok: false });
+  const c = await analytics.getChallenge(String(req.params.id).slice(0, 12)).catch(() => null);
+  if (!c) return res.json({ ok: false });
+  res.json({ ok: true, id: c.id, type: c.type, genre: c.genre, rounds: c.rounds, by: c.by_name });
+});
+app.post("/challenge/:id/result", async (req, res) => {
+  if (!analytics.enabled()) return res.json({ ok: false });
+  const id = String(req.params.id).slice(0, 12);
+  const c = await analytics.getChallenge(id).catch(() => null);
+  if (!c) return res.json({ ok: false });
+  const b = req.body || {};
+  const scores = (Array.isArray(b.scores) ? b.scores : []).map((n) => Math.max(0, Math.min(999, parseInt(n, 10) || 0))).slice(0, c.rounds.length);
+  const total = scores.reduce((a, n) => a + n, 0);
+  await analytics.addChallengeResult({ challenge_id: id, name: String(b.name || "Anon").slice(0, 24), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total });
+  res.json({ ok: true });
+});
+app.get("/challenge/:id/results", async (req, res) => {
+  if (!analytics.enabled()) return res.json({ ok: false });
+  const id = String(req.params.id).slice(0, 12);
+  const c = await analytics.getChallenge(id).catch(() => null);
+  if (!c) return res.json({ ok: false });
+  res.json({ ok: true, rounds: c.rounds, by: c.by_name, results: await analytics.getChallengeResults(id).catch(() => []) });
+});
+
 // Always revalidate HTML/JS so the inlined CSS + game logic are never served stale
 // (matters because we push UI tweaks frequently and the link is shared publicly).
 app.use(express.static(path.join(__dirname), {

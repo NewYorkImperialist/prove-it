@@ -5,11 +5,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Prove It! — Challenge</title>
 <link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='8' y='8' width='84' height='84' rx='20' fill='%23f5a623'/><text x='50' y='50' font-size='64' text-anchor='middle' dominant-baseline='central' fill='%23241500'>◎</text></svg>">
-<meta name="description" content="A friend challenged you on Prove It! — name as many as you can before the clock runs out.">
+<meta name="description" content="A friend challenged you on Prove It! — name as many as you can across the rounds, then climb the leaderboard.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Prove It!">
-<meta property="og:title" content="⚡ Beat my Prove It! run">
-<meta property="og:description" content="Name as many as you can before the clock runs out. No sign-up — just click and play.">
+<meta property="og:title" content="⚡ Beat my Prove It! challenge">
+<meta property="og:description" content="Multi-round naming challenge. No sign-up — just click and play, then see who tops the leaderboard.">
 <meta name="theme-color" content="#0c0a07">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -42,47 +42,58 @@
   header .tag { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:1.4px; color:var(--muted); }
   header .spacer { flex:1; }
   main { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; align-items:center; padding:22px 16px; }
-  .card { width:min(94vw,520px); background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px; }
-  h1 { font-family:var(--display); font-size:26px; margin:0 0 6px; letter-spacing:-.4px; }
-  .sub { color:var(--muted); font-size:14px; margin:0 0 18px; }
+  .card { width:min(94vw,560px); background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px; }
+  h1 { font-family:var(--display); font-size:25px; margin:0 0 6px; letter-spacing:-.4px; }
+  .sub { color:var(--muted); font-size:14px; margin:0 0 16px; }
   label.fld { display:block; font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:16px 0 7px; }
   select, input[type=text] { width:100%; background:var(--bg); border:1px solid var(--line2); border-radius:10px; color:var(--text); padding:12px 13px; font-size:16px; outline:none; font-family:var(--ui); }
   select:focus, input:focus { border-color:var(--accent); }
   .seg { display:flex; gap:8px; }
   .seg button { flex:1; background:var(--panel2); color:var(--text); border:1px solid var(--line2); border-radius:10px; padding:11px; font-weight:700; font-size:14px; }
   .seg button.on { background:var(--accent); border-color:var(--accent); color:var(--markfg); }
-  .btn { display:block; width:100%; background:var(--accent); color:var(--markfg); border:none; border-radius:12px; padding:15px; font-size:16px; font-weight:800; margin-top:20px; }
+  .btn { display:block; width:100%; background:var(--accent); color:var(--markfg); border:none; border-radius:12px; padding:15px; font-size:16px; font-weight:800; margin-top:18px; }
   .btn.ghost { background:var(--panel2); color:var(--text); border:1px solid var(--line2); }
   .btn:active { transform:translateY(1px); }
-  .row { display:flex; gap:10px; }
-  .row .btn { margin-top:12px; }
-  .challenger { background:var(--acc-dim); border:1px solid var(--accent); border-radius:12px; padding:14px 16px; margin:0 0 6px; font-size:15px; }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; } .row .btn { margin-top:12px; }
+  .err { color:var(--bad); font-size:13px; min-height:16px; margin-top:8px; }
+  .challenger { background:var(--acc-dim); border:1px solid var(--accent); border-radius:12px; padding:14px 16px; margin:0 0 14px; font-size:15px; }
   .challenger b { color:var(--accent); }
+  .rounds-prev { list-style:none; padding:0; margin:10px 0 0; }
+  .rounds-prev li { padding:8px 10px; border:1px solid var(--line); border-radius:9px; margin-bottom:6px; font-size:14px; display:flex; justify-content:space-between; gap:8px; }
+  .badge-ns { font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--bad); border:1px solid var(--bad); border-radius:6px; padding:2px 6px; white-space:nowrap; align-self:center; }
+  #customRounds .crow { margin-bottom:8px; }
+  .crow .num { font-family:var(--mono); font-size:11px; color:var(--muted); margin-bottom:4px; }
 
   /* sprint */
-  #sprint .top { display:flex; align-items:center; justify-content:space-between; margin-bottom:14px; }
+  #sprint .top { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
   #sprint .cat { font-family:var(--display); font-size:22px; font-weight:700; letter-spacing:-.3px; }
   #sprint .catlabel { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:1.4px; color:var(--muted); }
-  #timer { font-family:var(--ui); font-weight:800; font-size:30px; font-variant-numeric:tabular-nums; color:var(--accent); }
+  #timer { font-family:var(--ui); font-weight:800; font-size:28px; font-variant-numeric:tabular-nums; color:var(--accent); }
   #timer.low { color:var(--bad); }
-  #scoreline { display:flex; align-items:baseline; gap:8px; margin:4px 0 14px; }
+  #roundpips { display:flex; gap:5px; margin-bottom:12px; }
+  #roundpips span { flex:1; height:5px; border-radius:3px; background:var(--line2); }
+  #roundpips span.done { background:var(--accent); } #roundpips span.cur { background:var(--accent); opacity:.5; }
   #count { font-family:var(--mono); font-weight:700; font-size:40px; color:var(--text); }
-  #target { color:var(--muted); font-size:14px; }
-  #chips { display:flex; flex-wrap:wrap; gap:6px; max-height:34vh; overflow-y:auto; margin-top:14px; }
+  #chips { display:flex; flex-wrap:wrap; gap:6px; max-height:30vh; overflow-y:auto; margin-top:12px; }
   #chips span { background:var(--acc-dim); border:1px solid var(--line2); color:var(--text); border-radius:8px; padding:5px 9px; font-size:13px; animation:pop .14s ease; }
   @keyframes pop { from{transform:scale(.6);opacity:0} to{transform:scale(1);opacity:1} }
-  #cinput.shake { animation:shake .3s; }
-  @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
+  #cinput.shake { animation:shake .3s; } @keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
   #cmsg { min-height:18px; font-size:13px; color:var(--muted); margin-top:8px; }
 
-  /* result */
-  #result .big { font-family:var(--display); font-size:48px; font-weight:700; color:var(--accent); margin:6px 0; }
-  #result .verdict { font-size:17px; font-weight:700; margin:0 0 14px; }
-  .win { color:var(--accent); } .lose { color:var(--bad); }
+  /* between + done */
+  .big { font-family:var(--display); font-size:46px; font-weight:700; color:var(--accent); margin:6px 0; }
+  .verdict { font-size:17px; font-weight:700; margin:0 0 12px; } .win { color:var(--accent); } .lose { color:var(--bad); }
+  table.lb { border-collapse:collapse; width:100%; font-size:13px; margin-top:8px; }
+  table.lb th { text-align:right; color:var(--muted); font-family:var(--mono); font-size:11px; padding:6px 7px; border-bottom:1px solid var(--line2); }
+  table.lb th:first-child, table.lb td:first-child { text-align:left; }
+  table.lb td { padding:6px 7px; border-bottom:1px solid var(--line); text-align:right; font-variant-numeric:tabular-nums; }
+  table.lb td.tot { font-weight:800; color:var(--text); } table.lb .hi { color:var(--accent); font-weight:800; }
+  table.lb tr.me td { background:var(--acc-dim); }
+  .lb-note { font-size:13px; color:var(--muted); margin:12px 0 0; }
 
   footer { padding:12px 18px; border-top:1px solid var(--line); display:flex; gap:14px; justify-content:center; font-size:13px; }
-  footer a { color:var(--muted); text-decoration:none; font-weight:600; }
-  footer a:hover { color:var(--accent); }
+  footer a { color:var(--muted); text-decoration:none; font-weight:600; } footer a:hover { color:var(--accent); }
   [hidden] { display:none !important; }
 </style>
 </head>
@@ -94,42 +105,69 @@
   </header>
 
   <main>
-    <!-- INTRO -->
-    <section class="card" id="intro">
-      <div id="challengerBox" hidden></div>
-      <h1 id="introTitle">⚡ Friend Challenge</h1>
-      <p class="sub" id="introSub">Pick a category and name as many as you can before the clock runs out. Then send your score to a friend and dare them to beat it.</p>
-      <div id="pickWrap">
-        <label class="fld" for="catSel">Category</label>
-        <select id="catSel"></select>
-        <label class="fld">Time limit</label>
-        <div class="seg" id="timeSeg"></div>
+    <!-- CREATE -->
+    <section class="card" id="create" hidden>
+      <h1>⚡ Build a challenge</h1>
+      <p class="sub">Set up rounds, send the link to friends, and see who tops the leaderboard. Each round is a timed sprint — name as many as you can.</p>
+      <div class="seg" id="modeSeg">
+        <button data-mode="genre" class="on">🎲 One genre</button>
+        <button data-mode="custom">🎯 Custom rounds</button>
       </div>
-      <button class="btn" id="startBtn">Start</button>
-      <button class="btn ghost" id="surpriseBtn" hidden>🎲 Surprise me with a category</button>
+      <label class="fld">Rounds</label>
+      <div class="seg" id="roundsSeg"></div>
+      <div id="genreWrap">
+        <label class="fld" for="genreSel">Genre (a random category each round)</label>
+        <select id="genreSel"></select>
+      </div>
+      <div id="customWrap" hidden>
+        <label class="fld">Pick each round's category</label>
+        <div id="customRounds"></div>
+      </div>
+      <label class="fld" for="byName">Your name</label>
+      <input id="byName" type="text" maxlength="20" placeholder="e.g. Jayden">
+      <button class="btn" id="createBtn">Create &amp; play</button>
+      <div class="err" id="createErr"></div>
+    </section>
+
+    <!-- JOIN (opened a ?id= link) -->
+    <section class="card" id="join" hidden>
+      <div class="challenger" id="joinInfo"></div>
+      <ul class="rounds-prev" id="joinRounds"></ul>
+      <label class="fld" for="joinName">Your name</label>
+      <input id="joinName" type="text" maxlength="20" placeholder="e.g. Sam">
+      <button class="btn" id="joinStart">Start the challenge</button>
+      <button class="btn ghost" id="joinLB">👀 View leaderboard</button>
     </section>
 
     <!-- SPRINT -->
     <section class="card" id="sprint" hidden>
+      <div id="roundpips"></div>
       <div class="top">
-        <div><div class="catlabel" id="sprintGroup">Category</div><div class="cat" id="sprintCat">—</div></div>
-        <div id="timer">60</div>
+        <div><div class="catlabel" id="sprintGroup">Round</div><div class="cat" id="sprintCat">—</div></div>
+        <div id="timer">45</div>
       </div>
-      <div id="scoreline"><span id="count">0</span><span id="target"></span></div>
+      <div><span id="count">0</span></div>
       <input id="cinput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type a name and hit Enter…">
       <div id="cmsg"></div>
       <div id="chips"></div>
     </section>
 
-    <!-- RESULT -->
-    <section class="card" id="result" hidden>
-      <p class="verdict" id="verdict"></p>
-      <div class="big"><span id="finalCount">0</span></div>
-      <p class="sub" id="resultSub"></p>
-      <label class="fld" for="nameInput">Your name (shown to whoever you challenge)</label>
-      <input id="nameInput" type="text" maxlength="20" placeholder="e.g. Jayden">
-      <button class="btn" id="shareBtn">🔗 Challenge a friend</button>
-      <div class="row"><button class="btn ghost" id="againBtn">🔁 Play again</button><button class="btn ghost" id="newCatBtn">🎲 New category</button></div>
+    <!-- BETWEEN ROUNDS -->
+    <section class="card" id="between" hidden>
+      <p class="sub" id="betweenLabel"></p>
+      <div class="big"><span id="betweenCount">0</span></div>
+      <p class="sub" id="betweenCat"></p>
+      <button class="btn" id="nextBtn">Next round →</button>
+    </section>
+
+    <!-- DONE + LEADERBOARD -->
+    <section class="card" id="done" hidden>
+      <p class="verdict" id="doneVerdict"></p>
+      <div class="big"><span id="doneTotal">0</span></div>
+      <p class="sub" id="doneSub"></p>
+      <div id="lbWrap"></div>
+      <button class="btn" id="shareBtn">🔗 Send this challenge to more friends</button>
+      <div class="row"><button class="btn ghost" id="refreshLB">🔄 Refresh leaderboard</button><button class="btn ghost" id="newChallenge">⚡ New challenge</button></div>
     </section>
   </main>
 

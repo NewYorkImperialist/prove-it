@@ -246,5 +246,10 @@ $("shareBtn").onclick = () => {
 $("refreshLB").onclick = () => renderLeaderboard($("lbWrap"));
 $("newChallenge").onclick = () => { location.href = "challenge.html"; };
 
+// top-of-page → back to the beginning (fresh build screen)
+function backToStart() { location.href = "challenge.html"; }
+$("chHome").onclick = backToStart;
+$("chNew").onclick = backToStart;
+
 // ---- boot ----
 if (challengeId) initJoin(); else initCreate();

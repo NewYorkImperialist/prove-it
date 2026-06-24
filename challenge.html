@@ -41,6 +41,8 @@
   header { display:flex; align-items:center; gap:11px; padding:14px 18px; border-bottom:1px solid var(--line); }
   header .tag { font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:1.4px; color:var(--muted); }
   header .spacer { flex:1; }
+  .hbtn { background:var(--panel2); color:var(--muted); border:1px solid var(--line2); border-radius:8px; padding:6px 11px; font-size:13px; font-weight:700; cursor:pointer; }
+  .hbtn:hover { border-color:var(--accent); color:var(--accent); }
   main { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; align-items:center; padding:22px 16px; }
   .card { width:min(94vw,560px); background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:22px; }
   h1 { font-family:var(--display); font-size:25px; margin:0 0 6px; letter-spacing:-.4px; }
@@ -100,8 +102,10 @@
 </head>
 <body>
   <header>
-    <span class="logobadge">◎</span><span class="wd">prove it!</span><span class="tag">challenge</span>
+    <span id="chHome" title="New challenge" style="cursor:pointer;display:inline-flex;align-items:center;gap:11px"><span class="logobadge">◎</span><span class="wd">prove it!</span></span>
+    <span class="tag">challenge</span>
     <span class="spacer"></span>
+    <button id="chNew" class="hbtn" title="Start over">New</button>
     <span class="tsw"><button data-theme="amber" class="on">Amber</button><button data-theme="cyan">Cyan</button></span>
   </header>
 

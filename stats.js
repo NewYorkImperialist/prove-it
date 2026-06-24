@@ -122,7 +122,7 @@ async function summary() {
       highestClaim: await one(`SELECT category,grp,winner_name,claim FROM rounds ORDER BY claim DESC LIMIT 1`),
       easterEggs: eggs ? Number(eggs.n) : 0,
     },
-    recent: await q(`SELECT code,p1_name,p2_name,p1_score,p2_score,winner_name,groups,rounds,reason,duration_ms,ended_at
+    recent: await q(`SELECT code,gid,p1_name,p2_name,p1_score,p2_score,winner_name,groups,rounds,reason,duration_ms,ended_at
       FROM games WHERE mode='mp' ORDER BY id DESC LIMIT 15`),
     skips: await q(`SELECT detail category, COUNT(*) n FROM events WHERE type='categorySkipped' AND detail IS NOT NULL GROUP BY detail ORDER BY n DESC LIMIT 25`),
     sessions: await sessionStats(),

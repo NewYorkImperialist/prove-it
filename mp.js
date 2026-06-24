@@ -168,8 +168,7 @@ function setTheme(t) {
   document.querySelectorAll("[data-theme]").forEach((b) => b.classList.toggle("on", b.dataset.theme === t));
   setFavicon(t);
 }
-document.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", () => setTheme(b.dataset.theme)));
-setTheme(localStorage.getItem("theme") || "amber");
+setTheme("amber"); // cyan retired — amber only
 
 // ---------- connection indicator + auto-resume ----------
 // Two indicators: the floating one (lobby) and the sidebar one (in game).
@@ -281,9 +280,13 @@ $("spectateBtn").onclick = () => {
   });
 };
 $("soloBtn").onclick = () => { location.href = "challenge.html"; };
-$("mpToggle").onclick = () => { $("mpSection").classList.remove("hidden"); $("mpToggle").classList.add("hidden"); $("name").focus(); };
+$("mpToggle").onclick = () => {
+  const hidden = $("mpSection").classList.toggle("hidden");
+  $("mpToggle").textContent = hidden ? "Live Multiplayer ▾" : "Live Multiplayer ▴";
+  if (!hidden) $("name").focus();
+};
 // An invite link (?room=CODE) lands straight on the multiplayer section.
-if (inviteCode) { $("mpSection").classList.remove("hidden"); $("mpToggle").classList.add("hidden"); }
+if (inviteCode) { $("mpSection").classList.remove("hidden"); $("mpToggle").textContent = "Live Multiplayer ▴"; }
 $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("createBtn").click(); });
 $("name").addEventListener("change", () => rememberName(nameValue()));
 $("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("joinBtn").click(); });

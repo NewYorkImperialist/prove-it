@@ -126,7 +126,26 @@ async function summary() {
       FROM games WHERE mode='mp' ORDER BY id DESC LIMIT 15`),
     skips: await q(`SELECT detail category, COUNT(*) n FROM events WHERE type='categorySkipped' AND detail IS NOT NULL GROUP BY detail ORDER BY n DESC LIMIT 25`),
     sessions: await sessionStats(),
+    solo: await soloStats(),
     sp: await spStats(),
+  };
+}
+
+// Solo play = challenge runs (every solo sprint is a DB-backed, shareable challenge).
+async function soloStats() {
+  const ch = await one(`SELECT COUNT(*) n FROM challenges`);
+  const rs = await one(`SELECT COUNT(*) n, COALESCE(AVG(total),0) avg, COALESCE(MAX(total),0) best FROM challenge_results`);
+  const recent = await q(`SELECT r.name, r.total, r.at, r.crown, c.rounds, c.genre, c.type
+    FROM challenge_results r LEFT JOIN challenges c ON c.id = r.challenge_id
+    ORDER BY r.id DESC LIMIT 20`);
+  recent.forEach((x) => { try { x.rounds = JSON.parse(x.rounds || "[]"); } catch { x.rounds = []; } });
+  return {
+    challenges: ch ? Number(ch.n) : 0,
+    plays: rs ? Number(rs.n) : 0,
+    avg: rs ? Number(rs.avg) : 0,
+    best: rs ? Number(rs.best) : 0,
+    recent,
+    perDay: await q(`SELECT date(at/1000,'unixepoch') day, COUNT(*) n FROM challenge_results GROUP BY day ORDER BY day DESC LIMIT 14`),
   };
 }
 

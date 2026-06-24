@@ -182,8 +182,9 @@ function histHtml(h, k) {
   ].filter(Boolean).map((x) => `<span class="pill">${x}</span>`).join("");
   const skips = (h.skips || []).map((r) => `<tr><td>${esc(r.category)}</td><td>${num(r.n)}</td></tr>`).join("");
   const sp = h.sp || {};
-  const spDiff = (sp.byDifficulty || []).map((r) => `<tr><td>${esc(r.difficulty)}</td><td>${num(r.n)}</td><td>${num(r.wins)} (${r.n ? Math.round(num(r.wins) / num(r.n) * 100) : 0}%)</td></tr>`).join("");
-  const spCats = (sp.topCategories || []).map((r) => `<tr><td>${esc(r.grp)} — ${esc(r.category)}</td><td>${num(r.plays)}</td></tr>`).join("");
+  const solo = h.solo || {};
+  const soloRecent = (solo.recent || []).map((r) => { const cat = (r.rounds && r.rounds.length === 1) ? r.rounds[0] : (r.genre ? r.genre + " · " + (r.rounds || []).length + "r" : (r.rounds || []).length + "r"); return `<tr><td>${easternTime(num(r.at))}</td><td>${esc(r.name || "?")}${r.crown ? " 👑" : ""}</td><td>${esc(cat)}</td><td>${num(r.total)}</td></tr>`; }).join("");
+  const soloDay = (solo.perDay || []).map((r) => `<tr><td>${esc(r.day)}</td><td>${num(r.n)}</td></tr>`).join("");
   return `
     <h2>All-time history</h2>
     <p class="stats"><b>${h.games}</b> games · <b>${h.rounds}</b> rounds · <b>${h.players}</b> unique players · avg game <b>${fmtMs(h.avgDurationMs)}</b></p>
@@ -211,12 +212,14 @@ function histHtml(h, k) {
       <div><h3>📅 Games per day</h3>${tbl(["Day", "Games"], day, 2)}</div>
       <div><h3>🕑 Recent games</h3>${tbl(["Code", "Result", "Winner", "Rds", "End", "Len"], rec, 6)}</div>
     </div>
-    <h2>🎮 Single-player (vs bot)</h2>
-    <p class="stats"><b>${sp.games || 0}</b> games · you won <b>${sp.wins || 0}</b> / lost <b>${sp.losses || 0}</b> · <b>${sp.rounds || 0}</b> rounds · <b>${sp.sessions || 0}</b> visits (avg stay <b>${fmtMs(sp.avgMs)}</b>)</p>
+    <h2>🏃 Solo runs (challenges)</h2>
+    <p class="stats"><b>${solo.plays || 0}</b> solo runs · <b>${solo.challenges || 0}</b> challenges created · avg score <b>${num(solo.avg).toFixed(1)}</b> · best <b>${solo.best || 0}</b></p>
     <div class="cols">
-      <div><h3>🤖 By difficulty (your win rate)</h3>${tbl(["Difficulty", "Games", "You won"], spDiff, 3)}</div>
-      <div><h3>🗂 Top single-player categories</h3>${tbl(["Category", "Plays"], spCats, 2)}</div>
-    </div>`;
+      <div><h3>🕒 Recent solo runs (Eastern)</h3>${tbl(["When", "Player", "Category", "Score"], soloRecent, 4)}</div>
+      <div><h3>📅 Solo runs per day</h3>${tbl(["Day", "Runs"], soloDay, 2)}</div>
+    </div>
+    <h2 style="opacity:.6">🤖 Single-player vs bot — retired</h2>
+    <p class="stats" style="opacity:.6">Historical only (the bot mode was retired). <b>${sp.games || 0}</b> games · <b>${sp.rounds || 0}</b> rounds.</p>`;
 }
 
 app.get("/admin", async (req, res) => {

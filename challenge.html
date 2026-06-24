@@ -26,11 +26,6 @@
     --acc-dim:rgba(245,166,35,.14); --mark:linear-gradient(140deg,#f5a623,#e0801a); --markfg:#241500;
     --ui:"Inter",system-ui,sans-serif; --display:"Space Grotesk","Inter",sans-serif; --mono:"IBM Plex Mono",ui-monospace,monospace;
   }
-  body.t-cyan {
-    --bg:#04080a; --panel:#070b0c; --panel2:#0b1113; --line:rgba(120,220,230,.12); --line2:rgba(120,220,230,.22);
-    --accent:#5cd6e0; --accent2:#5cd6e0; --bad:#ff6166; --gold:#5cd6e0; --text:#eef6f7; --muted:#7e9499;
-    --acc-dim:rgba(92,214,224,.13); --mark:linear-gradient(140deg,#5cd6e0,#2bb6c2); --markfg:#04232a;
-  }
   * { box-sizing:border-box; }
   html, body { height:100%; margin:0; }
   body { font-family:var(--ui); background:var(--bg); color:var(--text); transition:background-color .25s, color .25s;
@@ -122,7 +117,6 @@
     <span class="tag">challenge</span>
     <span class="spacer"></span>
     <button id="chNew" class="hbtn" title="Start over">New</button>
-    <span class="tsw"><button data-theme="amber" class="on">Amber</button><button data-theme="cyan">Cyan</button></span>
   </header>
 
   <main>
@@ -136,7 +130,7 @@
       <label class="fld" for="catSel">…or pick a category</label>
       <select id="catSel"></select>
       <button class="btn ghost" id="chooseBtn">Play this category</button>
-      <button class="btn ghost" id="advToggle" style="margin-top:18px">Advanced — multi-round &amp; custom ▾</button>
+      <button class="btn ghost" id="advToggle" style="margin-top:18px">Advanced settings ▾</button>
       <div id="advWrap" hidden>
         <div class="seg" id="modeSeg" style="margin-top:12px">
           <button data-mode="genre" class="on">One genre</button>

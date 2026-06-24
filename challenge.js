@@ -14,8 +14,7 @@ function setTheme(t) {
   document.querySelectorAll("[data-theme]").forEach((b) => b.classList.toggle("on", b.dataset.theme === t));
   setFavicon(t);
 }
-document.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", () => setTheme(b.dataset.theme)));
-setTheme((() => { try { return localStorage.getItem("theme") || "amber"; } catch (e) { return "amber"; } })());
+setTheme("amber"); // cyan retired — amber only
 
 // ---- mobile viewport ----
 function setAppHeight() { const vv = window.visualViewport; document.documentElement.style.setProperty("--app-height", ((vv && vv.height) || window.innerHeight) + "px"); }

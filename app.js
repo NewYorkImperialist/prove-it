@@ -1216,6 +1216,7 @@ function startPlaying(playerName) {
   roundScores = []; cur = 0;
   // Pre-game "ready" screen: copy the link to a friend, then start (with a 3-2-1 countdown).
   show("ready");
+  $("readyLB").hidden = true; $("readyLBWrap").innerHTML = ""; // leaderboard preview is daily-only
   $("readyTitle").textContent = `Ready, ${myName}?`;
   $("readySub").textContent = roundCats.length === 1
     ? `${roundCats[0].name}. Name as many as you can before the clock runs out.`
@@ -1384,6 +1385,7 @@ function initCreate() {
 async function initDaily() {
   isDaily = true;
   show("ready");
+  $("readyLB").hidden = true; $("readyLBWrap").innerHTML = "";
   $("readyTitle").textContent = "Loading today's daily…"; $("readySub").textContent = ""; window.PI.flyIn($("ready"));
   const d = await getJSON("/daily");
   if (!d.ok) { isDaily = false; show("create"); initCreate(); $("createErr").textContent = d.error || "Daily isn't available right now."; return; }
@@ -1395,6 +1397,7 @@ async function initDaily() {
   $("readyTitle").textContent = "Daily Challenge";
   $("readySub").textContent = `${d.date} · ${roundCats.length} rounds · ${d.timer}s each · same puzzle for everyone. ${d.players} played today.`;
   $("readyShare").textContent = "Copy today's daily link";
+  $("readyLB").hidden = false; // let players peek at today's standings before playing
 }
 // Solo start: create a (DB-backed, shareable) run from a fixed list of categories, then play.
 async function startSolo(rounds, btn) {
@@ -1420,6 +1423,7 @@ $("advToggle").onclick = () => { $("advWrap").hidden = !$("advWrap").hidden; };
 $("advStartBtn").onclick = createChallenge;
 $("readyBack").onclick = () => { if (isDaily) window.PI.showHome(); else backToStart(); }; // daily → menu, solo → build screen
 $("readyStart").onclick = () => runCountdown(() => startRound(0));
+$("readyLB").onclick = () => { $("readyLB").textContent = "Refresh leaderboard"; renderLeaderboard($("readyLBWrap")); };
 $("readyShare").onclick = () => {
   const b = $("readyShare"), orig = b.textContent;
   if (!navigator.clipboard) return prompt("Copy this link:", challengeUrl());

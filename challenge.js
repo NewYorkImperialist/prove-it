@@ -184,7 +184,7 @@ async function renderLeaderboard(el) {
   const body = players.map((p, idx) => {
     const mine = p.visitor_id && p.visitor_id === VISITOR_ID;
     const cells = rounds.map((_, i) => { const v = p.scores[i] || 0; return `<td class="${v === colMax[i] && v > 0 ? "hi" : ""}">${v}</td>`; }).join("");
-    return `<tr class="${mine ? "me" : ""}"><td>${idx + 1}</td><td>${esc(p.name)}${p.crown ? " 👑" : ""}${mine ? " (you)" : ""}</td>${cells}<td class="tot">${p.total}</td></tr>`;
+    return `<tr class="${mine ? "me" : ""}"><td>${idx + 1}</td><td class="pname">${esc(p.name)}${p.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td>${cells}<td class="tot">${p.total}</td></tr>`;
   }).join("");
   // typing speed (WPM): per-round + average
   const wpmOf = (p) => Array.isArray(p.wpms) ? p.wpms : [];
@@ -195,7 +195,7 @@ async function renderLeaderboard(el) {
   const wpmBody = players.map((p) => {
     const mine = p.visitor_id && p.visitor_id === VISITOR_ID;
     const cells = rounds.map((_, i) => { const v = wpmOf(p)[i] || 0; return `<td class="${v === wpmMax[i] && v > 0 ? "hi" : ""}">${v || "—"}</td>`; }).join("");
-    return `<tr class="${mine ? "me" : ""}"><td>${esc(p.name)}${mine ? " (you)" : ""}</td>${cells}<td class="tot">${avgWpm(p)}</td></tr>`;
+    return `<tr class="${mine ? "me" : ""}"><td class="pname">${esc(p.name)}${p.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td>${cells}<td class="tot">${avgWpm(p)}</td></tr>`;
   }).join("");
   const legend = rounds.map((r, i) => `R${i + 1} ${esc(r)}`).join(" · ");
   const qWinners = rounds.map((r, i) => { const w = players.find((p) => (p.scores[i] || 0) === colMax[i] && colMax[i] > 0); return w ? `<b>R${i + 1}</b> ${esc(w.name)} (${colMax[i]})` : null; }).filter(Boolean).join(" · ");

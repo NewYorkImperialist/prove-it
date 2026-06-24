@@ -87,13 +87,24 @@
   /* between + done */
   .big { font-family:var(--ui); font-size:46px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--accent); margin:6px 0; }
   .verdict { font-size:17px; font-weight:700; margin:0 0 12px; } .win { color:var(--accent); } .lose { color:var(--bad); }
-  table.lb { border-collapse:collapse; width:100%; font-size:13px; margin-top:8px; }
-  table.lb th { text-align:right; color:var(--muted); font-family:var(--mono); font-size:11px; padding:6px 7px; border-bottom:1px solid var(--line2); }
+  table.lb { border-collapse:collapse; width:100%; font-size:14px; margin-top:8px; }
+  table.lb th { text-align:right; color:var(--muted); font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.6px; padding:7px 9px; border-bottom:1px solid var(--line2); }
   table.lb th:first-child, table.lb td:first-child { text-align:left; }
-  table.lb td { padding:6px 7px; border-bottom:1px solid var(--line); text-align:right; font-variant-numeric:tabular-nums; }
-  table.lb td.tot { font-weight:800; color:var(--text); } table.lb .hi { color:var(--accent); font-weight:800; }
+  table.lb td { padding:8px 9px; border-bottom:1px solid var(--line); text-align:right; font-family:var(--ui); font-variant-numeric:tabular-nums; font-weight:600; color:var(--muted); }
+  table.lb td.pname { text-align:left; font-family:var(--display); font-weight:600; font-size:15px; letter-spacing:-.2px; color:var(--text); }
+  table.lb td.tot { font-family:var(--ui); font-weight:800; font-size:15px; color:var(--text); }
+  table.lb .hi { color:var(--accent); font-weight:800; }
   table.lb tr.me td { background:var(--acc-dim); }
   .lb-note { font-size:13px; color:var(--muted); margin:12px 0 0; }
+  /* creator crown — amber flair tile with a "Creator" hover tooltip (matches multiplayer) */
+  .crown { position:relative; display:inline-flex; align-items:center; justify-content:center; width:21px; height:21px;
+    margin-left:7px; vertical-align:middle; border-radius:6px; font-size:12px; line-height:1; cursor:default;
+    background:linear-gradient(150deg,#4a3617 0%,#352712 50%,#221809 100%); border:1px solid rgba(245,166,35,.6);
+    box-shadow:0 1px 2px rgba(0,0,0,.5), inset 0 1px 0 rgba(255,255,255,.12), 0 0 7px rgba(245,166,35,.3); }
+  .crown::after { content:"Creator"; position:absolute; bottom:calc(100% + 7px); left:50%; transform:translateX(-50%);
+    background:#0c0d10; color:#fff; padding:3px 8px; border-radius:6px; font-size:11px; font-weight:700; letter-spacing:.3px;
+    white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .12s; z-index:60; border:1px solid var(--line2); }
+  .crown:hover::after { opacity:1; }
 
   footer { padding:12px 18px; border-top:1px solid var(--line); display:flex; gap:14px; justify-content:center; font-size:13px; }
   footer a { color:var(--muted); text-decoration:none; font-weight:600; } footer a:hover { color:var(--accent); }

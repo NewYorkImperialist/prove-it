@@ -1285,7 +1285,9 @@ async function finish() {
   if (isDaily) {
     // Retro arcade: show the score + streak, then let the player opt in to the leaderboard with their own name.
     const streak = bumpDailyStreak(dailyDate);
+    try { localStorage.setItem("daily_score", String(total)); } catch (e) {} // remembered for the share/laurel later today
     updateDailyBtn(); // mark the menu button "played" for the rest of today
+    $("shareBtn").textContent = "Copy invite + my score";
     $("doneVerdict").innerHTML = "Daily complete!"; $("doneVerdict").className = "verdict win";
     $("doneSub").textContent = `You named ${total} today across ${roundCats.length} rounds at ${avgWpm} wpm avg.${streak > 1 ? ` 🔥 ${streak}-day streak!` : ""}`;
     $("dailyEntry").hidden = false;
@@ -1299,6 +1301,7 @@ async function finish() {
     $("doneVerdict").innerHTML = "Your run is in!"; $("doneVerdict").className = "verdict win";
     $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`;
     $("newChallenge").textContent = "New challenge";
+    $("shareBtn").textContent = "Copy challenge link";
     await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned() });
     renderLeaderboard($("lbWrap"));
   }
@@ -1414,7 +1417,23 @@ function updateDailyBtn() {
   b.classList.toggle("daily-done", played);   // quiet + "you played" tooltip once finished
   b.onclick = played ? openDailyLeaderboard : () => window.PI.showDaily(); // played → leaderboard only, no replay
 }
-function openDailyLeaderboard() { $("lbModal").classList.remove("hidden"); showLbTab("today"); }
+// ---- share your daily score (copies an invite + the daily link; no native share sheet) ----
+function dailyLinkUrl() { const id = (isDaily && challengeId) ? challengeId : ("d-" + todayEastern().replace(/-/g, "")); return `${location.origin}/challenge.html?id=${id}`; }
+function dailyInvite(score) {
+  const s = (score != null && score !== "" && !isNaN(Number(score))) ? `I named ${score} on today's Prove It! daily challenge. ` : "";
+  return `${s}Think you can beat me? Play today's daily: ${dailyLinkUrl()}`;
+}
+function storedDailyScore() { try { return localStorage.getItem("daily_score"); } catch (e) { return null; } }
+async function copyText(text, btn, label) {
+  const orig = btn.textContent, done = () => { btn.textContent = label || "Copied!"; setTimeout(() => { btn.textContent = orig; }, 2200); };
+  try { if (navigator.clipboard) { await navigator.clipboard.writeText(text); return done(); } } catch (e) {}
+  try { const ta = document.createElement("textarea"); ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); done(); } catch (e) {}
+}
+function openDailyLeaderboard() {
+  $("lbModal").classList.remove("hidden");
+  $("lbShare").hidden = !playedDailyToday(); // share only shows once you've played today
+  showLbTab("today");
+}
 function closeLbModal() { $("lbModal").classList.add("hidden"); }
 function showLbTab(which) {
   $("tabToday").classList.toggle("on", which === "today");
@@ -1446,6 +1465,7 @@ $("lbModalClose").onclick = closeLbModal;
 $("lbModal").onclick = (e) => { if (e.target === $("lbModal")) closeLbModal(); };
 $("tabToday").onclick = () => showLbTab("today");
 $("tabAll").onclick = () => showLbTab("alltime");
+$("lbShare").onclick = (e) => copyText(dailyInvite(storedDailyScore()), e.currentTarget, "Copied — send it to a friend!");
 // Solo start: create a (DB-backed, shareable) run from a fixed list of categories, then play.
 async function startSolo(rounds, btn) {
   $("createErr").textContent = "";
@@ -1477,12 +1497,11 @@ $("readyShare").onclick = () => {
   navigator.clipboard.writeText(challengeUrl()).then(() => { b.textContent = "Link copied!"; setTimeout(() => { b.textContent = orig; }, 2000); }).catch(() => {});
 };
 function challengeUrl() { return `${location.origin}/challenge.html?id=${challengeId}`; }
-$("shareBtn").onclick = () => {
+$("shareBtn").onclick = (e) => {
+  if (isDaily) return copyText(dailyInvite(storedDailyScore()), e.currentTarget, "Copied — send it to a friend!"); // daily → invite + score
   const url = challengeUrl();
   $("shareUrl").value = url; $("shareUrl").focus(); $("shareUrl").select();
-  const ok = () => { $("shareBtn").textContent = "Copied! Paste it to a friend"; setTimeout(() => { $("shareBtn").textContent = "Copy challenge link"; }, 2500); };
-  if (navigator.clipboard) navigator.clipboard.writeText(url).then(ok).catch(() => { try { document.execCommand("copy"); ok(); } catch (e) {} });
-  else { try { document.execCommand("copy"); ok(); } catch (e) {} }
+  copyText(url, e.currentTarget, "Copied! Paste it to a friend");
 };
 $("refreshLB").onclick = () => renderLeaderboard($("lbWrap"));
 $("newChallenge").onclick = () => { if (isDaily) window.PI.showHome(); else backToStart(); };

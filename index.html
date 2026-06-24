@@ -87,6 +87,15 @@
   .credit a { color:var(--accent); text-decoration:none; font-weight:600; }
   .credit a:hover { text-decoration:underline; }
   .hidden { display:none !important; }
+  /* view transitions: cards fly/fade in when shown, and fly away when left */
+  @keyframes vEnter { from { opacity:0; transform:translateY(16px) scale(.985); } to { opacity:1; transform:none; } }
+  @keyframes vLeave { from { opacity:1; transform:none; } to { opacity:0; transform:translateY(-14px) scale(.97); } }
+  .v-enter { animation:vEnter .30s cubic-bezier(.2,.7,.3,1) both; }
+  .v-leave { animation:vLeave .2s ease both; }
+  @media (prefers-reduced-motion:reduce) { .v-enter, .v-leave { animation:none; } }
+  .backbtn { display:inline-flex; align-items:center; gap:6px; background:none; border:none; color:var(--muted);
+    font-family:var(--ui); font-size:13px; font-weight:700; padding:0; margin:0 0 14px; cursor:pointer; }
+  .backbtn:hover { color:var(--accent); }
   .conn { position:fixed; bottom:10px; left:14px; font-size:11px; color:var(--muted); z-index:30; }
   #confirmOverlay { position:fixed; inset:0; z-index:40; display:grid; place-items:center; background:rgba(8,10,15,.7); backdrop-filter:blur(3px); }
   #confirmOverlay.hidden { display:none !important; }
@@ -364,6 +373,8 @@
   #soloApp .crown:hover::after { opacity:1; }
   #soloApp footer { padding:12px 18px; border-top:1px solid var(--line); display:flex; gap:14px; justify-content:center; font-size:13px; }
   #soloApp footer a { color:var(--muted); text-decoration:none; font-weight:600; cursor:pointer; } #soloApp footer a:hover { color:var(--accent); }
+  #soloApp .solo-back { background:none; border:1px solid var(--line2); color:var(--muted); border-radius:9px; padding:8px 16px; font-size:13px; font-weight:700; }
+  #soloApp .solo-back:hover { border-color:var(--accent); color:var(--accent); }
   #soloApp [hidden] { display:none !important; }
   #countdown { position:fixed; inset:0; display:grid; place-items:center; background:rgba(12,10,7,.72); z-index:200; }
   #cdNum { font-family:var(--display); font-weight:700; font-size:170px; line-height:1; color:var(--accent); }
@@ -387,23 +398,26 @@
     <p class="sub" style="margin:0 0 24px">Think you've got what it takes to name it all in time? Prove it!</p>
 
     <button class="primary" id="soloBtn" style="margin-top:0">Play Solo</button>
-    <button class="secondary" id="mpToggle" style="width:100%;margin-top:10px;padding:13px">Live Multiplayer ▾</button>
-
-    <div id="mpSection" class="hidden">
-      <div class="divider">play with friends</div>
-      <label for="name">Your name</label>
-      <input id="name" maxlength="20" placeholder="e.g. Jayden" autocomplete="off">
-      <button class="primary" id="createBtn">Create a room</button>
-      <div class="divider">or join a room</div>
-      <label for="joinCode">Room code</label>
-      <div class="row">
-        <input id="joinCode" maxlength="4" placeholder="ABCD" autocomplete="off">
-        <button class="secondary" id="joinBtn">Join</button>
-      </div>
-      <button class="ghost" id="spectateBtn" style="width:100%;margin-top:8px;">Spectate this room</button>
-    </div>
-    <div class="err" id="homeErr"></div>
+    <button class="secondary" id="mpBtn" style="width:100%;margin-top:10px;padding:13px">Live Multiplayer</button>
     <p class="credit">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></p>
+  </div>
+
+  <!-- Multiplayer setup (its own card, like solo) -->
+  <div class="card hidden" id="mpsetup">
+    <button class="backbtn" id="mpBack">← Back</button>
+    <h1 style="margin:2px 0 4px">Live Multiplayer</h1>
+    <p class="sub">Play head-to-head with a friend in real time.</p>
+    <label for="name">Your name</label>
+    <input id="name" maxlength="20" placeholder="e.g. Jayden" autocomplete="off">
+    <button class="primary" id="createBtn">Create a room</button>
+    <div class="divider">or join a room</div>
+    <label for="joinCode">Room code</label>
+    <div class="row">
+      <input id="joinCode" maxlength="4" placeholder="ABCD" autocomplete="off">
+      <button class="secondary" id="joinBtn">Join</button>
+    </div>
+    <button class="ghost" id="spectateBtn" style="width:100%;margin-top:8px;">Spectate this room</button>
+    <div class="err" id="homeErr"></div>
   </div>
 
   <!-- Waiting room -->
@@ -617,8 +631,7 @@
   <div id="countdown" hidden><span id="cdNum"></span></div>
 
   <footer>
-      <a id="soloHome">← Home</a>
-      <a id="soloMP">Live Multiplayer</a>
+      <button class="solo-back" id="soloBack">← Back to menu</button>
     </footer>
 
 </div>

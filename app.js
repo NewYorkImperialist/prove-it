@@ -5,16 +5,37 @@
 // against the solo overlay (#soloApp).
 window.PI = (function () {
   const byId = (id) => document.getElementById(id);
+  const MP_VIEWS = ["home", "mpsetup", "room", "game"];
+  // Fly/fade an element out, then run cb (instant if it's already hidden).
+  function flyAway(el, cb) {
+    if (!el || el.classList.contains("hidden")) { if (cb) cb(); return; }
+    el.classList.remove("v-leave"); void el.offsetWidth; el.classList.add("v-leave");
+    setTimeout(() => { el.classList.remove("v-leave"); if (cb) cb(); }, 210);
+  }
+  // Reveal an element with a fly/fade in.
+  function flyIn(el) {
+    if (!el) return;
+    el.classList.remove("hidden");
+    el.classList.remove("v-enter"); void el.offsetWidth; el.classList.add("v-enter");
+  }
+  const currentMp = () => MP_VIEWS.map(byId).find((el) => el && !el.classList.contains("hidden"));
   function revealSolo() {
-    ["home", "room", "game"].forEach((id) => byId(id) && byId(id).classList.add("hidden"));
+    MP_VIEWS.forEach((id) => byId(id) && byId(id).classList.add("hidden"));
     const o = byId("online"); if (o) o.classList.add("hidden");
     const c = byId("conn"); if (c) c.style.display = "none";
-    byId("soloApp").classList.remove("hidden");
+    flyIn(byId("soloApp"));
   }
   return {
-    showSolo() { revealSolo(); if (window.__soloCreate) window.__soloCreate(); },      // Play Solo → fresh build screen
-    showSoloJoin() { revealSolo(); if (window.__soloJoin) window.__soloJoin(); },        // ?id= deep link → join screen
-    showHome() { byId("soloApp").classList.add("hidden"); if (window.__mpHome) window.__mpHome(); },
+    flyAway, flyIn,
+    // Play Solo → fly the menu away, then reveal the fresh solo build screen.
+    showSolo() { flyAway(currentMp(), () => { revealSolo(); if (window.__soloCreate) window.__soloCreate(); }); },
+    // ?id= deep link → straight into the solo join screen.
+    showSoloJoin() { flyAway(currentMp(), () => { revealSolo(); if (window.__soloJoin) window.__soloJoin(); }); },
+    // Back from solo → fly the overlay away, then the multiplayer home flies in.
+    showHome() {
+      const solo = byId("soloApp");
+      flyAway(solo, () => { solo.classList.add("hidden"); if (window.__mpHome) window.__mpHome(); });
+    },
   };
 })();
 
@@ -268,9 +289,10 @@ function updateOnline() {
 
 // ---------- screens ----------
 function show(which) {
-  for (const id of ["home", "room", "game"]) $(id).classList.toggle("hidden", id !== which);
+  for (const id of ["home", "mpsetup", "room", "game"]) $(id).classList.toggle("hidden", id !== which);
   $("conn").style.display = which === "game" ? "none" : ""; // sidebar shows it during the game
   if (which !== "game") { $("mpCatMenu").style.display = "none"; $("mpSettingsMenu").style.display = "none"; }
+  if (which !== "game") window.PI.flyIn($(which)); // cards fly/fade in (the full-screen game just cuts in)
   updateOnline();
 }
 // Router hook: the solo module / footer calls this to return to the multiplayer home.
@@ -305,13 +327,14 @@ $("spectateBtn").onclick = () => {
   });
 };
 $("soloBtn").onclick = () => window.PI.showSolo();
-$("mpToggle").onclick = () => {
-  const hidden = $("mpSection").classList.toggle("hidden");
-  $("mpToggle").textContent = hidden ? "Live Multiplayer ▾" : "Live Multiplayer ▴";
-  if (!hidden) $("name").focus();
+// Live Multiplayer is its own card now (same full-card swap as solo, not an inline dropdown).
+$("mpBtn").onclick = () => {
+  $("homeErr").textContent = "";
+  window.PI.flyAway($("home"), () => { show("mpsetup"); $("name").focus(); });
 };
-// An invite link (?room=CODE) lands straight on the multiplayer section.
-if (inviteCode) { $("mpSection").classList.remove("hidden"); $("mpToggle").textContent = "Live Multiplayer ▴"; }
+$("mpBack").onclick = () => window.PI.flyAway($("mpsetup"), () => show("home"));
+// An invite link (?room=CODE) lands straight on the multiplayer setup card.
+if (inviteCode) show("mpsetup");
 $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("createBtn").click(); });
 $("name").addEventListener("change", () => rememberName(nameValue()));
 $("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("joinBtn").click(); });
@@ -1375,9 +1398,8 @@ function backToStart() {
 }
 $("chHome").onclick = () => window.PI.showHome(); // logo → main menu
 $("chNew").onclick = backToStart;                 // New → fresh solo build screen
-// Footer: hop back to the multiplayer home (single-page, no reload)
-$("soloHome").onclick = (e) => { e.preventDefault(); window.PI.showHome(); };
-$("soloMP").onclick = (e) => { e.preventDefault(); window.PI.showHome(); const s = document.getElementById("mpSection"); if (s) s.classList.remove("hidden"); };
+// Footer: a single Back button returns to the main menu (single-page, no reload)
+$("soloBack").onclick = () => window.PI.showHome();
 
 // ---- boot hooks (the router calls these; ?id= deep-links jump straight to join) ----
 window.__soloCreate = initCreate;

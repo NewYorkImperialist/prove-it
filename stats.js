@@ -50,7 +50,8 @@ async function init() {
       ["sessions", "singleplayer INTEGER DEFAULT 0"],
       ["games", "gid TEXT"], ["rounds", "gid TEXT"], ["answers", "gid TEXT"], ["answers", "player TEXT"], ["events", "gid TEXT"],
       ["sessions", "ip TEXT"], ["sessions", "visitor_id TEXT"], ["sessions", "tz TEXT"], ["sessions", "locale TEXT"], ["sessions", "geo TEXT"],
-      ["challenges", "timer INTEGER DEFAULT 45"], ["challenge_results", "wpms TEXT"], ["challenge_results", "crown INTEGER DEFAULT 0"]]) {
+      ["challenges", "timer INTEGER DEFAULT 45"], ["challenge_results", "wpms TEXT"], ["challenge_results", "crown INTEGER DEFAULT 0"],
+      ["challenge_results", "gid TEXT"], ["answers", "verdict TEXT"]]) { // gid links a solo/daily run to its guesses; verdict = ok/miss/dup
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
     console.log("📊 stats: connected to Turso ✓");
@@ -302,14 +303,35 @@ async function getChallenge(id) {
 async function addChallengeResult(x) {
   if (!client) return false;
   try {
-    await client.execute({ sql: `INSERT INTO challenge_results (challenge_id,name,visitor_id,scores,total,at,wpms,crown) VALUES (?,?,?,?,?,?,?,?)`,
-      args: [x.challenge_id, x.name || "Anon", x.visitor_id || null, JSON.stringify(x.scores || []), x.total || 0, Date.now(), JSON.stringify(x.wpms || []), x.crown ? 1 : 0] });
+    await client.execute({ sql: `INSERT INTO challenge_results (challenge_id,name,visitor_id,scores,total,at,wpms,crown,gid) VALUES (?,?,?,?,?,?,?,?,?)`,
+      args: [x.challenge_id, x.name || "Anon", x.visitor_id || null, JSON.stringify(x.scores || []), x.total || 0, Date.now(), JSON.stringify(x.wpms || []), x.crown ? 1 : 0, x.gid || null] });
     return true;
   } catch (e) { console.error("📊 challenge result:", e.message); return false; }
+}
+// Store the exact guesses from one round of a solo/daily run (every Enter press: ok / miss / dup).
+function recordSoloGuesses(d) {
+  if (!client) return;
+  for (const g of (d.guesses || [])) {
+    fire(`INSERT INTO answers (game_code,category,grp,display,off_list,at,mode,gid,player,verdict) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [d.challengeId || null, d.category || null, null, String(g.display || "").slice(0, 80), 0, Number(g.at) || Date.now(), d.mode || "solo", d.gid || null, d.name || null, g.verdict || null]);
+  }
+}
+// Recent solo/daily runs (one row per finished run) with its challenge meta + gid for drill-in.
+async function soloRunsList(limit = 120) {
+  return q(`SELECT cr.id, cr.gid, cr.challenge_id, cr.name, cr.visitor_id, cr.scores, cr.total, cr.at, c.type, c.genre, c.rounds
+            FROM challenge_results cr LEFT JOIN challenges c ON c.id = cr.challenge_id
+            ORDER BY cr.id DESC LIMIT ?`, [limit]);
+}
+// Everything for one solo/daily run (by gid): the result row, its challenge, and every guess in order.
+async function soloRunDetail(gid) {
+  if (!gid) return null;
+  const result = await one(`SELECT cr.*, c.type, c.genre, c.rounds, c.timer FROM challenge_results cr LEFT JOIN challenges c ON c.id = cr.challenge_id WHERE cr.gid=? ORDER BY cr.id DESC LIMIT 1`, [gid]);
+  const answers = await q(`SELECT category, display, verdict, at FROM answers WHERE gid=? ORDER BY at ASC, id ASC`, [gid]);
+  return { result, answers };
 }
 async function getChallengeResults(id) {
   const rows = await q(`SELECT name, visitor_id, scores, total, at, wpms, crown FROM challenge_results WHERE challenge_id=? ORDER BY total DESC, at ASC`, [id]);
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail };

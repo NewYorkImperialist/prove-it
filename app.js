@@ -1145,6 +1145,8 @@ let roundCats = [], roundScores = [], cur = 0;
 let mode = "genre", numRounds = 5;
 let named = new Set(), count = 0, tid = null, timeLeft = 0;
 let rChars = 0, rT0 = 0, roundWpm = []; // live typing-speed tracking (chars since first keystroke)
+let runGid = "", roundGuesses = []; // per-run id + buffered exact guesses for the admin guess-log
+function genGid() { return "s-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function liveWpm() { return rT0 ? Math.round((rChars / 5) / Math.max(1 / 60, (Date.now() - rT0) / 60000)) : 0; }
 function showWpm() { $("wpm").textContent = rT0 ? liveWpm() + " wpm" : ""; }
 
@@ -1239,6 +1241,8 @@ function runCountdown(done) {
 }
 function startRound(i) {
   cur = i; named = new Set(); count = 0; rChars = 0; rT0 = 0;
+  if (i === 0) runGid = genGid(); // one id per run, threads all rounds' guesses together
+  roundGuesses = [];
   show("sprint"); $("wpm").textContent = "";
   const cat = roundCats[i];
   const pips = $("roundpips"); pips.innerHTML = "";
@@ -1255,15 +1259,18 @@ function submit(q) {
   rChars += q.length; if (!rT0) rT0 = Date.now(); showWpm(); // typing-speed accounting (all submissions count)
   const cat = roundCats[cur];
   const m = cat.entries.find((e) => e.aliases.includes(norm(q)));
-  if (!m) { flash("✗ not on the list"); return; }
-  if (named.has(m.id)) { flash("already got that one"); return; }
+  if (!m) { roundGuesses.push({ display: q, verdict: "miss", at: Date.now() }); flash("✗ not on the list"); return; }
+  if (named.has(m.id)) { roundGuesses.push({ display: m.display, verdict: "dup", at: Date.now() }); flash("already got that one"); return; }
   named.add(m.id); count++; $("count").textContent = count; $("cmsg").textContent = "";
+  roundGuesses.push({ display: m.display, verdict: "ok", at: Date.now() });
   const sp = document.createElement("span"); sp.textContent = m.display; $("chips").prepend(sp);
 }
 function flash(msg) { $("cmsg").textContent = msg; const i = $("cinput"); i.classList.remove("shake"); void i.offsetWidth; i.classList.add("shake"); }
 function endRound() {
   clearInterval(tid); $("cinput").disabled = true;
   roundScores[cur] = count; roundWpm[cur] = liveWpm();
+  // fire-and-forget the exact guesses for this round to the admin guess-log
+  if (roundGuesses.length && challengeId) postJSON(`/challenge/${challengeId}/guesses`, { gid: runGid, round: cur, category: (roundCats[cur] || {}).name, name: myName, guesses: roundGuesses });
   const last = cur + 1 >= roundCats.length;
   show("between");
   $("betweenLabel").textContent = `Round ${cur + 1} of ${roundCats.length} done`;
@@ -1302,7 +1309,7 @@ async function finish() {
     $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`;
     $("newChallenge").textContent = "New challenge";
     $("shareBtn").textContent = "Copy challenge link";
-    await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned() });
+    await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid: runGid });
     renderLeaderboard($("lbWrap"));
   }
 }
@@ -1511,7 +1518,7 @@ $("dailySubmit").onclick = async () => {
   if (!n) { $("dailyName").focus(); return; }
   rememberName(n);
   $("dailySubmit").disabled = true; $("dailySubmit").textContent = "Submitting…";
-  await postJSON(`/challenge/${challengeId}/result`, { name: n, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned() });
+  await postJSON(`/challenge/${challengeId}/result`, { name: n, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid: runGid });
   $("dailySubmit").disabled = false; $("dailySubmit").textContent = "Update my entry";
   renderLeaderboard($("lbWrap"));
 };

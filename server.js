@@ -294,6 +294,7 @@ app.get("/admin", async (req, res) => {
     <p style="margin:0 0 16px"><a href="/admin/chat?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">💬 All chat → every message across the whole server (searchable)</a></p>
     <p style="margin:0 0 16px"><a href="/admin/leaderboards?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🏆 Leaderboards → moderate entries: remove junk/abusive names from any board</a></p>
     <p style="margin:0 0 16px"><a href="/admin/category-leaderboards?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🥇 Category leaderboards (admin-only) → per-category top solo scores, watching before public</a></p>
+    <p style="margin:0 0 16px"><a href="/admin/runs?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🏃 Solo & daily runs → drill into any run: every exact guess (hits, misses, repeats)</a></p>
     <p style="margin:0 0 16px"><a href="/admin/sessions?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🕒 Recent sessions → every visit in full: arrival, stay, device, location/IP, timezone</a></p>
     <p style="margin:0 0 16px"><a href="/admin/visitors?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🧭 Visitors → repeat visitors, IP, location & timezone</a></p>
     <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
@@ -564,6 +565,83 @@ app.get("/admin/category-leaderboards", async (req, res) => {
     </body>`);
 });
 
+// Solo + daily run history — list of individual runs, each drillable to the exact guesses.
+function runLabel(r) {
+  if (String(r.challenge_id || "").startsWith("d-")) return `daily ${String(r.challenge_id).replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")}`;
+  let rounds = []; try { rounds = JSON.parse(r.rounds || "[]"); } catch (e) {}
+  if (rounds.length === 1) return esc(rounds[0]);
+  if (r.type === "genre" && r.genre) return `${esc(r.genre)} · ${rounds.length}r`;
+  return `${rounds.length} rounds`;
+}
+app.get("/admin/runs", async (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const k = encodeURIComponent(req.query.key || "");
+  const num = (x) => Number(x || 0);
+  const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
+    a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
+    table{border-collapse:collapse;font-size:13px;width:100%} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:6px 9px;position:sticky;top:0;background:#0e1016} td{padding:6px 9px;border-bottom:1px solid #1c2029;vertical-align:top}
+    tr:hover td{background:#141823} .dim{color:#8a92a6} .tot{font-weight:800;color:#ffd34d} .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;background:#1c2230;color:#c6ccda}</style>`;
+  const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
+  if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Solo & daily runs</h1><p class="sub">Persistence not configured.</p></body>`);
+  const list = await analytics.soloRunsList(150).catch(() => []);
+  const rows = list.map((r) => {
+    const isDaily = String(r.challenge_id || "").startsWith("d-");
+    return `<tr>
+      <td class="dim">${easternTime(num(r.at))}</td>
+      <td><span class="tag">${isDaily ? "daily" : (r.type || "solo")}</span> ${runLabel(r)}</td>
+      <td><b>${esc(r.name || "?")}</b><br><span class="dim" style="font-size:11px">${esc(String(r.visitor_id || "").slice(0, 12))}</span></td>
+      <td class="tot">${num(r.total)}</td>
+      <td>${r.gid ? `<a href="/admin/run?key=${k}&gid=${encodeURIComponent(r.gid)}">see guesses →</a>` : `<span class="dim">—</span>`}</td>
+    </tr>`;
+  }).join("");
+  res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    <h1>🏃 Solo & daily runs</h1>
+    <p class="sub">Each individual run, newest first. Click "see guesses" to replay every word someone typed (runs played after this shipped have a guess log).</p>
+    <table><tr><th>When (ET)</th><th>Puzzle</th><th>Player</th><th>Score</th><th></th></tr>${rows || `<tr><td class="dim" colspan="5">No runs recorded yet.</td></tr>`}</table>
+    </body>`);
+});
+app.get("/admin/run", async (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const k = encodeURIComponent(req.query.key || "");
+  const num = (x) => Number(x || 0);
+  const clock = (ts) => { try { return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(ts)); } catch (e) { return ""; } };
+  const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
+    a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
+    .meta{background:#141823;border:1px solid #262b38;border-radius:10px;padding:12px 14px;max-width:760px;margin:0 0 18px;font-size:13px} .meta b{color:#fff}
+    table{border-collapse:collapse;font-size:13px;width:100%;max-width:760px} td{padding:5px 9px;border-bottom:1px solid #1c2029;vertical-align:top}
+    td.t{color:#8a92a6;white-space:nowrap;font-variant-numeric:tabular-nums;width:1%} .dim{color:#8a92a6} tr.cat td{background:#16203a;font-weight:700} .ok{color:#3ecf8e} .miss{color:#e5484d} .dup{color:#ffb454}</style>`;
+  const back = `<a href="/admin/runs?key=${k}">← back to runs</a>`;
+  if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Run</h1><p class="sub">Persistence not configured.</p></body>`);
+  const d = await analytics.soloRunDetail(String(req.query.gid || "")).catch(() => null);
+  if (!d || !d.result) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Run not found</h1><p class="sub">No run with that id (only runs played after this feature shipped have a guess log).</p></body>`);
+  const r = d.result;
+  let scores = []; try { scores = JSON.parse(r.scores || "[]"); } catch (e) {}
+  const isDaily = String(r.challenge_id || "").startsWith("d-");
+  const items = [];
+  let lastCat = null;
+  d.answers.forEach((a) => {
+    if (a.category !== lastCat) { items.push({ at: num(a.at), cat: true, html: `🗂 <b>${esc(a.category || "?")}</b>` }); lastCat = a.category; }
+    const mark = a.verdict === "ok" ? `<span class="ok">✓</span>` : a.verdict === "dup" ? `<span class="dup">⟳ dup</span>` : `<span class="miss">✗</span>`;
+    items.push({ at: num(a.at), html: `${mark} ${esc(a.display || "")}` });
+  });
+  const tl = d.answers.length
+    ? items.map((it) => `<tr class="${it.cat ? "cat" : ""}"><td class="t">${it.cat ? "" : clock(it.at)}</td><td>${it.html}</td></tr>`).join("")
+    : `<tr><td colspan="2" class="dim">No guesses were logged for this run.</td></tr>`;
+  const okN = d.answers.filter((a) => a.verdict === "ok").length;
+  const missN = d.answers.filter((a) => a.verdict === "miss").length;
+  const dupN = d.answers.filter((a) => a.verdict === "dup").length;
+  res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    <h1>${esc(r.name || "?")} — ${num(r.total)} named</h1>
+    <p class="sub">${isDaily ? "daily" : (r.type || "solo")} · ${easternFull(num(r.at))}</p>
+    <div class="meta">
+      <div>🎯 Total <b>${num(r.total)}</b> · per round: <b>${esc(scores.join(", ") || "—")}</b></div>
+      <div>⌨️ Guesses logged: <b>${d.answers.length}</b> · <span class="ok">${okN} hit</span> · <span class="miss">${missN} missed</span> · <span class="dup">${dupN} repeat</span></div>
+      <div class="dim">visitor ${esc(String(r.visitor_id || "—").slice(0, 16))} · gid ${esc(String(req.query.gid || ""))}</div>
+    </div>
+    <table>${tl}</table>
+    </body>`);
+});
+
 app.get("/admin/close", (req, res) => {
   if (!ownerOk(req)) return res.status(404).send("Not found");
   const code = String(req.query.code || "").toUpperCase().trim();
@@ -647,7 +725,25 @@ app.post("/challenge/:id/result", async (req, res) => {
   const wpms = (Array.isArray(b.wpms) ? b.wpms : []).map((n) => Math.max(0, Math.min(9999, parseInt(n, 10) || 0))).slice(0, c.rounds.length);
   const total = scores.reduce((a, n) => a + n, 0);
   const crown = !!(process.env.OWNER_KEY && b.ownerKey === process.env.OWNER_KEY); // creator crown (server-validated)
-  await analytics.addChallengeResult({ challenge_id: id, name: String(b.name || "Anon").slice(0, 24), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, crown });
+  const gid = String(b.gid || "").slice(0, 40); // links this run to its captured guesses
+  await analytics.addChallengeResult({ challenge_id: id, name: String(b.name || "Anon").slice(0, 24), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, crown, gid });
+  res.json({ ok: true });
+});
+// Exact guesses for one round of a solo/daily run (every Enter press: ok / miss / dup).
+app.post("/challenge/:id/guesses", async (req, res) => {
+  if (!analytics.enabled()) return res.json({ ok: false });
+  const id = String(req.params.id).slice(0, 12);
+  const c = await analytics.getChallenge(id).catch(() => null);
+  if (!c) return res.json({ ok: false });
+  const b = req.body || {};
+  const gid = String(b.gid || "").slice(0, 40);
+  if (!gid) return res.json({ ok: false });
+  const guesses = (Array.isArray(b.guesses) ? b.guesses : []).slice(0, 200).map((g) => ({
+    display: String(g.display || "").slice(0, 80),
+    verdict: ["ok", "miss", "dup"].includes(g.verdict) ? g.verdict : null,
+    at: Math.max(0, parseInt(g.at, 10) || Date.now()),
+  }));
+  analytics.recordSoloGuesses({ gid, challengeId: id, category: String(b.category || "").slice(0, 80), name: String(b.name || "").slice(0, 24), mode: id.startsWith("d-") ? "daily" : "solo", guesses });
   res.json({ ok: true });
 });
 app.get("/challenge/:id/results", async (req, res) => {

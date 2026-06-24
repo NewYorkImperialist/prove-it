@@ -538,7 +538,8 @@ app.post("/challenge/:id/result", async (req, res) => {
   const scores = (Array.isArray(b.scores) ? b.scores : []).map((n) => Math.max(0, Math.min(999, parseInt(n, 10) || 0))).slice(0, c.rounds.length);
   const wpms = (Array.isArray(b.wpms) ? b.wpms : []).map((n) => Math.max(0, Math.min(9999, parseInt(n, 10) || 0))).slice(0, c.rounds.length);
   const total = scores.reduce((a, n) => a + n, 0);
-  await analytics.addChallengeResult({ challenge_id: id, name: String(b.name || "Anon").slice(0, 24), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms });
+  const crown = !!(process.env.OWNER_KEY && b.ownerKey === process.env.OWNER_KEY); // creator crown (server-validated)
+  await analytics.addChallengeResult({ challenge_id: id, name: String(b.name || "Anon").slice(0, 24), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, crown });
   res.json({ ok: true });
 });
 app.get("/challenge/:id/results", async (req, res) => {

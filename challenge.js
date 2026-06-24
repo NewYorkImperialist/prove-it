@@ -165,7 +165,8 @@ async function finish() {
   $("doneTotal").parentElement.hidden = false;
   $("doneTotal").textContent = total;
   $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds at ${avgWpm} wpm avg. Send the link to friends — same questions, same leaderboard.`;
-  await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID });
+  let ownerKey = null; try { if (localStorage.getItem("crownOn") === "1") ownerKey = localStorage.getItem("ownerKey"); } catch (e) {}
+  await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey });
   renderLeaderboard($("lbWrap"));
 }
 async function renderLeaderboard(el) {
@@ -183,7 +184,7 @@ async function renderLeaderboard(el) {
   const body = players.map((p, idx) => {
     const mine = p.visitor_id && p.visitor_id === VISITOR_ID;
     const cells = rounds.map((_, i) => { const v = p.scores[i] || 0; return `<td class="${v === colMax[i] && v > 0 ? "hi" : ""}">${v}</td>`; }).join("");
-    return `<tr class="${mine ? "me" : ""}"><td>${idx + 1}</td><td>${esc(p.name)}${mine ? " (you)" : ""}</td>${cells}<td class="tot">${p.total}</td></tr>`;
+    return `<tr class="${mine ? "me" : ""}"><td>${idx + 1}</td><td>${esc(p.name)}${p.crown ? " 👑" : ""}${mine ? " (you)" : ""}</td>${cells}<td class="tot">${p.total}</td></tr>`;
   }).join("");
   // typing speed (WPM): per-round + average
   const wpmOf = (p) => Array.isArray(p.wpms) ? p.wpms : [];

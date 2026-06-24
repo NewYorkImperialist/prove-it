@@ -606,6 +606,7 @@ const CATEGORY_GROUPS = {
       ["[Redacted]","[redacted]","redacted"], "Classified", ["The Whole List","the whole list","everyone"], "Anonymous", ["John Doe","john doe","jane doe"],
       ["A Florida Man","a florida man","florida man"], ["Your Ex","your ex","ur ex"], ["The Person Reading This","the person reading this","you"], ["Bill from Accounting","bill from accounting","bill"],
       ["Some Guy","some guy"], ["Still Sealed","still sealed","sealed"], "Nobody", ["The Algorithm","the algorithm"], ["Area 51 Guy","area 51 guy"], ["A Random Crypto Bro","a random crypto bro","crypto bro"],
+      ["Donald Trump", "trump"]
     ]},
     { name: "Countries Jews Have Been Persecuted From", items: [
       "England", "France", "Spain", "Portugal", "Germany", "Austria", ["Russia","russia","soviet union","ussr"], "Poland", "Ukraine", "Lithuania",

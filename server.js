@@ -595,6 +595,45 @@ app.get("/challenge/:id/results", async (req, res) => {
   res.json({ ok: true, rounds: c.rounds, by: c.by_name, results: await analytics.getChallengeResults(id).catch(() => []) });
 });
 
+// ---------- Daily challenge ----------
+// One shared puzzle per (Eastern) day that everyone plays, with the same arcade leaderboard
+// as link challenges. A daily is just a challenge with a fixed, short, date-derived id.
+const DAILY_TROLL = new Set(["Things the Nyan Cat Says", "Counting Numbers", "Nobel Peace Prize Loser", "People in the Epstein Files", "Italian Brainrot", "Cities Mistaken for Australia's Capital", "Seasons of the Year", "Months of the Year"]);
+const DAILY_POOL = [];
+for (const [gname, grp] of Object.entries(CATEGORY_GROUPS)) {
+  if (grp.defaultOff) continue;
+  for (const c of grp.cats) if (!DAILY_TROLL.has(c.name) && (CAT_SIZES[c.name] || 0) >= 14) DAILY_POOL.push(c.name);
+}
+DAILY_POOL.sort(); // stable order so the seeded pick is identical across server restarts
+// Deterministic PRNG (xmur3 seed + mulberry32) so a given date always yields the same puzzle.
+function seededRng(str) {
+  let h = 1779033703 ^ str.length;
+  for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  let a = (h ^= h >>> 16) >>> 0;
+  return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+function dailyRounds(date, n = 3) {
+  const rng = seededRng("proveit-daily-" + date), pool = DAILY_POOL.slice();
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  return pool.slice(0, n);
+}
+const DAILY_TIMER = 30;
+const dailyId = (date) => "d-" + date.replace(/-/g, ""); // e.g. d-20260624 (10 chars, within the 12-char id slice)
+
+app.get("/daily", async (req, res) => {
+  if (!analytics.enabled()) return res.json({ ok: false, error: "Daily needs persistence (not configured)." });
+  const date = easternDay(Date.now());
+  const id = dailyId(date);
+  let c = await analytics.getChallenge(id).catch(() => null);
+  if (!c) { // first player of the day creates it (deterministic rounds → races are harmless)
+    await analytics.createChallenge({ id, type: "daily", genre: "", rounds: dailyRounds(date, 3), by: "Daily", timer: DAILY_TIMER }).catch(() => {});
+    c = await analytics.getChallenge(id).catch(() => null);
+  }
+  if (!c) return res.json({ ok: false, error: "Could not load today's daily." });
+  const results = await analytics.getChallengeResults(id).catch(() => []);
+  res.json({ ok: true, id, date, rounds: c.rounds, timer: c.timer || DAILY_TIMER, players: results.length });
+});
+
 // Dynamic social preview for a shared challenge link (?id=…). Crawlers (Discord/iMessage/
 // Reddit/Twitter) don't run JS, so we inject the challenger's name + score-to-beat into the
 // OG meta tags server-side. No id → fall through to the static challenge.html.

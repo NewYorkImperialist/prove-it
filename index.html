@@ -325,7 +325,7 @@
   #soloApp .btn:disabled { opacity:.5; cursor:not-allowed; }
   #soloApp .row { display:flex; gap:10px; } #soloApp .row .btn { margin-top:12px; }
   #soloApp .pickrow { display:flex; gap:10px; align-items:stretch; }
-  #soloApp .pickrow select { flex:1; min-width:0; }
+  #soloApp .pickrow select, #soloApp .pickrow input { flex:1; min-width:0; }
   #soloApp .pickrow .btn { width:auto; flex:0 0 auto; margin-top:0; padding:0 26px; }
   #soloApp .advlink { display:block; width:auto; margin:18px auto 2px; padding:6px 10px; background:none; border:none; color:var(--muted); font-family:var(--mono); font-size:12px; font-weight:600; letter-spacing:.4px; }
   #soloApp .advlink:hover { color:var(--accent); }
@@ -398,6 +398,7 @@
     <p class="sub" style="margin:0 0 24px">Think you've got what it takes to name it all in time? Prove it!</p>
 
     <button class="primary" id="soloBtn" style="margin-top:0">Play Solo</button>
+    <button class="secondary" id="dailyBtn" style="width:100%;margin-top:10px;padding:13px">Daily Challenge</button>
     <button class="secondary" id="mpBtn" style="width:100%;margin-top:10px;padding:13px">Live Multiplayer</button>
     <p class="credit">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></p>
   </div>
@@ -616,6 +617,14 @@
       <p class="verdict" id="doneVerdict"></p>
       <div class="big"><span id="doneTotal">0</span></div>
       <p class="sub" id="doneSub"></p>
+      <div id="dailyEntry" hidden>
+        <label class="fld" for="dailyName">Put your name on today's leaderboard</label>
+        <div class="pickrow">
+          <input id="dailyName" type="text" maxlength="20" placeholder="Your name">
+          <button class="btn" id="dailySubmit">Add me</button>
+        </div>
+        <p class="sub" id="dailyStreak" style="margin:8px 0 0"></p>
+      </div>
       <div id="lbWrap"></div>
       <label class="fld">Share this link · friends play the same questions &amp; join this leaderboard</label>
       <input id="shareUrl" type="text" readonly onclick="this.select()" style="font-family:var(--mono);font-size:13px">

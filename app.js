@@ -32,6 +32,8 @@ window.PI = (function () {
     showSolo() { flyAway(currentMp(), () => { revealSolo(); if (window.__soloCreate) window.__soloCreate(); flyIn(soloCard()); }); },
     // ?id= deep link → straight into the solo join screen.
     showSoloJoin() { flyAway(currentMp(), () => { revealSolo(); if (window.__soloJoin) window.__soloJoin(); flyIn(soloCard()); }); },
+    // Daily Challenge → today's shared puzzle (its ready card flies in once /daily resolves).
+    showDaily() { flyAway(currentMp(), () => { revealSolo(); if (window.__soloDaily) window.__soloDaily(); }); },
     // Back from solo → fly just the solo card away, then the multiplayer home card flies in.
     showHome() {
       flyAway(soloCard(), () => { byId("soloApp").classList.add("hidden"); if (window.__mpHome) window.__mpHome(); });
@@ -327,6 +329,7 @@ $("spectateBtn").onclick = () => {
   });
 };
 $("soloBtn").onclick = () => window.PI.showSolo();
+$("dailyBtn").onclick = () => window.PI.showDaily();
 // Live Multiplayer is its own card now (same full-card swap as solo, not an inline dropdown).
 $("mpBtn").onclick = () => {
   $("homeErr").textContent = "";
@@ -1137,6 +1140,7 @@ async function getJSON(url) { try { return await (await fetch(url)).json(); } ca
 const params = new URLSearchParams(location.search);
 let challengeId = params.get("id");
 let def = null;            // { id, rounds:[names], by, type, genre }
+let isDaily = false, dailyDate = ""; // daily-challenge mode + its Eastern date
 let roundCats = [], roundScores = [], cur = 0;
 let mode = "genre", numRounds = 5;
 let named = new Set(), count = 0, tid = null, timeLeft = 0;
@@ -1269,18 +1273,41 @@ function endRound() {
 $("nextBtn").onclick = () => { if (cur + 1 >= roundCats.length) finish(); else startRound(cur + 1); };
 
 // ============ FINISH + LEADERBOARD ============
+function ownerKeyIfCrowned() { try { return localStorage.getItem("crownOn") === "1" ? localStorage.getItem("ownerKey") : null; } catch (e) { return null; } }
 async function finish() {
   const total = roundScores.reduce((a, n) => a + n, 0);
   const avgWpm = roundWpm.length ? Math.round(roundWpm.reduce((a, n) => a + n, 0) / roundWpm.length) : 0;
   show("done");
   $("shareUrl").value = challengeUrl();
-  $("doneVerdict").innerHTML = "Your run is in!"; $("doneVerdict").className = "verdict win";
   $("doneTotal").parentElement.hidden = false;
   $("doneTotal").textContent = total;
-  $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`;
-  let ownerKey = null; try { if (localStorage.getItem("crownOn") === "1") ownerKey = localStorage.getItem("ownerKey"); } catch (e) {}
-  await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey });
-  renderLeaderboard($("lbWrap"));
+  if (isDaily) {
+    // Retro arcade: show the score + streak, then let the player opt in to the leaderboard with their own name.
+    const streak = bumpDailyStreak(dailyDate);
+    $("doneVerdict").innerHTML = "Daily complete!"; $("doneVerdict").className = "verdict win";
+    $("doneSub").textContent = `You named ${total} today across ${roundCats.length} rounds at ${avgWpm} wpm avg.${streak > 1 ? ` 🔥 ${streak}-day streak!` : ""}`;
+    $("dailyEntry").hidden = false;
+    $("dailyName").value = myName || "";
+    $("dailyStreak").textContent = streak > 1 ? `Current streak: ${streak} days. Come back tomorrow to keep it.` : "Play again tomorrow to start a streak.";
+    $("dailySubmit").disabled = false; $("dailySubmit").textContent = "Add me";
+    $("newChallenge").textContent = "Back to menu";
+    renderLeaderboard($("lbWrap")); // show today's board (you appear once you submit)
+  } else {
+    $("dailyEntry").hidden = true;
+    $("doneVerdict").innerHTML = "Your run is in!"; $("doneVerdict").className = "verdict win";
+    $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`;
+    $("newChallenge").textContent = "New challenge";
+    await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned() });
+    renderLeaderboard($("lbWrap"));
+  }
+}
+// Local-only daily streak (no accounts): +1 if you played yesterday, reset to 1 after a gap.
+function prevDate(d) { const t = new Date(d + "T12:00:00Z"); t.setUTCDate(t.getUTCDate() - 1); return t.toISOString().slice(0, 10); }
+function bumpDailyStreak(date) {
+  let last = "", streak = 0;
+  try { last = localStorage.getItem("daily_last") || ""; streak = parseInt(localStorage.getItem("daily_streak") || "0", 10) || 0; } catch (e) {}
+  if (last !== date) { streak = last === prevDate(date) ? streak + 1 : 1; try { localStorage.setItem("daily_last", date); localStorage.setItem("daily_streak", String(streak)); } catch (e) {} }
+  return streak;
 }
 async function renderLeaderboard(el) {
   el.innerHTML = `<p class="lb-note">Loading leaderboard…</p>`;
@@ -1321,6 +1348,7 @@ async function renderLeaderboard(el) {
 
 // ============ JOIN (opened a ?id= link) ============
 async function initJoin() {
+  isDaily = false;
   show("join");
   $("joinInfo").innerHTML = "Loading challenge…";
   def = null;
@@ -1347,9 +1375,26 @@ $("joinLB").onclick = async () => {
 
 function buildAllCatSelect() { $("catSel").innerHTML = catOptions().innerHTML; }
 function initCreate() {
+  isDaily = false;
   show("create");
   buildRoundsSeg(); buildTimeSeg(); buildGenreSelect(); buildAllCatSelect(); setMode("genre");
   $("byName").value = myName;
+}
+// ============ DAILY CHALLENGE ============
+async function initDaily() {
+  isDaily = true;
+  show("ready");
+  $("readyTitle").textContent = "Loading today's daily…"; $("readySub").textContent = ""; window.PI.flyIn($("ready"));
+  const d = await getJSON("/daily");
+  if (!d.ok) { isDaily = false; show("create"); initCreate(); $("createErr").textContent = d.error || "Daily isn't available right now."; return; }
+  challengeId = d.id; dailyDate = d.date;
+  def = { id: d.id, rounds: d.rounds || [], by: "Daily", type: "daily", timer: d.timer || 30 };
+  perRound = def.timer;
+  roundCats = def.rounds.map(findCat).filter(Boolean);
+  roundScores = []; cur = 0;
+  $("readyTitle").textContent = "Daily Challenge";
+  $("readySub").textContent = `${d.date} · ${roundCats.length} rounds · ${d.timer}s each · same puzzle for everyone. ${d.players} played today.`;
+  $("readyShare").textContent = "Copy today's daily link";
 }
 // Solo start: create a (DB-backed, shareable) run from a fixed list of categories, then play.
 async function startSolo(rounds, btn) {
@@ -1373,11 +1418,12 @@ $("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint
 $("chooseBtn").onclick = (e) => { if ($("catSel").value) startSolo([$("catSel").value], e.currentTarget); };
 $("advToggle").onclick = () => { $("advWrap").hidden = !$("advWrap").hidden; };
 $("advStartBtn").onclick = createChallenge;
-$("readyBack").onclick = () => backToStart(); // ready → back to the solo build screen
+$("readyBack").onclick = () => { if (isDaily) window.PI.showHome(); else backToStart(); }; // daily → menu, solo → build screen
 $("readyStart").onclick = () => runCountdown(() => startRound(0));
 $("readyShare").onclick = () => {
+  const b = $("readyShare"), orig = b.textContent;
   if (!navigator.clipboard) return prompt("Copy this link:", challengeUrl());
-  navigator.clipboard.writeText(challengeUrl()).then(() => { const b = $("readyShare"); b.textContent = "Link copied!"; setTimeout(() => { b.textContent = "Copy link to challenge a friend"; }, 2000); }).catch(() => {});
+  navigator.clipboard.writeText(challengeUrl()).then(() => { b.textContent = "Link copied!"; setTimeout(() => { b.textContent = orig; }, 2000); }).catch(() => {});
 };
 function challengeUrl() { return `${location.origin}/challenge.html?id=${challengeId}`; }
 $("shareBtn").onclick = () => {
@@ -1388,7 +1434,17 @@ $("shareBtn").onclick = () => {
   else { try { document.execCommand("copy"); ok(); } catch (e) {} }
 };
 $("refreshLB").onclick = () => renderLeaderboard($("lbWrap"));
-$("newChallenge").onclick = () => backToStart();
+$("newChallenge").onclick = () => { if (isDaily) window.PI.showHome(); else backToStart(); };
+// Daily: opt-in arcade leaderboard submit (resubmittable — the board keeps your best total, newest name).
+$("dailySubmit").onclick = async () => {
+  const n = $("dailyName").value.trim().slice(0, 20);
+  if (!n) { $("dailyName").focus(); return; }
+  rememberName(n);
+  $("dailySubmit").disabled = true; $("dailySubmit").textContent = "Submitting…";
+  await postJSON(`/challenge/${challengeId}/result`, { name: n, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned() });
+  $("dailySubmit").disabled = false; $("dailySubmit").textContent = "Update my entry";
+  renderLeaderboard($("lbWrap"));
+};
 
 // top-of-page → back to the beginning (fresh build screen), no page reload
 function backToStart() {
@@ -1403,6 +1459,7 @@ document.querySelectorAll(".js-soloback").forEach((b) => { b.onclick = () => win
 // ---- boot hooks (the router calls these; ?id= deep-links jump straight to join) ----
 window.__soloCreate = initCreate;
 window.__soloJoin = initJoin;
+window.__soloDaily = initDaily;
 
 })();
 

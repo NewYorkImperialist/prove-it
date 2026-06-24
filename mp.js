@@ -149,7 +149,7 @@ const sfx = {
 };
 function setMuted(m) {
   muted = m; localStorage.setItem("muted", m ? "1" : "0");
-  $("muteBtn").textContent = m ? "🔇" : "🔊";
+  $("muteBtn").textContent = m ? "Muted" : "Sound";
   $("muteBtn").title = m ? "Sound off" : "Sound on";
 }
 $("muteBtn").onclick = () => { setMuted(!muted); if (!muted) sfx.pop(); };
@@ -229,7 +229,7 @@ socket.on("opponentStatus", ({ connected, name }) => {
 // ---------- admin broadcast banner (e.g. pre-deploy heads-up) ----------
 socket.on("announce", ({ text }) => {
   const el = $("announce");
-  el.textContent = "📢 " + text + "   (tap to dismiss)";
+  el.textContent = text + "   (tap to dismiss)";
   el.classList.remove("hidden");
   clearTimeout(el._t); el._t = setTimeout(() => el.classList.add("hidden"), 45000);
 });
@@ -267,7 +267,7 @@ $("joinBtn").onclick = () => {
   $("homeErr").textContent = "";
   if (code.length < 4) return ($("homeErr").textContent = "Enter the 4-letter room code.");
   socket.emit("joinRoom", { code, name: nameValue(), playerId }, (res) => {
-    if (!res?.ok) return ($("homeErr").textContent = (res?.error || "Could not join room.") + " (tap 👀 Spectate to watch)");
+    if (!res?.ok) return ($("homeErr").textContent = (res?.error || "Could not join room.") + " (tap Spectate to watch)");
     myId = res.you; setRoom(res.code); rememberName(nameValue()); show("room"); applyCrown();
   });
 };
@@ -309,7 +309,7 @@ $("roomCode").onclick = () => { if (myRoom) copyText(myRoom).then(() => flashHin
 $("copyInvite").onclick = () => {
   if (!myRoom) return;
   copyText(location.origin + location.pathname + "?room=" + myRoom).then(() => {
-    const b = $("copyInvite"), orig = "🔗 Copy invite link";
+    const b = $("copyInvite"), orig = "Copy invite link";
     b.textContent = "✓ Invite link copied!";
     clearTimeout(b._t); b._t = setTimeout(() => { b.textContent = orig; }, 1500);
   });
@@ -354,12 +354,12 @@ socket.on("roomState", (room) => {
   }
   const specs = room.spectators || [];
   $("watchers").classList.toggle("hidden", specs.length === 0);
-  if (specs.length) $("watchers").textContent = `👀 ${specs.length} watching — ${specs.map((s) => s.name).join(", ")}`;
+  if (specs.length) $("watchers").textContent = `${specs.length} watching — ${specs.map((s) => s.name).join(", ")}`;
 
   const canStart = iAmHost && room.players.length >= 2;
   $("startBtn").classList.toggle("hidden", !iAmHost);
   $("startBtn").disabled = !canStart;
-  $("roomStatus").textContent = isSpectator ? "👀 You're spectating — waiting for the host to start…"
+  $("roomStatus").textContent = isSpectator ? "You're spectating — waiting for the host to start…"
     : iAmHost ? (canStart ? "" : "Waiting for a second player…") : "Waiting for the host to start…";
 
   buildLobbySettings();
@@ -448,7 +448,7 @@ socket.on("chat", ({ id, name, text, spectator }) => {
   const feed = $("feed");
   const div = document.createElement("div");
   div.className = "chat" + (id === myId ? " mine" : "");
-  const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = (spectator ? "👀 " : "") + name + ": ";
+  const nm = document.createElement("span"); nm.className = "nm"; nm.textContent = (spectator ? "" : "") + name + ": ";
   const tx = document.createElement("span"); tx.textContent = text; // textContent → no HTML injection
   div.appendChild(nm); div.appendChild(tx);
   feed.appendChild(div);
@@ -498,7 +498,7 @@ function oilRain() {
   }
 }
 socket.on("easterEgg", ({ name, phrase, fx }) => {
-  if (fx === "oil") { oilRain(); sfx.sparkle(); flashStatus(`🛢️ ${name} said "${phrase}" — oil incoming!`); return; }
+  if (fx === "oil") { oilRain(); sfx.sparkle(); flashStatus(`${name} said "${phrase}" — oil incoming!`); return; }
   confettiBurst();
   sfx.sparkle();
   if (fx === "crown") {
@@ -508,7 +508,7 @@ socket.on("easterEgg", ({ name, phrase, fx }) => {
   } else {
     const el = $("mpLogo"); el.classList.remove("party"); void el.offsetWidth; el.classList.add("party"); // "Prove It!" → the logo
   }
-  flashStatus(`🎯 ${name} said "${phrase || "the magic words"}" — +5 bonus points!`);
+  flashStatus(`${name} said "${phrase || "the magic words"}" — +5 bonus points!`);
 });
 $("mpLogo").addEventListener("animationend", () => $("mpLogo").classList.remove("party"));
 
@@ -552,9 +552,9 @@ function render() {
   const opp = gs.players.find((p) => p.id !== myId) || gs.players[1];
   const nameOf = (id) => (gs.players.find((p) => p.id === id) || {}).name || "?";
 
-  $("gRoom").textContent = (myRoom ? "Room " + myRoom : "") + (gs.spectators ? "  ·  👀 " + gs.spectators : "");
+  $("gRoom").textContent = (myRoom ? "Room " + myRoom : "") + (gs.spectators ? "  ·  " + gs.spectators + " watching" : "");
   $("specBadge").classList.toggle("hidden", !isSpectator);
-  if (isSpectator) $("specBadge").textContent = isGhost ? "👻 Ghost" : "👀 Spectating";
+  if (isSpectator) $("specBadge").textContent = isGhost ? "Ghost" : "Spectating";
 
   // sidebar players (you first), with turn highlight
   const sidePlayers = $("sidePlayers");
@@ -596,14 +596,14 @@ function render() {
   prevActKey = actKey;
 
   if (gs.phase === "opening") {
-    if (myTurn) { enable = true; placeholder = "👉 Your turn — type a number to open!"; statusText = "👉 You're opening — how many can you name?"; }
+    if (myTurn) { enable = true; placeholder = "Your turn — type a number to open!"; statusText = "You're opening — how many can you name?"; }
     else statusText = `Waiting for ${nameOf(gs.turnId)} to open…`;
   } else if (gs.phase === "bidding") {
     if (myTurn) {
       placeholder = `Raise higher than ${gs.claim}, or…`;
       enable = true;
-      addBtn(actions, `⬆️ Raise to ${gs.claim + 1}`, "raise", () => socket.emit("raise", {}, ackErr));
-      addBtn(actions, "🗣️ Prove It!", "danger", () => socket.emit("proveIt", {}, ackErr));
+      addBtn(actions, `Raise to ${gs.claim + 1}`, "raise", () => socket.emit("raise", {}, ackErr));
+      addBtn(actions, "Prove It!", "danger", () => socket.emit("proveIt", {}, ackErr));
     } else statusText = `${nameOf(gs.turnId)} is deciding — raise or call Prove It!`;
   } else if (gs.phase === "proving") {
     // (proving handled below)
@@ -611,44 +611,44 @@ function render() {
 
   // Either player can propose skipping the category before the duel starts.
   if (gs.phase === "opening" || gs.phase === "bidding") {
-    addBtn(actions, gs.skipVotes ? `🔁 Skip category (${gs.skipVotes}/2)` : "🔁 Skip category", "", () => socket.emit("voteSkip"));
+    addBtn(actions, gs.skipVotes ? `Skip category (${gs.skipVotes}/2)` : "Skip category", "", () => socket.emit("voteSkip"));
   }
 
   if (gs.phase === "proving") {
     if (myTurn) {
       enable = true; placeholder = `Name a ${gs.category.name}…`;
-      addBtn(actions, "🏳️ Give up", "danger", () => socket.emit("giveUp"));
+      addBtn(actions, "Give up", "danger", () => socket.emit("giveUp"));
       statusText = `Proving ${gs.proven}/${gs.claim}${gs.wpm ? ` · ${gs.wpm} wpm` : ""}`;
     } else {
       statusText = `${nameOf(gs.turnId)} is proving… (${gs.proven}/${gs.claim}${gs.wpm ? ` · ${gs.wpm} wpm` : ""})`;
     }
   } else if (gs.phase === "judging") {
     statusText = gs.challengerId === myId
-      ? "⏰ Time! Rule on the remaining off-list answers."
+      ? "Time! Rule on the remaining off-list answers."
       : `${nameOf(gs.holderId)}'s off-list answers are being ruled on…`;
   } else if (gs.phase === "roundover") {
     if (gs.intermission) {
       // Waiting for a player to advance (auto-advance off, or paused).
-      statusText = gs.autoAdvance ? "⏸ Paused — press P or tap for the next round" : "Press P or tap for the next round";
-      addBtn(actions, "▶️ Next round (P)", "again", () => socket.emit("nextRound"));
+      statusText = gs.autoAdvance ? "Paused — press P or tap for the next round" : "Press P or tap for the next round";
+      addBtn(actions, "Next round (P)", "again", () => socket.emit("nextRound"));
     } else {
       statusText = "Next round coming up…";
-      addBtn(actions, "⏸ Pause", "", () => socket.emit("pauseRound"));
+      addBtn(actions, "Pause", "", () => socket.emit("pauseRound"));
     }
     if (gs.target == null) // endless → let either player vote to end the whole game
-      addBtn(actions, gs.endVotes ? `🏁 End game (${gs.endVotes}/2)` : "🏁 End game", "danger", () => socket.emit("voteEnd"));
+      addBtn(actions, gs.endVotes ? `End game (${gs.endVotes}/2)` : "End game", "danger", () => socket.emit("voteEnd"));
   } else if (gs.phase === "matchover") {
-    statusText = gs.matchWinnerId ? `🏆 ${nameOf(gs.matchWinnerId)} wins the match!` : "🏁 Game over — it's a tie!";
-    if (iAmHost) addBtn(actions, "🔁 Play again", "again", () => socket.emit("rematch", {}, ackErr));
-    addBtn(actions, "🏠 Leave", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
+    statusText = gs.matchWinnerId ? `${nameOf(gs.matchWinnerId)} wins the match!` : "Game over — it's a tie!";
+    if (iAmHost) addBtn(actions, "Play again", "again", () => socket.emit("rematch", {}, ackErr));
+    addBtn(actions, "Leave", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
   }
 
   // Spectators watch read-only: no game buttons, input is chat-only.
   if (isSpectator) {
     actions.innerHTML = "";
     enable = false;
-    placeholder = isGhost ? "👻 Ghost mode — you're invisible (can't chat)" : "Say something… (you're spectating 👀)";
-    if (gs.phase === "matchover") addBtn(actions, "🏠 Stop watching", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
+    placeholder = isGhost ? "Ghost mode — you're invisible (can't chat)" : "Say something… (you're spectating)";
+    if (gs.phase === "matchover") addBtn(actions, "Stop watching", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
   }
 
   // Frozen while an opponent is reconnecting — overrides all controls.
@@ -657,7 +657,7 @@ function render() {
     actions.innerHTML = "";
     input.disabled = false; sendBtn.disabled = false; // chat still works while frozen
     if (!chatMode) input.placeholder = "Paused — type / to chat…";
-    status.textContent = "⏸ Opponent disconnected — waiting up to 30s for them to reconnect…";
+    status.textContent = "Opponent disconnected — waiting up to 30s for them to reconnect…";
     return;
   }
 
@@ -729,7 +729,7 @@ function renderPending() {
       pending.forEach((p) => judgeRow(box, p));
       if (pending.length > 1) rejectAllBtn(box, "Reject all");
     } else {
-      note(box, `⏳ Off-list, waiting on opponent: ${pending.map((p) => p.text).join(", ")}`);
+      note(box, `Off-list, waiting on opponent: ${pending.map((p) => p.text).join(", ")}`);
     }
   } else if (gs.phase === "judging") {
     // forced ruling — one at a time
@@ -739,7 +739,7 @@ function renderPending() {
       judgeRow(box, a);
       if (gs.judgeRemaining > 1) rejectAllBtn(box, `Reject remaining (${gs.judgeRemaining})`);
     } else {
-      note(box, `⏰ Opponent ruling: “${a.text}” (${gs.judgeRemaining} left)`);
+      note(box, `Opponent ruling: “${a.text}” (${gs.judgeRemaining} left)`);
     }
   }
 }
@@ -986,7 +986,7 @@ setInterval(() => {
   const t = $("timer");
   if (!gs || !gs.deadline || gs.paused) { t.textContent = ""; t.classList.remove("danger"); return; }
   const left = Math.max(0, Math.ceil((gs.deadline - Date.now()) / 1000));
-  t.textContent = "⏱ " + left + "s";
+  t.textContent = left + "s";
   const danger = gs.phase === "proving" ? left <= 10 : left <= 3;
   t.classList.toggle("danger", danger);
   // audio: tick the final 5 seconds (hotter in the last 3)

@@ -108,14 +108,14 @@ function handleVoteEnd(io, room, socket) {
     if (sa === sb) { // ended by mutual vote with a tied score
       clearTimer(room);
       g.phase = "matchover"; g.deadline = null; g.matchWinnerId = null;
-      log(io, room, "system", null, `🏁 Game ended by vote — it's a tie! (${sa}–${sb})`);
+      log(io, room, "system", null, `Game ended by vote — it's a tie! (${sa}–${sb})`);
       return emit(io, room);
     }
     return matchOver(io, room, sa > sb ? a : b, "vote-end");
   }
   // first vote → pause any auto-advance so the other player can respond
   if (g.phase === "roundover" && g.autoAdvance && !g.intermission) { clearTimer(room); g.intermission = true; }
-  log(io, room, "system", null, `🏁 ${g.names[pid]} wants to end the game (1/2).`);
+  log(io, room, "system", null, `${g.names[pid]} wants to end the game (1/2).`);
   emit(io, room);
 }
 
@@ -324,7 +324,7 @@ function handleAnswer(io, room, socket, text, ack) {
         report(room, "event", { type: "easterEgg", detail: entry.display });
         const pid = socket.data.playerId;
         g.scores[pid] = (g.scores[pid] || 0) + 5;
-        log(io, room, "system", null, `🎯 ${me} said the magic words — +5 bonus points!`);
+        log(io, room, "system", null, `${me} said the magic words — +5 bonus points!`);
         // fx: "logo" → the Prove It! logo reacts; "crown" → the creator's crown reacts.
         io.to(room.code).emit("easterEgg", { name: me, phrase: entry.display, fx: entry.display === "Jayden Lin" ? "crown" : "logo" });
         // The bonus can win the match outright (it's only otherwise checked at round end).
@@ -354,7 +354,7 @@ function handleAnswer(io, room, socket, text, ack) {
   const id = ++g.answerSeq;
   g.pending.set(id, { id, text, q });
   g.offListCount++;
-  log(io, room, socket.data.playerId, me, `${text} — ❓ not on my list, opponent decides`, "pending");
+  log(io, room, socket.data.playerId, me, `${text} — not on my list, opponent decides`, "pending");
   ack?.({ ok: true });
   emit(io, room);
 }
@@ -446,7 +446,7 @@ function matchOver(io, room, winnerId, reason) {
   clearTimer(room);
   const g = room.game;
   g.phase = "matchover"; g.deadline = null; g.matchWinnerId = winnerId;
-  log(io, room, "system", null, winnerId ? `🏆 ${g.names[winnerId]} wins the match! (${g.scores[g.order[0]]}–${g.scores[g.order[1]]})` : "🏁 Match over.");
+  log(io, room, "system", null, winnerId ? `${g.names[winnerId]} wins the match! (${g.scores[g.order[0]]}–${g.scores[g.order[1]]})` : "Match over.");
   report(room, "end", { winnerId, reason: reason || "win" });
   emit(io, room);
 }

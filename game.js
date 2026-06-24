@@ -81,7 +81,7 @@ const sfx = {
 };
 function setMuted(m) {
   muted = m; localStorage.setItem("muted", m ? "1" : "0");
-  $("muteBtn").textContent = m ? "🔇" : "🔊";
+  $("muteBtn").textContent = m ? "Muted" : "Sound";
   $("muteBtn").title = m ? "Sound off" : "Sound on";
 }
 // (Easter eggs are intentionally multiplayer-only — discover them there. 😏)
@@ -201,7 +201,7 @@ function beginMatch() {
   $("catBtn").style.display = "inline-block";
   const goal = targetScore === Infinity ? "endless" : `first to ${targetScore}`;
   add(`Game on! Categories: ${enabledGroups.join(", ")}. Timer: ${timerLength}s · ${goal}.`, "system");
-  add("Throw out a number to start. We go back and forth raising till someone calls it, then you back it up. Fair warning, I bluff. 😏", "bot", "Bot");
+  add("Throw out a number to start. We go back and forth raising till someone calls it, then you back it up. Fair warning, I bluff.", "bot", "Bot");
   setTimeout(newRound, 500);
 }
 
@@ -359,7 +359,7 @@ function newRound() {
     `Alright, ${c.name}. How many can you name?`,
     `${c.name}. Give me a number.`,
   ]), "bot", "Bot");
-  setActions([{ label: "🔁 Skip category", onClick: skipCategory }]);
+  setActions([{ label: "Skip category", onClick: skipCategory }]);
   setTurn("me");
   input.placeholder = "Type a number to open…";
   input.focus();
@@ -428,7 +428,7 @@ function startTurnTimer() {
 
 function updateTurnTimer() {
   if (state !== "opening" && state !== "myturn") return;
-  timerEl.textContent = `⏱ ${reactLeft}s to act`;
+  timerEl.textContent = `${reactLeft}s to act`;
   timerEl.classList.toggle("danger", reactLeft <= 3);
 }
 
@@ -439,7 +439,7 @@ function onTurnTimeout() {
     timerEl.textContent = "";
     openingCue(false);
     setTurn("bot");
-    add("Too slow. 😎", "bot", "Bot");
+    add("Too slow.", "bot", "Bot");
     endRound(false, "Ran out of time.", { skipCount: true });
   } else if (state === "myturn") {
     add("(time's up, you call it)", "system");
@@ -480,7 +480,7 @@ function botDecide() {
     myTurn();
   } else {
     add(pick([
-      `Prove it. Let's see all ${claim}. 😏`,
+      `Prove it. Let's see all ${claim}.`,
       `Yeah right, prove it.`,
       `Doubt it. Name ${claim}.`,
       `No chance you've got ${claim}. Go on.`,
@@ -496,9 +496,9 @@ function myTurn() {
   setTurn("me");
   const acts = [];
   if (claim + 1 <= current.entries.length) {
-    acts.push({ label: `⬆️ Raise to ${claim + 1}`, cls: "raise", onClick: raiseToNext });
+    acts.push({ label: `Raise to ${claim + 1}`, cls: "raise", onClick: raiseToNext });
   }
-  acts.push({ label: "🗣️ Prove It!", cls: "danger", onClick: humanChallengeBot });
+  acts.push({ label: "Prove It!", cls: "danger", onClick: humanChallengeBot });
   setActions(acts);
   input.placeholder = "Raise, type a higher number, or call Prove It!";
   input.focus();
@@ -521,7 +521,7 @@ function botProve() {
     } else if (success) {
       endRound(false, pick(["Told you.", "All day.", `That's ${claim}.`]), { skipCount: true });
     } else {
-      add(pick(["uh… that's all I got. 😬", "wait, hold on… nope. 😬", "ok I might've oversold that."]), "bot");
+      add(pick(["uh… that's all I got.", "wait, hold on… nope.", "ok I might've oversold that."]), "bot");
       endRound(true, `Only got ${botMax} of ${claim}.`, { skipCount: true });
     }
   };
@@ -536,7 +536,7 @@ function startProving() {
   spChars = 0; spT0 = 0;
   timeLeft = timerLength;
   setTurn("me");
-  setActions([{ label: "🏳️ Give up", cls: "danger", onClick: giveUp }]);
+  setActions([{ label: "Give up", cls: "danger", onClick: giveUp }]);
   input.placeholder = `Name a ${current.name}…`;
   input.focus();
   updateTimer();
@@ -550,7 +550,7 @@ function startProving() {
 
 function updateTimer() {
   if (state === "proving") {
-    timerEl.textContent = `⏱ ${timeLeft}s · ${proven.length + bonus}/${claim}${spT0 ? ` · ${Math.round((spChars / 5) / Math.max(1 / 60, (Date.now() - spT0) / 60000))} wpm` : ""}`;
+    timerEl.textContent = `${timeLeft}s · ${proven.length + bonus}/${claim}${spT0 ? ` · ${Math.round((spChars / 5) / Math.max(1 / 60, (Date.now() - spT0) / 60000))} wpm` : ""}`;
     timerEl.classList.toggle("danger", timeLeft <= 10);
   } else {
     timerEl.textContent = "";
@@ -644,10 +644,10 @@ function endRound(won, reason, opts = {}) {
   const count = opts.skipCount ? "" : ` ${proven.length + bonus}/${claim}.`;
   if (won) {
     scoreMe++;
-    add(`${reason}${count} 🎉 Point for you!`, "bot", "Bot");
+    add(`${reason}${count} Point for you!`, "bot", "Bot");
   } else {
     scoreBot++;
-    add(`${reason}${count} Point for me. 😎`, "bot", "Bot");
+    add(`${reason}${count} Point for me.`, "bot", "Bot");
   }
   $("scoreMe").textContent = scoreMe;
   $("scoreBot").textContent = scoreBot;
@@ -659,7 +659,7 @@ function endRound(won, reason, opts = {}) {
     setTimeout(showWin, 900);  // let the final-point message land first
     return;
   }
-  setActions([{ label: "▶️ Next round (Enter)", onClick: newRound }]);
+  setActions([{ label: "Next round (Enter)", onClick: newRound }]);
   input.placeholder = "Press Enter for the next round…";
   input.focus();  // so Enter advances to the next round
 }
@@ -685,9 +685,9 @@ function showWin() {
   $("catBtn").style.display = "none";
   toggleCatMenu(false);
   let title;
-  if (scoreMe > scoreBot) title = "🏆 You win!";
-  else if (scoreBot > scoreMe) title = "🤖 Bot wins!";
-  else title = "🤝 It's a tie!";
+  if (scoreMe > scoreBot) title = "You win!";
+  else if (scoreBot > scoreMe) title = "Bot wins!";
+  else title = "It's a tie!";
   $("winTitle").textContent = title;
   $("winScore").textContent = `Final score: You ${scoreMe}, Bot ${scoreBot}`;
   $("winOverlay").style.display = "grid";
@@ -706,7 +706,7 @@ function handleInput() {
       rejectInput(raw, "Gotta be a number (1 or more).");
     } else if (n > max) {
       rejectInput(raw, current.exact
-        ? `Easy 😅 there's only ${max} ${current.name}. Try again.`
+        ? `Easy — there's only ${max} ${current.name}. Try again.`
         : `That's a lot of ${current.name}. Try a smaller number.`);
     } else {
       open(n);
@@ -720,7 +720,7 @@ function handleInput() {
       rejectInput(raw, `You gotta go higher than ${claim}.`);
     } else if (n > max) {
       rejectInput(raw, current.exact
-        ? `Easy 😅 there's only ${max} ${current.name}. Try again.`
+        ? `Easy — there's only ${max} ${current.name}. Try again.`
         : `That's a lot of ${current.name}. Try a smaller number.`);
     } else {
       clearInterval(reactId);

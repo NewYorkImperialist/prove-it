@@ -9,11 +9,11 @@
 <meta name="description" content="A fast, free browser bluffing word game — name as many as you can, or call your opponent's bluff. No sign-up; just click and play.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Prove It!">
-<meta property="og:title" content="🎯 Prove It! — the bluffing word game">
+<meta property="og:title" content="Prove It! — the bluffing word game">
 <meta property="og:description" content="Brag how many you can name, then back it up against the clock. Play free in your browser — solo vs a bot, or head-to-head with friends.">
 <meta property="og:url" content="https://proveit.fly.dev/">
 <meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="🎯 Prove It! — the bluffing word game">
+<meta name="twitter:title" content="Prove It! — the bluffing word game">
 <meta name="twitter:description" content="Brag how many you can name, then back it up against the clock. Free, no sign-up.">
 <meta name="theme-color" content="#0c0a07">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -244,10 +244,10 @@
   /* a clear mode pill so you always know whether you're typing an ANSWER or a CHAT */
   #inputbar::before { display:flex; align-items:center; font-weight:800; font-size:12px; letter-spacing:.5px; padding:5px 9px; border-radius:8px; white-space:nowrap; }
   #inputbar.answer-mode { border-top-color:var(--accent); }
-  #inputbar.answer-mode::before { content:"✏️ ANSWER"; background:var(--accent); color:var(--markfg); }
+  #inputbar.answer-mode::before { content:"ANSWER"; background:var(--accent); color:var(--markfg); }
   /* chat mode — pressing "/" or tapping 💬 turns the input box into a chat box */
   #inputbar.chat-mode { border-top-color:var(--accent2); background:rgba(62,207,142,.12); }
-  #inputbar.chat-mode::before { content:"💬 CHAT"; background:var(--accent2); color:#08130d; }
+  #inputbar.chat-mode::before { content:"CHAT"; background:var(--accent2); color:#08130d; }
   #inputbar.chat-mode #input { border-color:var(--accent2); background:rgba(62,207,142,.10); }
   #inputbar.chat-mode #send { background:var(--accent2); color:#08130d; }
   #input { flex:1; background:var(--bg); border:1px solid var(--line); border-radius:10px; color:var(--text); padding:11px 13px; font-size:14px; outline:none; }
@@ -332,7 +332,7 @@
       <div class="code" id="roomCode" title="Click to copy">----</div>
       <div class="hint" id="codeHint">tap the code to copy</div>
     </div>
-    <button class="secondary" id="copyInvite">🔗 Copy invite link</button>
+    <button class="secondary" id="copyInvite">Copy invite link</button>
     <div class="players" id="players"></div>
     <div id="watchers" class="hidden"></div>
 
@@ -367,11 +367,11 @@
     <div id="topbar">
       <span class="logo" id="mpLogo" style="cursor:pointer" title="Leave game"><span class="logobadge">◎</span><span class="wd">prove it!</span></span>
       <span class="room" id="gRoom"></span>
-      <span id="specBadge" class="hidden">👀 Spectating</span>
+      <span id="specBadge" class="hidden">Spectating</span>
       <span class="spacer"></span>
       <button id="mpCatBtn" style="display:none">Categories ▾</button>
-      <button id="mpSettingsBtn">⚙</button>
-      <button id="muteBtn" title="Sound on">🔊</button>
+      <button id="mpSettingsBtn">Menu</button>
+      <button id="muteBtn" title="Sound on">Sound</button>
       <button id="crownGame" class="hidden" title="Toggle your crown">👑</button>
       <button id="mpLeave">Leave</button>
       <div id="mpCatMenu" style="display:none">
@@ -406,7 +406,7 @@
       <div id="gstatus"></div>
       <div id="typing" class="hidden"></div>
       <div id="inputbar">
-        <button id="chatToggle" title="Chat (or press /)">💬</button>
+        <button id="chatToggle" title="Chat (or press /)">Chat</button>
         <input id="input" autocomplete="off" placeholder="…" disabled>
         <button id="send" disabled>Send</button>
       </div>
@@ -427,7 +427,7 @@
       <h2>Leave the game?</h2>
       <p>If you forfeit, your opponent wins this match.</p>
       <div class="btns">
-        <button id="cfReturn">↩︎ Return to your game</button>
+        <button id="cfReturn">Return to your game</button>
         <button id="cfForfeit">Forfeit</button>
       </div>
     </div>

@@ -1,6 +1,7 @@
 // Prove It! — server (Phase 4: rooms + reconnection)
 // Serves the static game files AND runs the Socket.IO realtime layer on one port.
 const path = require("path");
+const fs = require("fs");
 const http = require("http");
 const express = require("express");
 const { Server } = require("socket.io");
@@ -546,6 +547,31 @@ app.get("/challenge/:id/results", async (req, res) => {
   const c = await analytics.getChallenge(id).catch(() => null);
   if (!c) return res.json({ ok: false });
   res.json({ ok: true, rounds: c.rounds, by: c.by_name, results: await analytics.getChallengeResults(id).catch(() => []) });
+});
+
+// Dynamic social preview for a shared challenge link (?id=…). Crawlers (Discord/iMessage/
+// Reddit/Twitter) don't run JS, so we inject the challenger's name + score-to-beat into the
+// OG meta tags server-side. No id → fall through to the static challenge.html.
+app.get("/challenge.html", async (req, res, next) => {
+  const id = String(req.query.id || "").slice(0, 12);
+  if (!id || !analytics.enabled()) return next();
+  const c = await analytics.getChallenge(id).catch(() => null);
+  if (!c) return next();
+  const results = await analytics.getChallengeResults(id).catch(() => []);
+  const topTotal = results.length ? Math.max(...results.map((r) => Number(r.total) || 0)) : null;
+  const by = c.by_name || "A friend";
+  const nRounds = (c.rounds || []).length;
+  const what = c.type === "genre" && c.genre ? `${nRounds} rounds of ${c.genre}` : `${nRounds} rounds`;
+  const title = topTotal != null ? `⚡ ${by} says you can't name more than ${topTotal}` : `⚡ ${by} challenged you on Prove It!`;
+  const desc = `${what} — name as many as you can before the clock, then try to beat the leaderboard. No sign-up, just click and play.`;
+  let html;
+  try { html = fs.readFileSync(path.join(__dirname, "challenge.html"), "utf8"); } catch (e) { return next(); }
+  const a = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
+  html = html
+    .replace(/<meta property="og:title"[^>]*>/, `<meta property="og:title" content="${a(title)}">`)
+    .replace(/<meta property="og:description"[^>]*>/, `<meta property="og:description" content="${a(desc)}">`)
+    .replace(/<title>[^<]*<\/title>/, `<title>${a(title)}</title>`);
+  res.set("content-type", "text/html").set("cache-control", "no-cache").send(html);
 });
 
 // Always revalidate HTML/JS so the inlined CSS + game logic are never served stale

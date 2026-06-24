@@ -214,9 +214,10 @@ async function initJoin() {
   if (!c.ok) { show("create"); $("createErr").textContent = "That challenge link is invalid or expired — build a new one."; initCreate(); return; }
   def = { id: c.id, rounds: c.rounds || [], by: c.by, type: c.type, genre: c.genre, timer: c.timer || 45 };
   perRound = def.timer;
-  $("joinInfo").innerHTML = `<b>${esc(def.by || "A friend")}</b> challenges you — <b>${def.rounds.length}</b> rounds${def.genre ? ` of <b>${esc(def.genre)}</b>` : ""}, <b>${def.timer}s</b> each. Beat the leaderboard!`;
+  $("joinInfo").innerHTML = `<b>${esc(def.by || "A friend")}</b> challenged you to name as many as you can across <b>${def.rounds.length}</b> round${def.rounds.length > 1 ? "s" : ""}${def.genre ? ` of <b>${esc(def.genre)}</b>` : ""}, <b>${def.timer}s</b> each. Try to beat them!`;
   $("joinRounds").innerHTML = def.rounds.map((n, i) => { const cat = findCat(n); const ns = cat && nonSprint(cat); return `<li><span>R${i + 1} · ${esc(n)}</span>${ns ? `<span class="badge-ns">non-sprint</span>` : ""}</li>`; }).join("");
   $("joinName").value = myName;
+  $("joinName").focus(); $("joinName").select(); // reprompt the player to (re)write their name
 }
 $("joinStart").onclick = () => { const n = $("joinName").value.trim().slice(0, 20) || "Anon"; startPlaying(n); };
 $("joinLB").onclick = async () => {

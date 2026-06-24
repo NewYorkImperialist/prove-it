@@ -263,7 +263,7 @@ const CATEGORY_GROUPS = {
       "Detroit", ["Oklahoma City","oklahoma city","okc"], "Portland", ["Las Vegas","las vegas","vegas"], "Memphis", "Louisville",
       "Baltimore", "Milwaukee", "Albuquerque", "Tucson", "Fresno", "Sacramento", ["Kansas City","kansas city","kc"], "Atlanta",
       "Miami", "Raleigh", "Omaha", "Minneapolis", "Tulsa", "Cleveland", ["New Orleans","new orleans","nola"], "Tampa", "Honolulu",
-      "Pittsburgh", "Cincinnati", ["St. Louis","st louis","saint louis"], "Orlando",
+      "Pittsburgh", "Cincinnati", ["St. Louis","st louis","saint louis"], "Orlando", "Hartford",
     ]},
     { name: "Languages of the World", items: [
       "English", ["Mandarin","mandarin","chinese"], "Spanish", "Hindi", "Arabic", "Bengali", "Portuguese", "Russian",

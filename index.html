@@ -96,10 +96,15 @@
   .backbtn { display:inline-flex; align-items:center; gap:6px; background:none; border:none; color:var(--muted);
     font-family:var(--ui); font-size:13px; font-weight:700; padding:0; margin:0 0 14px; cursor:pointer; }
   .backbtn:hover { color:var(--accent); }
-  /* laurel leaderboard icon (top-right) */
-  #laurel { position:fixed; top:14px; right:14px; z-index:60; display:grid; place-items:center; width:42px; height:42px;
+  /* laurel leaderboard icon — anchored to the top-right corner of the menu card */
+  #home { position:relative; }
+  #laurel { position:absolute; top:22px; right:22px; display:grid; place-items:center; width:40px; height:40px;
     background:var(--panel2); border:1px solid var(--line2); border-radius:11px; color:var(--gold); cursor:pointer; transition:.14s; }
   #laurel:hover { border-color:var(--accent); color:var(--accent); transform:translateY(-1px); }
+  /* leaderboard modal tabs */
+  .lbtabs { display:flex; gap:8px; margin:2px 28px 14px 0; }
+  .lbtab { flex:1; background:var(--panel2); color:var(--muted); border:1px solid var(--line2); border-radius:9px; padding:9px; font-family:var(--ui); font-weight:700; font-size:13px; cursor:pointer; }
+  .lbtab.on { background:var(--accent); color:var(--markfg); border-color:var(--accent); }
   /* daily button states: glowing-orange when today is unplayed, quiet + tooltip once done */
   #dailyBtn.daily-live { background:var(--accent); color:var(--markfg); border-color:var(--accent); animation:dailyGlow 1.9s ease-in-out infinite; }
   @keyframes dailyGlow { 0%,100% { box-shadow:0 0 0 0 rgba(245,166,35,.45); } 50% { box-shadow:0 0 18px 3px rgba(245,166,35,.6); } }
@@ -408,39 +413,41 @@
   <div class="conn" id="conn">connecting…</div>
   <div id="online" class="hidden">0 online</div>
 
-  <!-- Laurel: opens the daily leaderboard (shown on the main menu) -->
-  <button id="laurel" title="Daily leaderboard" aria-label="Daily leaderboard">
-    <svg viewBox="0 0 24 24" width="23" height="23" aria-hidden="true">
-      <g fill="currentColor">
-        <ellipse cx="7" cy="18" rx="2.3" ry="1.05" transform="rotate(-35 7 18)"/>
-        <ellipse cx="5.5" cy="14.8" rx="2.4" ry="1.05" transform="rotate(-18 5.5 14.8)"/>
-        <ellipse cx="5.2" cy="11.4" rx="2.4" ry="1.05" transform="rotate(-2 5.2 11.4)"/>
-        <ellipse cx="5.8" cy="8.1" rx="2.3" ry="1.05" transform="rotate(16 5.8 8.1)"/>
-        <ellipse cx="7.4" cy="5.4" rx="2.1" ry="1" transform="rotate(34 7.4 5.4)"/>
-        <ellipse cx="17" cy="18" rx="2.3" ry="1.05" transform="rotate(35 17 18)"/>
-        <ellipse cx="18.5" cy="14.8" rx="2.4" ry="1.05" transform="rotate(18 18.5 14.8)"/>
-        <ellipse cx="18.8" cy="11.4" rx="2.4" ry="1.05" transform="rotate(2 18.8 11.4)"/>
-        <ellipse cx="18.2" cy="8.1" rx="2.3" ry="1.05" transform="rotate(-16 18.2 8.1)"/>
-        <ellipse cx="16.6" cy="5.4" rx="2.1" ry="1" transform="rotate(-34 16.6 5.4)"/>
-      </g>
-      <g fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round">
-        <path d="M12 21 C 8 20, 6 16, 6 12 C 6 9, 7 6.5, 9 4.8"/>
-        <path d="M12 21 C 16 20, 18 16, 18 12 C 18 9, 17 6.5, 15 4.8"/>
-      </g>
-    </svg>
-  </button>
-
-  <!-- Daily leaderboard modal -->
+  <!-- Daily / all-time leaderboard modal -->
   <div id="lbModal" class="hidden">
     <div id="lbModalCard">
       <button id="lbModalClose" title="Close" aria-label="Close">×</button>
-      <h2 id="lbModalTitle">Daily Leaderboard</h2>
+      <div class="lbtabs">
+        <button class="lbtab on" id="tabToday">Daily</button>
+        <button class="lbtab" id="tabAll">All-time</button>
+      </div>
+      <p class="lb-note" id="lbModalTitle" style="margin:0 0 12px"></p>
       <div id="lbModalWrap"></div>
     </div>
   </div>
 
   <!-- Home -->
   <div class="card" id="home">
+    <button id="laurel" title="Leaderboards" aria-label="Leaderboards">
+      <svg viewBox="0 0 24 24" width="23" height="23" aria-hidden="true">
+        <g fill="currentColor">
+          <ellipse cx="7" cy="18" rx="2.3" ry="1.05" transform="rotate(-35 7 18)"/>
+          <ellipse cx="5.5" cy="14.8" rx="2.4" ry="1.05" transform="rotate(-18 5.5 14.8)"/>
+          <ellipse cx="5.2" cy="11.4" rx="2.4" ry="1.05" transform="rotate(-2 5.2 11.4)"/>
+          <ellipse cx="5.8" cy="8.1" rx="2.3" ry="1.05" transform="rotate(16 5.8 8.1)"/>
+          <ellipse cx="7.4" cy="5.4" rx="2.1" ry="1" transform="rotate(34 7.4 5.4)"/>
+          <ellipse cx="17" cy="18" rx="2.3" ry="1.05" transform="rotate(35 17 18)"/>
+          <ellipse cx="18.5" cy="14.8" rx="2.4" ry="1.05" transform="rotate(18 18.5 14.8)"/>
+          <ellipse cx="18.8" cy="11.4" rx="2.4" ry="1.05" transform="rotate(2 18.8 11.4)"/>
+          <ellipse cx="18.2" cy="8.1" rx="2.3" ry="1.05" transform="rotate(-16 18.2 8.1)"/>
+          <ellipse cx="16.6" cy="5.4" rx="2.1" ry="1" transform="rotate(-34 16.6 5.4)"/>
+        </g>
+        <g fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round">
+          <path d="M12 21 C 8 20, 6 16, 6 12 C 6 9, 7 6.5, 9 4.8"/>
+          <path d="M12 21 C 16 20, 18 16, 18 12 C 18 9, 17 6.5, 15 4.8"/>
+        </g>
+      </svg>
+    </button>
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
       <h1 style="display:flex;align-items:center;gap:12px;margin:0"><span class="logobadge" style="width:38px;height:38px;font-size:21px">◎</span><span class="wd" style="font-size:26px">prove it!</span></h1>
     </div>

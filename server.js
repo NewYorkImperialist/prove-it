@@ -633,6 +633,12 @@ app.get("/daily", async (req, res) => {
   const results = await analytics.getChallengeResults(id).catch(() => []);
   res.json({ ok: true, id, date, rounds: c.rounds, timer: c.timer || DAILY_TIMER, players: results.length });
 });
+// All-time daily high scores (across every day's puzzle).
+app.get("/daily/alltime", async (req, res) => {
+  if (!analytics.enabled()) return res.json({ ok: false });
+  const rows = await analytics.dailyAllTime(50).catch(() => []);
+  res.json({ ok: true, results: rows });
+});
 
 // Dynamic social preview for a shared challenge link (?id=…). Crawlers (Discord/iMessage/
 // Reddit/Twitter) don't run JS, so we inject the challenger's name + score-to-beat into the

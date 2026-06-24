@@ -234,6 +234,15 @@ async function sessionsList(limit = 300) {
             FROM sessions ORDER BY id DESC LIMIT ?`, [limit]);
 }
 
+// All-time daily high scores: each player's best single-day total across every daily puzzle.
+// (Daily challenge ids are "d-YYYYMMDD"; custom ids never contain a hyphen.) SQLite returns the
+// name/at/challenge_id from the same row as MAX(total) when MAX is used with bare columns.
+async function dailyAllTime(limit = 50) {
+  return q(`SELECT name, visitor_id, MAX(total) total, at, crown, challenge_id
+            FROM challenge_results WHERE challenge_id LIKE 'd-%'
+            GROUP BY COALESCE(visitor_id, name) ORDER BY total DESC, at ASC LIMIT ?`, [limit]);
+}
+
 // ---- async challenges (link-based, with a shared per-challenge leaderboard) ----
 async function createChallenge(c) {
   if (!client) return false;
@@ -262,4 +271,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime };

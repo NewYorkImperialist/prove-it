@@ -23,7 +23,6 @@ window.PI = (function () {
     MP_VIEWS.forEach((id) => byId(id) && byId(id).classList.add("hidden"));
     const o = byId("online"); if (o) o.classList.add("hidden");
     const c = byId("conn"); if (c) c.style.display = "none";
-    const l = byId("laurel"); if (l) l.classList.add("hidden"); // laurel is a main-menu thing
     byId("soloApp").classList.remove("hidden"); // overlay appears instantly on the same bg — only the inner card animates
   }
   const soloCard = () => byId("soloApp").querySelector(".card:not([hidden])");
@@ -296,7 +295,6 @@ function show(which) {
   $("conn").style.display = which === "game" ? "none" : ""; // sidebar shows it during the game
   if (which !== "game") { $("mpCatMenu").style.display = "none"; $("mpSettingsMenu").style.display = "none"; }
   if (which !== "game") window.PI.flyIn($(which)); // cards fly/fade in (the full-screen game just cuts in)
-  $("laurel").classList.toggle("hidden", which !== "home"); // leaderboard icon lives on the main menu
   updateOnline();
 }
 // Router hook: the solo module / footer calls this to return to the multiplayer home.
@@ -1416,18 +1414,38 @@ function updateDailyBtn() {
   b.classList.toggle("daily-done", played);   // quiet + "you played" tooltip once finished
   b.onclick = played ? openDailyLeaderboard : () => window.PI.showDaily(); // played → leaderboard only, no replay
 }
-async function openDailyLeaderboard() {
-  $("lbModal").classList.remove("hidden");
-  $("lbModalTitle").textContent = "Daily Leaderboard";
-  $("lbModalWrap").innerHTML = `<p class="lb-note">Loading…</p>`;
+function openDailyLeaderboard() { $("lbModal").classList.remove("hidden"); showLbTab("today"); }
+function closeLbModal() { $("lbModal").classList.add("hidden"); }
+function showLbTab(which) {
+  $("tabToday").classList.toggle("on", which === "today");
+  $("tabAll").classList.toggle("on", which === "alltime");
+  if (which === "alltime") openAllTimeBoard(); else openTodayBoard();
+}
+async function openTodayBoard() {
+  $("lbModalTitle").textContent = ""; $("lbModalWrap").innerHTML = `<p class="lb-note">Loading…</p>`;
   const d = await getJSON("/daily"); // ensures today's puzzle exists + gives its id/date
-  if (d && d.ok) { $("lbModalTitle").textContent = `Daily Leaderboard · ${d.date}`; renderLeaderboard($("lbModalWrap"), d.id); }
+  if (d && d.ok) { $("lbModalTitle").textContent = `Today's puzzle · ${d.date}`; renderLeaderboard($("lbModalWrap"), d.id); }
   else { $("lbModalWrap").innerHTML = `<p class="lb-note">Couldn't load today's leaderboard.</p>`; }
 }
-function closeLbModal() { $("lbModal").classList.add("hidden"); }
+async function openAllTimeBoard() {
+  $("lbModalTitle").textContent = "Highest daily score, all time"; $("lbModalWrap").innerHTML = `<p class="lb-note">Loading…</p>`;
+  const d = await getJSON("/daily/alltime");
+  if (!d || !d.ok) { $("lbModalWrap").innerHTML = `<p class="lb-note">Couldn't load the all-time board.</p>`; return; }
+  const rows = d.results || [];
+  if (!rows.length) { $("lbModalWrap").innerHTML = `<p class="lb-note">No daily scores yet — be the first!</p>`; return; }
+  const body = rows.map((r, i) => {
+    const mine = r.visitor_id && r.visitor_id === VISITOR_ID;
+    const day = String(r.challenge_id || "").replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3");
+    return `<tr class="${mine ? "me" : ""}"><td>${i + 1}</td><td class="pname">${esc(r.name || "?")}${r.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td><td>${esc(day)}</td><td class="tot">${r.total}</td></tr>`;
+  }).join("");
+  $("lbModalWrap").innerHTML = `<table class="lb"><tr><th>#</th><th>Player</th><th>Best day</th><th>Score</th></tr>${body}</table>
+    <p class="lb-note">Each player's best single-day daily score, across every day.</p>`;
+}
 $("laurel").onclick = openDailyLeaderboard;
 $("lbModalClose").onclick = closeLbModal;
 $("lbModal").onclick = (e) => { if (e.target === $("lbModal")) closeLbModal(); };
+$("tabToday").onclick = () => showLbTab("today");
+$("tabAll").onclick = () => showLbTab("alltime");
 // Solo start: create a (DB-backed, shareable) run from a fixed list of categories, then play.
 async function startSolo(rounds, btn) {
   $("createErr").textContent = "";

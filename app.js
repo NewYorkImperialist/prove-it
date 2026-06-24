@@ -23,18 +23,18 @@ window.PI = (function () {
     MP_VIEWS.forEach((id) => byId(id) && byId(id).classList.add("hidden"));
     const o = byId("online"); if (o) o.classList.add("hidden");
     const c = byId("conn"); if (c) c.style.display = "none";
-    flyIn(byId("soloApp"));
+    byId("soloApp").classList.remove("hidden"); // overlay appears instantly on the same bg — only the inner card animates
   }
+  const soloCard = () => byId("soloApp").querySelector(".card:not([hidden])");
   return {
     flyAway, flyIn,
-    // Play Solo → fly the menu away, then reveal the fresh solo build screen.
-    showSolo() { flyAway(currentMp(), () => { revealSolo(); if (window.__soloCreate) window.__soloCreate(); }); },
+    // Play Solo → fly the menu card away, then fly the solo build card in (background stays put, like multiplayer).
+    showSolo() { flyAway(currentMp(), () => { revealSolo(); if (window.__soloCreate) window.__soloCreate(); flyIn(soloCard()); }); },
     // ?id= deep link → straight into the solo join screen.
-    showSoloJoin() { flyAway(currentMp(), () => { revealSolo(); if (window.__soloJoin) window.__soloJoin(); }); },
-    // Back from solo → fly the overlay away, then the multiplayer home flies in.
+    showSoloJoin() { flyAway(currentMp(), () => { revealSolo(); if (window.__soloJoin) window.__soloJoin(); flyIn(soloCard()); }); },
+    // Back from solo → fly just the solo card away, then the multiplayer home card flies in.
     showHome() {
-      const solo = byId("soloApp");
-      flyAway(solo, () => { solo.classList.add("hidden"); if (window.__mpHome) window.__mpHome(); });
+      flyAway(soloCard(), () => { byId("soloApp").classList.add("hidden"); if (window.__mpHome) window.__mpHome(); });
     },
   };
 })();

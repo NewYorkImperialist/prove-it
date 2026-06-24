@@ -160,7 +160,7 @@ function histHtml(h, k) {
   const feat = h.features.map((r) => `<tr><td>${esc(r.type)}</td><td>${num(r.n)}</td></tr>`).join("");
   const reasons = h.reasons.map((r) => `<tr><td>${esc(r.reason)}</td><td>${num(r.n)}</td></tr>`).join("");
   const day = h.perDay.map((r) => `<tr><td>${esc(r.day)}</td><td>${num(r.n)}</td></tr>`).join("");
-  const rec = h.recent.map((r) => `<tr><td>${r.gid ? `<a href="/admin/game?key=${k}&gid=${encodeURIComponent(r.gid)}">${esc(r.code)} →</a>` : esc(r.code)}</td><td>${esc(r.p1_name)} ${num(r.p1_score)}–${num(r.p2_score)} ${esc(r.p2_name)}</td><td>${esc(r.winner_name || "tie")}</td><td>${num(r.rounds)}r</td><td>${esc(r.reason)}</td><td>${fmtMs(num(r.duration_ms))}</td></tr>`).join("");
+  const rec = h.recent.map((r) => `<tr><td class="dim">${easternTime(num(r.ended_at))}</td><td>${r.gid ? `<a href="/admin/game?key=${k}&gid=${encodeURIComponent(r.gid)}">${esc(r.code)} →</a>` : esc(r.code)}</td><td>${esc(r.p1_name)} ${num(r.p1_score)}–${num(r.p2_score)} ${esc(r.p2_name)}</td><td>${esc(r.winner_name || "tie")}</td><td>${num(r.rounds)}r</td><td>${esc(r.reason)}</td><td>${fmtMs(num(r.duration_ms))}</td></tr>`).join("");
   const ses = h.sessions || {};
   const dev = (ses.devices || []).map((d) => `<tr><td>${esc(d.device)}</td><td>${num(d.n)}</td><td>${fmtMs(num(d.avg))}</td></tr>`).join("");
   const sesRecent = (ses.recent || []).map((r) => `<tr><td>${easternTime(num(r.connected_at))}</td><td>${fmtMs(num(r.duration_ms))}</td><td>${esc(r.device)}</td><td>${esc(r.geo || r.tz || "—")}${r.ip ? `<br><span style="color:#566;font-size:11px">${esc(r.ip)}</span>` : ""}</td><td>${r.singleplayer ? "🕹️ singleplayer" : r.played ? "🎮 played" : r.spectated ? "👀 watched" : r.joined ? "lobby" : "browsed"}</td></tr>`).join("");
@@ -210,7 +210,7 @@ function histHtml(h, k) {
       <div><h3>🔁 Most-skipped categories</h3>${tbl(["Category", "Skips"], skips, 2)}</div>
       <div><h3>🏁 How games ended</h3>${tbl(["Reason", "Count"], reasons, 2)}</div>
       <div><h3>📅 Games per day</h3>${tbl(["Day", "Games"], day, 2)}</div>
-      <div><h3>🕑 Recent games</h3>${tbl(["Code", "Result", "Winner", "Rds", "End", "Len"], rec, 6)}</div>
+      <div><h3>🕑 Recent games</h3>${tbl(["When", "Code", "Result", "Winner", "Rds", "End", "Len"], rec, 7)}</div>
     </div>
     <h2>🏃 Solo runs (challenges)</h2>
     <p class="stats"><b>${solo.plays || 0}</b> solo runs · <b>${solo.challenges || 0}</b> challenges created · avg score <b>${num(solo.avg).toFixed(1)}</b> · best <b>${solo.best || 0}</b></p>

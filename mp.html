@@ -65,7 +65,8 @@
   .primary { width:100%; margin-top:20px; background:var(--accent2); color:#08130d; }
   .secondary { background:var(--panel2); color:var(--text); border:1px solid var(--line); }
   .ghost { background:transparent; color:var(--muted); border:1px solid var(--line); }
-  .divider { text-align:center; color:var(--muted); font-size:12px; margin:20px 0 4px; }
+  .divider { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:1.2px; margin:22px 0 16px; }
+  .divider::before, .divider::after { content:""; flex:1; height:1px; background:var(--line2); }
   .err { color:var(--bad); font-size:13px; min-height:16px; margin-top:10px; }
   .code-box { text-align:center; margin:8px 0 12px; }
   .code-box .code { font-size:42px; font-weight:900; letter-spacing:8px; color:var(--gold); cursor:pointer; user-select:none; border-radius:10px; transition:.12s; }
@@ -297,19 +298,19 @@
 
   <!-- Home -->
   <div class="card" id="home">
-    <div style="display:flex;align-items:center;gap:14px">
-      <h1 style="display:flex;align-items:center;gap:12px"><span class="logobadge" style="width:38px;height:38px;font-size:21px">◎</span><span class="wd" style="font-size:26px">prove it!</span></h1>
+    <div style="display:flex;align-items:center;gap:14px;margin-bottom:12px">
+      <h1 style="display:flex;align-items:center;gap:12px;margin:0"><span class="logobadge" style="width:38px;height:38px;font-size:21px">◎</span><span class="wd" style="font-size:26px">prove it!</span></h1>
       <span style="flex:1"></span>
       <span class="tsw"><button data-theme="amber" class="on">Amber</button><button data-theme="cyan">Cyan</button></span>
     </div>
-    <p class="sub">Play head-to-head with a friend. Create a room and share the code, or join theirs.</p>
+    <p class="sub" style="margin:0 0 22px">Play head-to-head with a friend. Create a room and share the code, or join theirs.</p>
 
     <label for="name">Your name</label>
     <input id="name" maxlength="20" placeholder="e.g. Jayden" autocomplete="off">
 
     <button class="primary" id="createBtn">Create a room</button>
 
-    <div class="divider">— or join one —</div>
+    <div class="divider">or join a room</div>
     <label for="joinCode">Room code</label>
     <div class="row">
       <input id="joinCode" maxlength="4" placeholder="ABCD" autocomplete="off">
@@ -318,7 +319,7 @@
     <button class="ghost" id="spectateBtn" style="width:100%;margin-top:8px;">Spectate this room</button>
     <div class="err" id="homeErr"></div>
 
-    <div class="divider">— or —</div>
+    <div class="divider">or</div>
     <a href="challenge.html" style="text-decoration:none"><button class="ghost" style="width:100%">Challenge a friend</button></a>
     <button class="ghost" id="spBtn" style="width:100%;margin-top:8px">Play with Bot</button>
     <p class="credit">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></p>

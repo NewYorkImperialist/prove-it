@@ -160,6 +160,7 @@ async function finish() {
   const total = roundScores.reduce((a, n) => a + n, 0);
   const avgWpm = roundWpm.length ? Math.round(roundWpm.reduce((a, n) => a + n, 0) / roundWpm.length) : 0;
   show("done");
+  $("shareUrl").value = challengeUrl();
   $("doneVerdict").innerHTML = "Your run is in!"; $("doneVerdict").className = "verdict win";
   $("doneTotal").parentElement.hidden = false;
   $("doneTotal").textContent = total;
@@ -234,13 +235,13 @@ function initCreate() {
 $("cinput").addEventListener("keydown", (e) => { if (e.key !== "Enter") return; const q = $("cinput").value.trim(); $("cinput").value = ""; if (q) submit(q); });
 document.querySelectorAll("#modeSeg button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
 $("createBtn").onclick = createChallenge;
+function challengeUrl() { return `${location.origin}/challenge.html?id=${challengeId}`; }
 $("shareBtn").onclick = () => {
-  const url = `${location.origin}/challenge.html?id=${challengeId}`;
-  const total = roundScores.reduce((a, n) => a + n, 0);
-  const text = `Beat my Prove It! challenge — I scored ${total} across ${roundCats.length} rounds!`;
-  if (navigator.share) navigator.share({ title: "Prove It! Challenge", text, url }).catch(() => {});
-  else if (navigator.clipboard) navigator.clipboard.writeText(`${text} ${url}`).then(() => { $("shareBtn").textContent = "Link copied — send it to friends!"; }).catch(() => prompt("Copy this link:", `${text} ${url}`));
-  else prompt("Copy this link:", `${text} ${url}`);
+  const url = challengeUrl();
+  $("shareUrl").value = url; $("shareUrl").focus(); $("shareUrl").select();
+  const ok = () => { $("shareBtn").textContent = "Copied! Paste it to a friend"; setTimeout(() => { $("shareBtn").textContent = "Copy challenge link"; }, 2500); };
+  if (navigator.clipboard) navigator.clipboard.writeText(url).then(ok).catch(() => { try { document.execCommand("copy"); ok(); } catch (e) {} });
+  else { try { document.execCommand("copy"); ok(); } catch (e) {} }
 };
 $("refreshLB").onclick = () => renderLeaderboard($("lbWrap"));
 $("newChallenge").onclick = () => { location.href = "challenge.html"; };

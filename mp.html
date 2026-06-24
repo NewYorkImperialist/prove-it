@@ -370,16 +370,17 @@
       <span id="specBadge" class="hidden">Spectating</span>
       <span class="spacer"></span>
       <button id="mpCatBtn" style="display:none">Categories ▾</button>
-      <button id="mpSettingsBtn">Menu</button>
-      <button id="muteBtn" title="Sound on">Sound</button>
-      <button id="crownGame" class="hidden" title="Toggle your crown">👑</button>
-      <button id="mpLeave">Leave</button>
+      <button id="mpSettingsBtn" title="Menu">⋯</button>
       <div id="mpCatMenu" style="display:none">
         <div class="title">Categories (applies next round)</div>
         <div id="mpCatMenuChecks"></div>
       </div>
       <div id="mpSettingsMenu" style="display:none">
-        <div class="group-title" style="margin-top:4px">Theme</div>
+        <div class="group-title" style="margin-top:4px">Game</div>
+        <button id="muteBtn" title="Sound on" style="width:100%;margin-bottom:6px">Sound</button>
+        <button id="crownGame" class="hidden" title="Toggle your crown" style="width:100%;margin-bottom:6px">👑 Crown</button>
+        <button id="mpLeave" style="width:100%">Leave game</button>
+        <div class="group-title">Theme</div>
         <span class="tsw" style="display:flex"><button data-theme="amber" class="on" style="flex:1">Amber</button><button data-theme="cyan" style="flex:1">Cyan</button></span>
         <div class="group-title">Your name</div>
         <div class="namerow"><input id="gName" maxlength="20" autocomplete="off"><button id="gNameSave">Save</button></div>

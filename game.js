@@ -765,8 +765,17 @@ $("logo").onclick = returnToMenu;
 $("againBtn").onclick = beginMatch;
 $("lobbyBtn").onclick = () => { $("winOverlay").style.display = "none"; returnToMenu(); };
 $("endBtn").onclick = endMatch;
-$("catBtn").onclick = (e) => { e.stopPropagation(); toggleCatMenu(); };
+$("catBtn").onclick = (e) => { e.stopPropagation(); $("spMenu").style.display = "none"; toggleCatMenu(); };
+$("spMenuBtn").onclick = (e) => {
+  e.stopPropagation();
+  const m = $("spMenu");
+  const open = m.style.display === "none";
+  toggleCatMenu(false); // don't stack the two menus
+  m.style.display = open ? "block" : "none";
+};
 document.addEventListener("click", (e) => {
   const m = $("catMenu");
   if (m.style.display !== "none" && !m.contains(e.target) && e.target !== $("catBtn")) toggleCatMenu(false);
+  const sm = $("spMenu");
+  if (sm.style.display !== "none" && !sm.contains(e.target) && e.target !== $("spMenuBtn")) sm.style.display = "none";
 });

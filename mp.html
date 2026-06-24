@@ -245,13 +245,7 @@
   #chatToggle { flex:0 0 auto; background:var(--panel2); color:var(--text); border:1px solid var(--line); padding:0 13px; font-size:18px; }
   #chatToggle:hover { background:var(--accent); border-color:var(--accent); }
   #inputbar.chat-mode #chatToggle { background:var(--accent2); color:#08130d; border-color:var(--accent2); }
-  #inputbar { position:relative; display:flex; gap:8px; align-items:center; padding:12px 20px; border-top:3px solid var(--line); background:var(--panel2); transition:background .15s, border-color .15s; }
-  /* emoji shortcode autocomplete popup */
-  #emojiAC { position:absolute; left:16px; bottom:calc(100% + 8px); min-width:200px; max-width:280px; background:var(--panel); border:1px solid var(--line2); border-radius:10px; box-shadow:0 -10px 34px rgba(0,0,0,.55); overflow:hidden; z-index:50; }
-  #emojiAC .row { display:flex; align-items:center; gap:10px; padding:7px 12px; cursor:pointer; }
-  #emojiAC .row .em { font-size:18px; width:22px; text-align:center; }
-  #emojiAC .row .cd { font-family:var(--mono); font-size:13px; color:var(--muted); }
-  #emojiAC .row.on { background:var(--acc-dim); } #emojiAC .row.on .cd { color:var(--accent); }
+  #inputbar { display:flex; gap:8px; align-items:center; padding:12px 20px; border-top:3px solid var(--line); background:var(--panel2); transition:background .15s, border-color .15s; }
   /* a clear mode pill so you always know whether you're typing an ANSWER or a CHAT */
   #inputbar::before { display:flex; align-items:center; font-weight:800; font-size:12px; letter-spacing:.5px; padding:5px 9px; border-radius:8px; white-space:nowrap; }
   #inputbar.answer-mode { border-top-color:var(--accent); }

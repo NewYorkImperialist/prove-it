@@ -486,6 +486,8 @@ app.post("/track", async (req, res) => {
         winner_name: e.won ? "You" : "Bot", claim: int(e.claim), proven: int(e.proven), at: now, mode: "sp", difficulty: str(e.difficulty, 10), gid });
       if (Array.isArray(e.answers)) e.answers.slice(0, 50).forEach((d) =>
         analytics.recordAnswer({ code: "SP", category: str(e.category), grp: str(e.grp), display: str(d), offList: false, at: now, mode: "sp", gid, player: "You" }));
+    } else if (e.type === "challenge") {
+      analytics.recordEvent("challenge", "CH", `${str(e.category, 40)} · named ${int(e.score)}${e.received ? ` (vs ${int(e.target)})` : ""} · ${int(e.timer)}s`, "ch");
     } else if (e.type === "spSkip") {
       analytics.recordEvent("categorySkipped", "SP", str(e.category), "sp", gid);
     } else if (e.type === "spGame") {

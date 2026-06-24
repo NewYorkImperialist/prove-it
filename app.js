@@ -1396,10 +1396,8 @@ function backToStart() {
   history.replaceState({}, "", "/");
   initCreate();
 }
-$("chHome").onclick = () => window.PI.showHome(); // logo → main menu
-$("chNew").onclick = backToStart;                 // New → fresh solo build screen
-// Footer: a single Back button returns to the main menu (single-page, no reload)
-$("soloBack").onclick = () => window.PI.showHome();
+// "← Back" on the solo menu cards (create/join) returns to the main menu — same as the multiplayer card.
+document.querySelectorAll(".js-soloback").forEach((b) => { b.onclick = () => window.PI.showHome(); });
 
 // ---- boot hooks (the router calls these; ?id= deep-links jump straight to join) ----
 window.__soloCreate = initCreate;

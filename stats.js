@@ -228,6 +228,12 @@ async function visitors(limit = 100) {
     FROM sessions WHERE visitor_id IS NOT NULL GROUP BY visitor_id ORDER BY visits DESC, last_seen DESC LIMIT ?`, [limit]);
 }
 
+// Full recent-sessions feed (every visit, newest first) with all the per-visit detail.
+async function sessionsList(limit = 300) {
+  return q(`SELECT connected_at, duration_ms, device, played, joined, spectated, name, singleplayer, ip, geo, tz, locale, visitor_id, mode, reason
+            FROM sessions ORDER BY id DESC LIMIT ?`, [limit]);
+}
+
 // ---- async challenges (link-based, with a shared per-challenge leaderboard) ----
 async function createChallenge(c) {
   if (!client) return false;
@@ -256,4 +262,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, createChallenge, getChallenge, addChallengeResult, getChallengeResults };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults };

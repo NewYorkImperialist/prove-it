@@ -199,7 +199,7 @@ function histHtml(h, k) {
     <div class="cols">
       <div><h3>📱 Device</h3>${tbl(["Device", "Sessions", "Avg stay"], dev, 3)}</div>
       <div><h3>📈 Sessions per day (Eastern)</h3>${tbl(["Day", "Sessions"], sDayRows, 2)}</div>
-      <div><h3>🕒 Recent sessions (Eastern)</h3>${tbl(["Arrived", "Stayed", "Device", "Location / IP", "Did"], sesRecent, 5)}</div>
+      <div><h3>🕒 Recent sessions (Eastern) · <a href="/admin/sessions?key=${k}">see all →</a></h3>${tbl(["Arrived", "Stayed", "Device", "Location / IP", "Did"], sesRecent, 5)}</div>
     </div>
     <div class="cols">
       <div><h3>🗂 Categories — plays · claim · solve%</h3>${tbl(["Category", "Plays", "Claim", "Solve%"], cat, 4)}</div>
@@ -292,6 +292,7 @@ app.get("/admin", async (req, res) => {
     <p style="margin:0 0 16px"><a href="/admin/health?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🩺 Category health → which answers never get named</a></p>
     <p style="margin:0 0 16px"><a href="/admin/games?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🎞 Game history → drill into any past game: every guess, chat, and exact timestamp</a></p>
     <p style="margin:0 0 16px"><a href="/admin/chat?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">💬 All chat → every message across the whole server (searchable)</a></p>
+    <p style="margin:0 0 16px"><a href="/admin/sessions?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🕒 Recent sessions → every visit in full: arrival, stay, device, location/IP, timezone</a></p>
     <p style="margin:0 0 16px"><a href="/admin/visitors?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🧭 Visitors → repeat visitors, IP, location & timezone</a></p>
     <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
     ${(() => { const live = liveSessions(); return `<h2>🌐 Live connections (${live.length})</h2>${tbl(["Connected for", "Name", "Doing", "Device"],
@@ -456,6 +457,47 @@ app.get("/admin/visitors", async (req, res) => {
     <h1>🧭 Visitors</h1>
     <p class="sub">Grouped by a persistent anonymous device id (localStorage). <b>${repeat}</b> of ${list.length} have visited more than once. Names are self-entered and unverified; IP/location come from the network.</p>
     <table><tr><th>Visits</th><th>Names used</th><th>Location</th><th>IP</th><th>Device</th><th>Played/Joined</th><th>First seen</th><th>Last seen</th></tr>${rows || `<tr><td class="dim" colspan="8">No visitors recorded yet.</td></tr>`}</table>
+    </body>`);
+});
+
+// Full recent-sessions log: every visit with all the detail we capture (newest first).
+app.get("/admin/sessions", async (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const k = encodeURIComponent(req.query.key || "");
+  const num = (x) => Number(x || 0);
+  const n = Math.min(2000, Math.max(50, parseInt(req.query.n, 10) || 300));
+  const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
+    a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
+    table{border-collapse:collapse;font-size:13px;width:100%} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:6px 9px;position:sticky;top:0;background:#0e1016} td{padding:6px 9px;border-bottom:1px solid #1c2029;vertical-align:top}
+    tr:hover td{background:#141823} .big{color:#3ecf8e;font-weight:700} .dim{color:#8a92a6} .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:20px;background:#1c2230;color:#c6ccda}
+    .nav{margin:0 0 14px;font-size:13px} .nav a{margin-right:12px}</style>`;
+  const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
+  if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Sessions</h1><p class="sub">Persistence not configured.</p></body>`);
+  const list = await analytics.sessionsList(n).catch(() => []);
+  // repeat indicator: how many times this visitor shows up within the fetched window
+  const seen = {}; list.forEach((r) => { if (r.visitor_id) seen[r.visitor_id] = (seen[r.visitor_id] || 0) + 1; });
+  const did = (r) => r.singleplayer ? '<span class="tag">🕹️ solo</span>' : num(r.played) ? '<span class="tag">🎮 played</span>'
+    : num(r.spectated) ? '<span class="tag">👀 watched</span>' : num(r.joined) ? '<span class="tag">🚪 lobby</span>' : '<span class="dim">browsed</span>';
+  const rows = list.map((r) => {
+    const vid = r.visitor_id ? esc(String(r.visitor_id).slice(0, 10)) : "—";
+    const rep = r.visitor_id && seen[r.visitor_id] > 1 ? ` <span class="big">↩︎${seen[r.visitor_id]}</span>` : "";
+    return `<tr>
+      <td class="dim">${easternFull(num(r.connected_at))}</td>
+      <td>${r.duration_ms != null ? fmtMs(num(r.duration_ms)) : '<span class="dim">live/—</span>'}</td>
+      <td>${did(r)}</td>
+      <td>${esc(r.name || "—")}</td>
+      <td>${esc(r.device || "—")}<br><span class="dim" style="font-size:11px">${esc(r.mode || "")}</span></td>
+      <td>${esc(r.geo || "—")}<br><span class="dim" style="font-size:11px">${esc(r.ip || "")}</span></td>
+      <td class="dim">${esc(r.tz || "—")}${r.locale ? "<br>" + esc(r.locale) : ""}</td>
+      <td class="dim" style="font-size:11px">${vid}${rep}</td>
+    </tr>`;
+  }).join("");
+  const repeatVisitors = Object.values(seen).filter((c) => c > 1).length;
+  res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    <h1>🕒 Recent sessions</h1>
+    <p class="sub">Every visit, newest first — arrival time, how long they stayed, what they did, device, location/IP, timezone & locale. Showing <b>${list.length}</b> · <b>${repeatVisitors}</b> repeat visitors in this window.</p>
+    <p class="nav">Show: <a href="/admin/sessions?key=${k}&n=100">100</a><a href="/admin/sessions?key=${k}&n=300">300</a><a href="/admin/sessions?key=${k}&n=1000">1000</a> · <a href="/admin/visitors?key=${k}">group by visitor →</a></p>
+    <table><tr><th>Arrived (ET)</th><th>Stayed</th><th>Did</th><th>Name</th><th>Device</th><th>Location / IP</th><th>TZ / Locale</th><th>Visitor</th></tr>${rows || `<tr><td class="dim" colspan="8">No sessions recorded yet.</td></tr>`}</table>
     </body>`);
 });
 

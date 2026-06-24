@@ -305,7 +305,7 @@
   #soloApp header .spacer { flex:1; }
   #soloApp .hbtn { background:var(--panel2); color:var(--muted); border:1px solid var(--line2); border-radius:8px; padding:6px 11px; font-size:13px; font-weight:700; }
   #soloApp .hbtn:hover { border-color:var(--accent); color:var(--accent); }
-  #soloApp main { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; align-items:center; padding:22px 16px; }
+  #soloApp main { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; align-items:center; justify-content:safe center; padding:22px 16px; }
   #soloApp .card { width:min(94vw,460px); max-height:none; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:34px 32px; box-shadow:0 24px 70px rgba(0,0,0,.6); overflow:visible; }
   #soloApp h1 { font-family:var(--display); font-size:25px; margin:0 0 6px; letter-spacing:-.4px; }
   #soloApp .sub { color:var(--muted); font-size:14px; margin:0 0 16px; }
@@ -531,16 +531,10 @@
 
   <!-- ===================== solo overlay (single-page) ===================== -->
   <div id="soloApp" class="hidden">
-  <header>
-    <span id="chHome" title="New challenge" style="cursor:pointer;display:inline-flex;align-items:center;gap:11px"><span class="logobadge">◎</span><span class="wd">prove it!</span></span>
-    <span class="tag">solo</span>
-    <span class="spacer"></span>
-    <button id="chNew" class="hbtn" title="Start over">New</button>
-  </header>
-
   <main>
     <!-- CREATE -->
     <section class="card" id="create" hidden>
+      <button class="backbtn js-soloback">← Back</button>
       <h1>Play solo</h1>
       <p class="sub">Name as many as you can before the clock runs out, then dare a friend to beat your score.</p>
       <label class="fld" for="byName">Your name</label>
@@ -577,6 +571,7 @@
 
     <!-- JOIN (opened a ?id= link) -->
     <section class="card" id="join" hidden>
+      <button class="backbtn js-soloback">← Back</button>
       <div class="challenger" id="joinInfo"></div>
       <ul class="rounds-prev" id="joinRounds"></ul>
       <label class="fld" for="joinName">Your name</label>
@@ -629,10 +624,6 @@
   </main>
 
   <div id="countdown" hidden><span id="cdNum"></span></div>
-
-  <footer>
-      <button class="solo-back" id="soloBack">← Back to menu</button>
-    </footer>
 
 </div>
   <script src="/socket.io/socket.io.js"></script>

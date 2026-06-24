@@ -836,8 +836,45 @@ function shakeInput() {
 }
 $("input").addEventListener("animationend", () => $("input").classList.remove("shake"));
 $("send").onclick = gameSend;
+
+// ---------- emoji shortcode autocomplete (type ":fir" → suggests :fire: 🔥) ----------
+const acBox = document.createElement("div"); acBox.id = "emojiAC"; acBox.style.display = "none";
+$("inputbar").appendChild(acBox);
+let acItems = [], acIndex = 0, acStart = -1, acOpen = false;
+function closeAC() { acOpen = false; acBox.style.display = "none"; }
+function renderAC() {
+  acBox.innerHTML = acItems.map((k, i) => `<div class="row${i === acIndex ? " on" : ""}" data-i="${i}"><span class="em">${EMOJI[k]}</span><span class="cd">:${k}:</span></div>`).join("");
+  acBox.style.display = "block";
+}
+function updateAC() {
+  const el = $("input"); const caret = el.selectionStart ?? el.value.length;
+  const m = el.value.slice(0, caret).match(/(?:^|\s):([a-z0-9_+]{1,})$/i);
+  if (!m) return closeAC();
+  const p = m[1].toLowerCase();
+  const keys = Object.keys(EMOJI);
+  acItems = [...new Set([...keys.filter((k) => k.startsWith(p)), ...keys.filter((k) => !k.startsWith(p) && k.includes(p))])].slice(0, 6);
+  if (!acItems.length) return closeAC();
+  acStart = caret - p.length - 1; acIndex = 0; acOpen = true; renderAC();
+}
+function acceptAC(i) {
+  const el = $("input"); const caret = el.selectionStart ?? el.value.length;
+  const emoji = EMOJI[acItems[i]];
+  el.value = el.value.slice(0, acStart) + emoji + el.value.slice(caret);
+  const pos = acStart + emoji.length; el.setSelectionRange(pos, pos);
+  closeAC(); el.focus();
+}
+acBox.addEventListener("mousedown", (e) => { const r = e.target.closest(".row"); if (r) { e.preventDefault(); acceptAC(+r.dataset.i); } });
+$("input").addEventListener("input", updateAC);
+$("input").addEventListener("blur", () => setTimeout(closeAC, 150));
+
 $("input").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") gameSend();
+  if (acOpen && acItems.length) {
+    if (e.key === "ArrowDown") { e.preventDefault(); acIndex = (acIndex + 1) % acItems.length; renderAC(); return; }
+    if (e.key === "ArrowUp") { e.preventDefault(); acIndex = (acIndex - 1 + acItems.length) % acItems.length; renderAC(); return; }
+    if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); acceptAC(acIndex); return; }
+    if (e.key === "Escape") { e.preventDefault(); closeAC(); return; }
+  }
+  if (e.key === "Enter") { closeAC(); gameSend(); }
   else if (e.key === "Escape" && chatMode) exitChat();
 });
 

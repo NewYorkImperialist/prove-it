@@ -558,11 +558,19 @@ app.get("/challenge.html", async (req, res, next) => {
   const c = await analytics.getChallenge(id).catch(() => null);
   if (!c) return next();
   const results = await analytics.getChallengeResults(id).catch(() => []);
-  const topTotal = results.length ? Math.max(...results.map((r) => Number(r.total) || 0)) : null;
   const by = c.by_name || "A friend";
-  const nRounds = (c.rounds || []).length;
+  const rounds = c.rounds || [];
+  const nRounds = rounds.length;
   const what = c.type === "genre" && c.genre ? `${nRounds} rounds of ${c.genre}` : `${nRounds} rounds`;
-  const title = topTotal != null ? `⚡ ${by} says you can't name more than ${topTotal}` : `⚡ ${by} challenged you on Prove It!`;
+  // Pick the challenger's best single-round score + that round's category ("17 Countries in Europe").
+  // Prefer the creator's own runs; fall back to everyone's if their name isn't on the board yet.
+  const mine = results.filter((r) => (r.name || "").trim().toLowerCase() === by.trim().toLowerCase());
+  const pool = mine.length ? mine : results;
+  let best = null; // { score, idx }
+  for (const r of pool) (r.scores || []).forEach((s, i) => { s = Number(s) || 0; if (s > 0 && (!best || s > best.score)) best = { score: s, idx: i }; });
+  const title = (best && rounds[best.idx])
+    ? `⚡ ${by} says you can't name more than ${best.score} ${rounds[best.idx]}`
+    : `⚡ ${by} challenged you on Prove It!`;
   const desc = `${what} — name as many as you can before the clock, then try to beat the leaderboard. No sign-up, just click and play.`;
   let html;
   try { html = fs.readFileSync(path.join(__dirname, "challenge.html"), "utf8"); } catch (e) { return next(); }

@@ -1,4 +1,4 @@
-// Prove It! — server-side duel engine (Phase 2)
+// Prove It! · server-side duel engine (Phase 2)
 // One match lives on room.game. The server is authoritative: it owns the turn
 // state machine, the clocks, and answer validation. Clients send intents and
 // render the broadcast snapshots.
@@ -13,7 +13,7 @@ const MAX_PENDING = 6;          // max off-list answers awaiting a ruling at onc
 const MAX_OFFLIST = 15;         // max off-list answers a prover can queue per round
 const DEFAULTS = { timer: 30, target: 5, autoAdvance: true }; // prove seconds, points to win, auto next round
 
-// Optional analytics hook — server.js sets this to persist game/round events. No-op by default.
+// Optional analytics hook · server.js sets this to persist game/round events. No-op by default.
 let report = () => {};
 function setReporter(fn) { report = typeof fn === "function" ? fn : () => {}; }
 
@@ -78,7 +78,7 @@ function resumeGame(io, room) {
   emit(io, room); // push current state to (re)connected clients
 }
 
-// Manual intermission pause — only valid between rounds while auto-advance is on.
+// Manual intermission pause · only valid between rounds while auto-advance is on.
 function handlePauseRound(io, room, socket) {
   const g = room.game;
   if (!g || g.phase !== "roundover" || g.intermission || !g.autoAdvance) return;
@@ -94,7 +94,7 @@ function handleNextRound(io, room, socket) {
   if (!g || g.phase !== "roundover") return;
   beginRound(io, room);
 }
-// Vote to end the whole match — endless mode only, needs both players to agree.
+// Vote to end the whole match · endless mode only, needs both players to agree.
 function handleVoteEnd(io, room, socket) {
   const g = room.game;
   if (!g || g.target !== Infinity || g.phase === "matchover") return; // endless only
@@ -108,7 +108,7 @@ function handleVoteEnd(io, room, socket) {
     if (sa === sb) { // ended by mutual vote with a tied score
       clearTimer(room);
       g.phase = "matchover"; g.deadline = null; g.matchWinnerId = null;
-      log(io, room, "system", null, `Game ended by vote — it's a tie! (${sa}–${sb})`);
+      log(io, room, "system", null, `Game ended by vote · it's a tie! (${sa}–${sb})`);
       return emit(io, room);
     }
     return matchOver(io, room, sa > sb ? a : b, "vote-end");
@@ -119,7 +119,7 @@ function handleVoteEnd(io, room, socket) {
   emit(io, room);
 }
 
-// Vote to skip the current category — needs both players to agree. Only before the duel starts.
+// Vote to skip the current category · needs both players to agree. Only before the duel starts.
 function handleVoteSkip(io, room, socket) {
   const g = room.game;
   if (!g || (g.phase !== "opening" && g.phase !== "bidding")) return;
@@ -128,7 +128,7 @@ function handleVoteSkip(io, room, socket) {
   if (g.skipVotes.has(pid)) return; // one vote per player
   g.skipVotes.add(pid);
   if (g.skipVotes.size >= 2) {
-    log(io, room, "system", null, "Both players skipped — new category.");
+    log(io, room, "system", null, "Both players skipped · new category.");
     report(room, "event", { type: "categorySkipped", detail: g.current.name });
     return beginRound(io, room); // fresh category, no points awarded
   }
@@ -198,7 +198,7 @@ function beginRound(io, room) {
   const opener = g.order[(g.round - 1) % 2];
   g.turnId = opener; g.phase = "opening";
   log(io, room, "system", null, `Round ${g.round} · ${c.group}: ${c.name}`);
-  log(io, room, "system", null, `${g.names[opener]} opens — how many ${c.name} can you name?`);
+  log(io, room, "system", null, `${g.names[opener]} opens · how many ${c.name} can you name?`);
   setTimer(room, OPEN_MS, () => roundOver(io, room, other(g, opener), `${g.names[opener]} didn't open in time`));
   emit(io, room);
 }
@@ -208,7 +208,7 @@ function handleOpen(io, room, socket, n, ack) {
   if (!g || g.phase !== "opening" || socket.data.playerId !== g.turnId) return ack?.({ ok: false });
   const size = g.current.entries.length;
   if (!Number.isInteger(n) || n < 1) return ack?.({ ok: false, error: "Enter a whole number ≥ 1." });
-  if (n > size) return ack?.({ ok: false, error: g.current.exact ? `There are only ${size} ${g.current.name}.` : `That's too many — try a smaller number.` });
+  if (n > size) return ack?.({ ok: false, error: g.current.exact ? `There are only ${size} ${g.current.name}.` : `That's too many · try a smaller number.` });
   g.claim = n; g.holderId = socket.data.playerId;
   log(io, room, socket.data.playerId, g.names[socket.data.playerId], `I can name ${n}.`);
   passBidTurn(io, room, other(g, socket.data.playerId));
@@ -221,7 +221,7 @@ function handleRaise(io, room, socket, toN, ack) {
   const size = g.current.entries.length;
   const next = Number.isInteger(toN) ? toN : g.claim + 1;
   if (next <= g.claim) return ack?.({ ok: false, error: `You have to go higher than ${g.claim}.` });
-  if (next > size) return ack?.({ ok: false, error: g.current.exact ? `There are only ${size} ${g.current.name}.` : `That's too many — try a smaller number.` });
+  if (next > size) return ack?.({ ok: false, error: g.current.exact ? `There are only ${size} ${g.current.name}.` : `That's too many · try a smaller number.` });
   g.claim = next; g.holderId = socket.data.playerId;
   log(io, room, socket.data.playerId, g.names[socket.data.playerId], `Make it ${next}.`);
   passBidTurn(io, room, other(g, socket.data.playerId));
@@ -264,7 +264,7 @@ function onProveTimeout(io, room) {
   }
   g.phase = "judging"; g.turnId = g.challengerId;
   g.judgeQueue = [...g.pending.values()];
-  log(io, room, "system", null, `Time! ${g.names[g.challengerId]} must rule on ${g.judgeQueue.length} off-list answer(s) — 5s each.`);
+  log(io, room, "system", null, `Time! ${g.names[g.challengerId]} must rule on ${g.judgeQueue.length} off-list answer(s) · 5s each.`);
   presentNextJudgment(io, room);
 }
 
@@ -277,7 +277,7 @@ function presentNextJudgment(io, room) {
   setTimer(room, JUDGE_MS_PER, () => {
     const a = g.judgeActive;
     g.pending.delete(a.id); g.judgeQueue.shift(); g.judgeActive = null;
-    log(io, room, "system", null, `No ruling — "${a.text}" rejected.`, "bad");
+    log(io, room, "system", null, `No ruling · "${a.text}" rejected.`, "bad");
     presentNextJudgment(io, room);
   });
   emit(io, room);
@@ -324,7 +324,7 @@ function handleAnswer(io, room, socket, text, ack) {
         report(room, "event", { type: "easterEgg", detail: entry.display });
         const pid = socket.data.playerId;
         g.scores[pid] = (g.scores[pid] || 0) + 5;
-        log(io, room, "system", null, `${me} said the magic words — +5 bonus points!`);
+        log(io, room, "system", null, `${me} said the magic words · +5 bonus points!`);
         // fx: "logo" → the Prove It! logo reacts; "crown" → the creator's crown reacts.
         io.to(room.code).emit("easterEgg", { name: me, phrase: entry.display, fx: entry.display === "Jayden Lin" ? "crown" : "logo" });
         // The bonus can win the match outright (it's only otherwise checked at round end).
@@ -339,7 +339,7 @@ function handleAnswer(io, room, socket, text, ack) {
   // ----- off-list answer → opponent rules (with spam caps) -----
   const q = norm(text);
   if (g.granted.includes(q) || [...g.pending.values()].some((p) => p.q === q)) {
-    log(io, room, socket.data.playerId, me, `${text} — already counted/awaiting`, "bad");
+    log(io, room, socket.data.playerId, me, `${text} · already counted/awaiting`, "bad");
     ack?.({ ok: true });
     return emit(io, room);
   }
@@ -354,12 +354,12 @@ function handleAnswer(io, room, socket, text, ack) {
   const id = ++g.answerSeq;
   g.pending.set(id, { id, text, q });
   g.offListCount++;
-  log(io, room, socket.data.playerId, me, `${text} — not on my list, opponent decides`, "pending");
+  log(io, room, socket.data.playerId, me, `${text} · not on my list, opponent decides`, "pending");
   ack?.({ ok: true });
   emit(io, room);
 }
 
-// The opponent (challenger) rules on an off-list answer — works live during the
+// The opponent (challenger) rules on an off-list answer · works live during the
 // round and during the forced end-of-round click-through.
 function handleJudge(io, room, socket, { answerId, accept } = {}) {
   const g = room.game;
@@ -431,7 +431,7 @@ function roundOver(io, room, winnerId, reason) {
   g.phase = "roundover"; g.deadline = null;
   g.lastResult = { winnerId, winnerName: g.names[winnerId], reason, claim: g.claim, proven: g.proven.length };
   g.intermission = false;
-  log(io, room, "system", null, `${reason} — point ${g.names[winnerId]} (${g.scores[g.order[0]]}–${g.scores[g.order[1]]})`);
+  log(io, room, "system", null, `${reason} · point ${g.names[winnerId]} (${g.scores[g.order[0]]}–${g.scores[g.order[1]]})`);
   report(room, "round", { winnerId, winnerName: g.names[winnerId], category: g.current.name, grp: g.current.group, claim: g.claim, proven: total(g) });
   if (g.target !== Infinity && g.scores[winnerId] >= g.target) return matchOver(io, room, winnerId);
   if (g.autoAdvance) {
@@ -482,7 +482,7 @@ function setGroups(io, room, groups) {
   room.game.pool = buildPool({ groups: valid });
   room.game.groups = valid;
   room.settings = { ...(room.settings || {}), groups: valid };
-  log(io, room, "system", null, "Categories updated — applies next round.");
+  log(io, room, "system", null, "Categories updated · applies next round.");
   emit(io, room); // push the new groups so menus/state reflect it
 }
 

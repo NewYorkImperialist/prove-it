@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prove It! — Challenge</title>
+<title>Prove It! · Challenge</title>
 <link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='8' y='8' width='84' height='84' rx='20' fill='%23f5a623'/><text x='50' y='50' font-size='64' text-anchor='middle' dominant-baseline='central' fill='%23241500'>◎</text></svg>">
-<meta name="description" content="A friend challenged you on Prove It! — name as many as you can across the rounds, then climb the leaderboard.">
+<meta name="description" content="A friend challenged you on Prove It! · name as many as you can across the rounds, then climb the leaderboard.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Prove It!">
 <meta property="og:title" content="⚡ Beat my Prove It! challenge">
-<meta property="og:description" content="Multi-round naming challenge. No sign-up — just click and play, then see who tops the leaderboard.">
+<meta property="og:description" content="Multi-round naming challenge. No sign-up · just click and play, then see who tops the leaderboard.">
 <meta property="og:image" content="https://proveit.fly.dev/og-card.png?v=4">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
@@ -86,6 +86,10 @@
 
   /* between + done */
   .big { font-family:var(--ui); font-size:46px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--accent); margin:6px 0; }
+  #countdown { position:fixed; inset:0; display:grid; place-items:center; background:rgba(12,10,7,.72); z-index:200; }
+  #cdNum { font-family:var(--display); font-weight:700; font-size:170px; line-height:1; color:var(--accent); }
+  #cdNum.go { font-size:130px; }
+  @keyframes cdpop { 0%{transform:scale(.45);opacity:0} 22%{transform:scale(1);opacity:1} 75%{opacity:1} 100%{transform:scale(1.7);opacity:0} }
   .verdict { font-size:17px; font-weight:700; margin:0 0 12px; } .win { color:var(--accent); } .lose { color:var(--bad); }
   table.lb { border-collapse:collapse; width:100%; font-size:14px; margin-top:8px; }
   table.lb th { text-align:right; color:var(--muted); font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.6px; padding:7px 9px; border-bottom:1px solid var(--line2); }
@@ -96,7 +100,7 @@
   table.lb .hi { color:var(--accent); font-weight:800; }
   table.lb tr.me td { background:var(--acc-dim); }
   .lb-note { font-size:13px; color:var(--muted); margin:12px 0 0; }
-  /* creator crown — amber flair tile with a "Creator" hover tooltip (matches multiplayer) */
+  /* creator crown · amber flair tile with a "Creator" hover tooltip (matches multiplayer) */
   .crown { position:relative; display:inline-flex; align-items:center; justify-content:center; width:21px; height:21px;
     margin-left:7px; vertical-align:middle; border-radius:6px; font-size:12px; line-height:1; cursor:default;
     background:linear-gradient(150deg,#4a3617 0%,#352712 50%,#221809 100%); border:1px solid rgba(245,166,35,.6);
@@ -123,10 +127,10 @@
     <!-- CREATE -->
     <section class="card" id="create" hidden>
       <h1>Play solo</h1>
-      <p class="sub">Think you've got what it takes to name it all in time? Prove it! Name as many as you can before the clock runs out — then dare a friend to beat you.</p>
+      <p class="sub">Name as many as you can before the clock runs out, then dare a friend to beat your score.</p>
       <label class="fld" for="byName">Your name</label>
       <input id="byName" type="text" maxlength="20" placeholder="e.g. Jayden">
-      <button class="btn" id="quickBtn">Quick play — random category</button>
+      <button class="btn" id="quickBtn">Quick play</button>
       <label class="fld" for="catSel">…or pick a category</label>
       <select id="catSel"></select>
       <button class="btn ghost" id="chooseBtn">Play this category</button>
@@ -168,14 +172,21 @@
     <section class="card" id="sprint" hidden>
       <div id="roundpips"></div>
       <div class="top">
-        <div><div class="catlabel" id="sprintGroup">Round</div><div class="cat" id="sprintCat">—</div></div>
+        <div><div class="catlabel" id="sprintGroup">Round</div><div class="cat" id="sprintCat">·</div></div>
         <div id="timer">45</div>
       </div>
       <div style="display:flex;align-items:baseline;gap:14px"><span id="count">0</span><span id="wpm" class="catlabel"></span></div>
       <input id="cinput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type a name and hit Enter…">
       <div id="cmsg"></div>
       <div id="chips"></div>
-      <button class="btn ghost" id="sprintShare" style="margin-top:14px">Copy link to challenge a friend</button>
+    </section>
+
+    <!-- READY (pre-game: share link + start) -->
+    <section class="card" id="ready" hidden>
+      <h1 id="readyTitle">Ready?</h1>
+      <p class="sub" id="readySub"></p>
+      <button class="btn ghost" id="readyShare">Copy link to challenge a friend</button>
+      <button class="btn" id="readyStart">Start</button>
     </section>
 
     <!-- BETWEEN ROUNDS -->
@@ -192,12 +203,14 @@
       <div class="big"><span id="doneTotal">0</span></div>
       <p class="sub" id="doneSub"></p>
       <div id="lbWrap"></div>
-      <label class="fld">Share this link — friends play the same questions &amp; join this leaderboard</label>
+      <label class="fld">Share this link · friends play the same questions &amp; join this leaderboard</label>
       <input id="shareUrl" type="text" readonly onclick="this.select()" style="font-family:var(--mono);font-size:13px">
       <button class="btn" id="shareBtn">Copy challenge link</button>
       <div class="row"><button class="btn ghost" id="refreshLB">Refresh leaderboard</button><button class="btn ghost" id="newChallenge">New challenge</button></div>
     </section>
   </main>
+
+  <div id="countdown" hidden><span id="cdNum"></span></div>
 
   <footer>
     <a href="/">← Home</a>

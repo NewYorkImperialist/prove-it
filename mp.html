@@ -6,18 +6,18 @@
 <title>Prove It!</title>
 <link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='8' y='8' width='84' height='84' rx='20' fill='%23f5a623'/><text x='50' y='50' font-size='64' text-anchor='middle' dominant-baseline='central' fill='%23241500'>◎</text></svg>">
 <!-- Social preview (so the link shows a rich card in Discord / Reddit / iMessage / Twitter) -->
-<meta name="description" content="A fast, free browser bluffing word game — name as many as you can, or call your opponent's bluff. No sign-up; just click and play.">
+<meta name="description" content="A fast, free browser bluffing word game · name as many as you can, or call your opponent's bluff. No sign-up; just click and play.">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Prove It!">
-<meta property="og:title" content="Prove It! — the bluffing word game">
-<meta property="og:description" content="Brag how many you can name, then back it up against the clock. Play free in your browser — solo vs a bot, or head-to-head with friends.">
+<meta property="og:title" content="Prove It! · the bluffing word game">
+<meta property="og:description" content="Brag how many you can name, then back it up against the clock. Play free in your browser · solo vs a bot, or head-to-head with friends.">
 <meta property="og:url" content="https://proveit.fly.dev/">
 <meta property="og:image" content="https://proveit.fly.dev/og-card.png?v=4">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:image" content="https://proveit.fly.dev/og-card.png?v=4">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Prove It! — the bluffing word game">
+<meta name="twitter:title" content="Prove It! · the bluffing word game">
 <meta name="twitter:description" content="Brag how many you can name, then back it up against the clock. Free, no sign-up.">
 <meta name="theme-color" content="#0c0a07">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -55,7 +55,7 @@
   input:focus { border-color:var(--accent); }
   input.shake { animation:shake .4s; border-color:var(--bad)!important; }
   @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 40%{transform:translateX(6px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }
-  /* "you're opening" cue — red glow on the answer box so the opener can't miss it */
+  /* "you're opening" cue · red glow on the answer box so the opener can't miss it */
   #input.opening-cue { border-color:var(--bad)!important; box-shadow:0 0 0 3px rgba(229,72,77,.35); background:rgba(229,72,77,.07); }
   .row { display:flex; gap:8px; }
   .row input { flex:1; text-transform:uppercase; letter-spacing:2px; }
@@ -202,7 +202,7 @@
   .msg.pending { background:rgba(255,207,91,.12); border:1px solid var(--gold); }
   .sender { font-size:11px; color:var(--muted); margin:2px 6px -4px; }
   .sender.right { align-self:flex-end; } .sender.left { align-self:flex-start; }
-  /* chat messages — visually distinct from game bubbles (Protobowl-style) */
+  /* chat messages · visually distinct from game bubbles (Protobowl-style) */
   .chat { align-self:stretch; font-size:13px; line-height:1.45; padding:4px 8px; border-radius:6px; background:rgba(255,255,255,.035); }
   .chat .nm { font-weight:700; color:#8ab4ff; }
   .chat.mine .nm { color:var(--accent2); }
@@ -245,7 +245,7 @@
   #inputbar::before { display:flex; align-items:center; font-weight:800; font-size:12px; letter-spacing:.5px; padding:5px 9px; border-radius:8px; white-space:nowrap; }
   #inputbar.answer-mode { border-top-color:var(--accent); }
   #inputbar.answer-mode::before { content:"ANSWER"; background:var(--accent); color:var(--markfg); }
-  /* chat mode — pressing "/" or tapping 💬 turns the input box into a chat box */
+  /* chat mode · pressing "/" or tapping 💬 turns the input box into a chat box */
   #inputbar.chat-mode { border-top-color:var(--accent2); background:rgba(62,207,142,.12); }
   #inputbar.chat-mode::before { content:"CHAT"; background:var(--accent2); color:#08130d; }
   #inputbar.chat-mode #input { border-color:var(--accent2); background:rgba(62,207,142,.10); }
@@ -393,7 +393,7 @@
     <div id="main">
       <div id="banner">
         <div class="label" id="catLabel">Category</div>
-        <div class="cat" id="catName">—</div>
+        <div class="cat" id="catName">·</div>
         <div class="claim" id="claimLine"></div>
       </div>
       <div id="feed"></div>

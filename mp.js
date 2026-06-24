@@ -1,4 +1,4 @@
-// Prove It! — multiplayer client (Phase 2: rooms + live duel)
+// Prove It! · multiplayer client (Phase 2: rooms + live duel)
 const $ = (id) => document.getElementById(id);
 const socket = io();
 
@@ -25,7 +25,7 @@ let gs = null; // latest game state snapshot
 let lastSendAt = 0; // client-side answer cooldown
 
 // Identity survives a REFRESH (so we reconnect), but a fresh/duplicated tab gets a
-// brand-new identity — otherwise two tabs in one browser would fight over one slot.
+// brand-new identity · otherwise two tabs in one browser would fight over one slot.
 function genPid() { return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6); }
 const navEntry = performance.getEntriesByType("navigation")[0];
 const isReload = !!navEntry && navEntry.type === "reload";
@@ -112,7 +112,7 @@ function maybeAutoJoinInvite() {
   });
 }
 
-// ---------- sound effects (synthesized with Web Audio — no audio files) ----------
+// ---------- sound effects (synthesized with Web Audio · no audio files) ----------
 let audioCtx = null;
 let muted = localStorage.getItem("muted") === "1";
 function actx() {
@@ -120,7 +120,7 @@ function actx() {
   if (audioCtx.state === "suspended") audioCtx.resume();
   return audioCtx;
 }
-// Browsers block audio until a user gesture — resume the context on the first interaction.
+// Browsers block audio until a user gesture · resume the context on the first interaction.
 ["click", "keydown", "touchstart"].forEach((ev) => document.addEventListener(ev, () => actx(), { once: true }));
 function tone(freq, dur, { type = "sine", gain = 0.2, delay = 0, sweep = 0 } = {}) {
   if (muted) return;
@@ -168,7 +168,7 @@ function setTheme(t) {
   document.querySelectorAll("[data-theme]").forEach((b) => b.classList.toggle("on", b.dataset.theme === t));
   setFavicon(t);
 }
-setTheme("amber"); // cyan retired — amber only
+setTheme("amber"); // cyan retired · amber only
 
 // ---------- connection indicator + auto-resume ----------
 // Two indicators: the floating one (lobby) and the sidebar one (in game).
@@ -357,12 +357,12 @@ socket.on("roomState", (room) => {
   }
   const specs = room.spectators || [];
   $("watchers").classList.toggle("hidden", specs.length === 0);
-  if (specs.length) $("watchers").textContent = `${specs.length} watching — ${specs.map((s) => s.name).join(", ")}`;
+  if (specs.length) $("watchers").textContent = `${specs.length} watching · ${specs.map((s) => s.name).join(", ")}`;
 
   const canStart = iAmHost && room.players.length >= 2;
   $("startBtn").classList.toggle("hidden", !iAmHost);
   $("startBtn").disabled = !canStart;
-  $("roomStatus").textContent = isSpectator ? "You're spectating — waiting for the host to start…"
+  $("roomStatus").textContent = isSpectator ? "You're spectating · waiting for the host to start…"
     : iAmHost ? (canStart ? "" : "Waiting for a second player…") : "Waiting for the host to start…";
 
   buildLobbySettings();
@@ -501,21 +501,21 @@ function oilRain() {
   }
 }
 socket.on("easterEgg", ({ name, phrase, fx }) => {
-  if (fx === "oil") { oilRain(); sfx.sparkle(); flashStatus(`${name} said "${phrase}" — oil incoming!`); return; }
+  if (fx === "oil") { oilRain(); sfx.sparkle(); flashStatus(`${name} said "${phrase}" · oil incoming!`); return; }
   confettiBurst();
   sfx.sparkle();
   if (fx === "crown") {
-    // the crown lives in the sidebar, which re-renders when the +5 lands — fire the shake on a few
+    // the crown lives in the sidebar, which re-renders when the +5 lands · fire the shake on a few
     // timers so it runs on the freshly-rendered crown after those renders settle.
     [0, 160, 360, 620].forEach((d) => setTimeout(partyCrowns, d));
   } else {
     const el = $("mpLogo"); el.classList.remove("party"); void el.offsetWidth; el.classList.add("party"); // "Prove It!" → the logo
   }
-  flashStatus(`${name} said "${phrase || "the magic words"}" — +5 bonus points!`);
+  flashStatus(`${name} said "${phrase || "the magic words"}" · +5 bonus points!`);
 });
 $("mpLogo").addEventListener("animationend", () => $("mpLogo").classList.remove("party"));
 
-// Self-contained canvas confetti — no libraries. Bursts from the top-center and rains down.
+// Self-contained canvas confetti · no libraries. Bursts from the top-center and rains down.
 function confettiBurst() {
   const canvas = document.createElement("canvas");
   canvas.style.cssText = "position:fixed;inset:0;pointer-events:none;z-index:9999";
@@ -599,7 +599,7 @@ function render() {
   prevActKey = actKey;
 
   if (gs.phase === "opening") {
-    if (myTurn) { enable = true; placeholder = "Your turn — type a number to open!"; statusText = "You're opening — how many can you name?"; }
+    if (myTurn) { enable = true; placeholder = "Your turn · type a number to open!"; statusText = "You're opening · how many can you name?"; }
     else statusText = `Waiting for ${nameOf(gs.turnId)} to open…`;
   } else if (gs.phase === "bidding") {
     if (myTurn) {
@@ -607,7 +607,7 @@ function render() {
       enable = true;
       addBtn(actions, `Raise to ${gs.claim + 1}`, "raise", () => socket.emit("raise", {}, ackErr));
       addBtn(actions, "Prove It!", "danger", () => socket.emit("proveIt", {}, ackErr));
-    } else statusText = `${nameOf(gs.turnId)} is deciding — raise or call Prove It!`;
+    } else statusText = `${nameOf(gs.turnId)} is deciding · raise or call Prove It!`;
   } else if (gs.phase === "proving") {
     // (proving handled below)
   }
@@ -632,7 +632,7 @@ function render() {
   } else if (gs.phase === "roundover") {
     if (gs.intermission) {
       // Waiting for a player to advance (auto-advance off, or paused).
-      statusText = gs.autoAdvance ? "Paused — press P or tap for the next round" : "Press P or tap for the next round";
+      statusText = gs.autoAdvance ? "Paused · press P or tap for the next round" : "Press P or tap for the next round";
       addBtn(actions, "Next round (P)", "again", () => socket.emit("nextRound"));
     } else {
       statusText = "Next round coming up…";
@@ -641,7 +641,7 @@ function render() {
     if (gs.target == null) // endless → let either player vote to end the whole game
       addBtn(actions, gs.endVotes ? `End game (${gs.endVotes}/2)` : "End game", "danger", () => socket.emit("voteEnd"));
   } else if (gs.phase === "matchover") {
-    statusText = gs.matchWinnerId ? `${nameOf(gs.matchWinnerId)} wins the match!` : "Game over — it's a tie!";
+    statusText = gs.matchWinnerId ? `${nameOf(gs.matchWinnerId)} wins the match!` : "Game over · it's a tie!";
     if (iAmHost) addBtn(actions, "Play again", "again", () => socket.emit("rematch", {}, ackErr));
     addBtn(actions, "Leave", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
   }
@@ -650,17 +650,17 @@ function render() {
   if (isSpectator) {
     actions.innerHTML = "";
     enable = false;
-    placeholder = isGhost ? "Ghost mode — you're invisible (can't chat)" : "Say something… (you're spectating)";
+    placeholder = isGhost ? "Ghost mode · you're invisible (can't chat)" : "Say something… (you're spectating)";
     if (gs.phase === "matchover") addBtn(actions, "Stop watching", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
   }
 
-  // Frozen while an opponent is reconnecting — overrides all controls.
+  // Frozen while an opponent is reconnecting · overrides all controls.
   if (gs.paused) {
     $("gpending").innerHTML = "";
     actions.innerHTML = "";
     input.disabled = false; sendBtn.disabled = false; // chat still works while frozen
-    if (!chatMode) input.placeholder = "Paused — type / to chat…";
-    status.textContent = "Opponent disconnected — waiting up to 30s for them to reconnect…";
+    if (!chatMode) input.placeholder = "Paused · type / to chat…";
+    status.textContent = "Opponent disconnected · waiting up to 30s for them to reconnect…";
     return;
   }
 
@@ -669,7 +669,7 @@ function render() {
   // input is always usable so chat works any time; game actions are gated in gameSend
   input.disabled = false;
   sendBtn.disabled = false;
-  if (isGhost) { input.disabled = true; sendBtn.disabled = true; } // a ghost can't type — staying invisible
+  if (isGhost) { input.disabled = true; sendBtn.disabled = true; } // a ghost can't type · staying invisible
   if (!chatMode) { // don't disturb the box while composing a chat message
     input.placeholder = placeholder;
     if (enable && !isGhost) input.focus();
@@ -725,7 +725,7 @@ function renderPending() {
   const amJudge = gs.challengerId === myId;
 
   if (gs.phase === "proving") {
-    // live judging — the whole pending list at once
+    // live judging · the whole pending list at once
     const pending = gs.pending || [];
     if (!pending.length) return;
     if (amJudge) {
@@ -735,7 +735,7 @@ function renderPending() {
       note(box, `Off-list, waiting on opponent: ${pending.map((p) => p.text).join(", ")}`);
     }
   } else if (gs.phase === "judging") {
-    // forced ruling — one at a time
+    // forced ruling · one at a time
     const a = gs.judgeActive;
     if (!a) return;
     if (amJudge) {
@@ -750,7 +750,7 @@ function ackErr(r) { if (r && !r.ok && r.error) flashStatus(r.error); }
 function flashStatus(msg) { const s = $("gstatus"); s.textContent = msg; s.className = "err"; }
 
 // ---------- input send (context depends on phase) ----------
-// Discord-style :shortcode: → emoji in chat (no picker — just type it like Discord).
+// Discord-style :shortcode: → emoji in chat (no picker · just type it like Discord).
 const EMOJI = {
   skull:"💀",fire:"🔥",joy:"😂",sob:"😭",cry:"😢",heart:"❤️",hearts:"💕",sparkling_heart:"💖",broken_heart:"💔",
   thumbsup:"👍","+1":"👍",thumbsdown:"👎","-1":"👎","100":"💯",eyes:"👀",clown:"🤡",clown_face:"🤡",pray:"🙏",
@@ -772,7 +772,7 @@ const EMOJI = {
 function emojify(s) { return s.replace(/:([a-z0-9_+-]+):/gi, (m, c) => EMOJI[c.toLowerCase()] || m); }
 
 function gameSend() {
-  if (isGhost) { $("input").value = ""; return; } // ghosts are silent — no chat, no actions
+  if (isGhost) { $("input").value = ""; return; } // ghosts are silent · no chat, no actions
   if (isSpectator) { // spectators can only chat
     const msg = $("input").value.trim();
     $("input").value = "";
@@ -780,7 +780,7 @@ function gameSend() {
     if (msg) socket.emit("chat", { text: emojify(msg) });
     return;
   }
-  if (chatMode) { // we're in chat mode — send the message, no "/" needed
+  if (chatMode) { // we're in chat mode · send the message, no "/" needed
     const msg = $("input").value.trim();
     $("input").value = "";  // clear first so exitChat saves an empty draft
     exitChat();
@@ -796,7 +796,7 @@ function gameSend() {
     return;
   }
   const myMove = !!gs && gs.turnId === myId;
-  // Number mode (opening/bidding): a plain number on your turn is the game action —
+  // Number mode (opening/bidding): a plain number on your turn is the game action ·
   // anything else (text, or not your turn) just becomes a chat message instead of erroring.
   if (gs && (gs.phase === "opening" || gs.phase === "bidding")) {
     if (myMove && /^\d+$/.test(raw)) {
@@ -819,7 +819,7 @@ function gameSend() {
     socket.emit("answer", { text: raw }, (res) => {
       if (res && !res.ok) {
         shakeInput();
-        if (res.reason === "pending") { $("input").value = raw; flashStatus("Hold on — your opponent still has answers to rule."); }
+        if (res.reason === "pending") { $("input").value = raw; flashStatus("Hold on · your opponent still has answers to rule."); }
         else if (res.reason === "roundcap") flashStatus("Too many off-list guesses this round.");
         else flashStatus("Slow down!");
       }

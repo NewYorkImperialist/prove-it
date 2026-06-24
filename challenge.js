@@ -1,7 +1,7 @@
-// Prove It! — async multi-round challenges with a shared per-challenge leaderboard.
+// Prove It! · async multi-round challenges with a shared per-challenge leaderboard.
 const $ = (id) => document.getElementById(id);
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-let perRound = 45; // seconds per round — chosen by the host, then locked so every run is comparable
+let perRound = 45; // seconds per round · chosen by the host, then locked so every run is comparable
 
 // ---- theme + favicon ----
 function setFavicon(t) {
@@ -14,7 +14,7 @@ function setTheme(t) {
   document.querySelectorAll("[data-theme]").forEach((b) => b.classList.toggle("on", b.dataset.theme === t));
   setFavicon(t);
 }
-setTheme("amber"); // cyan retired — amber only
+setTheme("amber"); // cyan retired · amber only
 
 // ---- mobile viewport ----
 function setAppHeight() { const vv = window.visualViewport; document.documentElement.style.setProperty("--app-height", ((vv && vv.height) || window.innerHeight) + "px"); }
@@ -52,14 +52,14 @@ let rChars = 0, rT0 = 0, roundWpm = []; // live typing-speed tracking (chars sin
 function liveWpm() { return rT0 ? Math.round((rChars / 5) / Math.max(1 / 60, (Date.now() - rT0) / 60000)) : 0; }
 function showWpm() { $("wpm").textContent = rT0 ? liveWpm() + " wpm" : ""; }
 
-function show(sec) { ["create", "join", "sprint", "between", "done"].forEach((s) => { $(s).hidden = s !== sec; }); }
+function show(sec) { ["create", "join", "ready", "sprint", "between", "done"].forEach((s) => { $(s).hidden = s !== sec; }); }
 
 // ============ CREATE ============
 function buildGenreSelect() { const sel = $("genreSel"); sel.innerHTML = ""; GENRES.forEach((g) => { const o = document.createElement("option"); o.value = g; const em = (CATS.find((c) => c.group === g) || {}).emoji || ""; o.textContent = `${em} ${g}`; sel.appendChild(o); }); }
 function catOptions(selectedName) {
   const groups = {}; CATS.forEach((c) => { (groups[c.group] = groups[c.group] || []).push(c); });
   const sel = document.createElement("select");
-  Object.keys(groups).forEach((g) => { const og = document.createElement("optgroup"); og.label = g; groups[g].forEach((c) => { const o = document.createElement("option"); o.value = c.name; o.textContent = `${c.name}${nonSprint(c) ? " — non-sprint" : ""}`; if (c.name === selectedName) o.selected = true; og.appendChild(o); }); sel.appendChild(og); });
+  Object.keys(groups).forEach((g) => { const og = document.createElement("optgroup"); og.label = g; groups[g].forEach((c) => { const o = document.createElement("option"); o.value = c.name; o.textContent = `${c.name}${nonSprint(c) ? " (non-sprint)" : ""}`; if (c.name === selectedName) o.selected = true; og.appendChild(o); }); sel.appendChild(og); });
   return sel;
 }
 function buildCustomRounds() {
@@ -118,7 +118,27 @@ function startPlaying(playerName) {
   roundCats = def.rounds.map(findCat).filter(Boolean);
   if (!roundCats.length) { show("create"); $("createErr").textContent = "This challenge's categories are unavailable."; return; }
   roundScores = []; cur = 0;
-  startRound(0);
+  // Pre-game "ready" screen: copy the link to a friend, then start (with a 3-2-1 countdown).
+  show("ready");
+  $("readyTitle").textContent = `Ready, ${myName}?`;
+  $("readySub").textContent = roundCats.length === 1
+    ? `${roundCats[0].name}. Name as many as you can before the clock runs out.`
+    : `${roundCats.length} rounds. Name as many as you can before the clock runs out.`;
+}
+// Big 3 · 2 · 1 · GO! countdown, each fading out, then run the callback.
+function runCountdown(done) {
+  const overlay = $("countdown"), el = $("cdNum");
+  const seq = ["3", "2", "1", "GO!"];
+  overlay.hidden = false;
+  let i = 0;
+  (function tick() {
+    if (i >= seq.length) { overlay.hidden = true; done(); return; }
+    el.textContent = seq[i];
+    el.classList.toggle("go", seq[i] === "GO!");
+    el.style.animation = "none"; void el.offsetWidth; el.style.animation = "cdpop .8s ease forwards";
+    i++;
+    setTimeout(tick, 800);
+  })();
 }
 function startRound(i) {
   cur = i; named = new Set(); count = 0; rChars = 0; rT0 = 0;
@@ -151,7 +171,7 @@ function endRound() {
   show("between");
   $("betweenLabel").textContent = `Round ${cur + 1} of ${roundCats.length} done`;
   $("betweenCount").textContent = count;
-  $("betweenCat").textContent = `${roundCats[cur].name} — ${roundWpm[cur]} wpm · running total ${roundScores.reduce((a, n) => a + n, 0)}`;
+  $("betweenCat").textContent = `${roundCats[cur].name} · ${roundWpm[cur]} wpm · running total ${roundScores.reduce((a, n) => a + n, 0)}`;
   $("nextBtn").textContent = last ? "See results & leaderboard →" : "Next round →";
 }
 $("nextBtn").onclick = () => { if (cur + 1 >= roundCats.length) finish(); else startRound(cur + 1); };
@@ -165,7 +185,7 @@ async function finish() {
   $("doneVerdict").innerHTML = "Your run is in!"; $("doneVerdict").className = "verdict win";
   $("doneTotal").parentElement.hidden = false;
   $("doneTotal").textContent = total;
-  $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds at ${avgWpm} wpm avg. Send the link to friends — same questions, same leaderboard.`;
+  $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`;
   let ownerKey = null; try { if (localStorage.getItem("crownOn") === "1") ownerKey = localStorage.getItem("ownerKey"); } catch (e) {}
   await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey });
   renderLeaderboard($("lbWrap"));
@@ -179,7 +199,7 @@ async function renderLeaderboard(el) {
   const best = new Map();
   (data.results || []).forEach((r) => { const key = r.visitor_id || ("name:" + r.name); const prev = best.get(key); if (!prev || r.total > prev.total) best.set(key, r); });
   const players = [...best.values()].sort((a, b) => b.total - a.total);
-  if (!players.length) { el.innerHTML = `<p class="lb-note">No one has played yet — be the first!</p>`; return; }
+  if (!players.length) { el.innerHTML = `<p class="lb-note">No one has played yet · be the first!</p>`; return; }
   const colMax = rounds.map((_, i) => Math.max(...players.map((p) => p.scores[i] || 0)));
   const head = `<tr><th>#</th><th>Player</th>${rounds.map((_, i) => `<th title="${esc(rounds[i])}">R${i + 1}</th>`).join("")}<th>Total</th></tr>`;
   const body = players.map((p, idx) => {
@@ -195,14 +215,14 @@ async function renderLeaderboard(el) {
   const wpmHead = `<tr><th>Player</th>${rounds.map((_, i) => `<th title="${esc(rounds[i])}">R${i + 1}</th>`).join("")}<th>Avg</th></tr>`;
   const wpmBody = players.map((p) => {
     const mine = p.visitor_id && p.visitor_id === VISITOR_ID;
-    const cells = rounds.map((_, i) => { const v = wpmOf(p)[i] || 0; return `<td class="${v === wpmMax[i] && v > 0 ? "hi" : ""}">${v || "—"}</td>`; }).join("");
+    const cells = rounds.map((_, i) => { const v = wpmOf(p)[i] || 0; return `<td class="${v === wpmMax[i] && v > 0 ? "hi" : ""}">${v || "·"}</td>`; }).join("");
     return `<tr class="${mine ? "me" : ""}"><td class="pname">${esc(p.name)}${p.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td>${cells}<td class="tot">${avgWpm(p)}</td></tr>`;
   }).join("");
   const legend = rounds.map((r, i) => `R${i + 1} ${esc(r)}`).join(" · ");
   const qWinners = rounds.map((r, i) => { const w = players.find((p) => (p.scores[i] || 0) === colMax[i] && colMax[i] > 0); return w ? `<b>R${i + 1}</b> ${esc(w.name)} (${colMax[i]})` : null; }).filter(Boolean).join(" · ");
   el.innerHTML = `<table class="lb">${head}${body}</table>
     <p class="lb-note"><b>${esc(players[0].name)}</b> leads with ${players[0].total} · ${players.length} player${players.length > 1 ? "s" : ""}.</p>
-    <p class="lb-note">Question winners: ${qWinners || "—"}</p>
+    <p class="lb-note">Question winners: ${qWinners || "·"}</p>
     ${anyWpm ? `<p class="lb-note" style="margin-top:14px;color:var(--text)"><b>Typing speed (WPM)</b></p><table class="lb">${wpmHead}${wpmBody}</table>` : ""}
     <p class="lb-note" style="opacity:.7;margin-top:12px">${legend}</p>`;
 }
@@ -213,7 +233,7 @@ async function initJoin() {
   $("joinInfo").innerHTML = "Loading challenge…";
   def = null;
   const c = await getJSON(`/challenge/${challengeId}`);
-  if (!c.ok) { show("create"); $("createErr").textContent = "That challenge link is invalid or expired — build a new one."; initCreate(); return; }
+  if (!c.ok) { show("create"); $("createErr").textContent = "That challenge link is invalid or expired · build a new one."; initCreate(); return; }
   def = { id: c.id, rounds: c.rounds || [], by: c.by, type: c.type, genre: c.genre, timer: c.timer || 45 };
   perRound = def.timer;
   $("joinInfo").innerHTML = `<b>${esc(def.by || "A friend")}</b> challenged you to name as many as you can across <b>${def.rounds.length}</b> round${def.rounds.length > 1 ? "s" : ""}${def.genre ? ` of <b>${esc(def.genre)}</b>` : ""}, <b>${def.timer}s</b> each. Try to beat them!`;
@@ -261,9 +281,10 @@ $("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint
 $("chooseBtn").onclick = (e) => { if ($("catSel").value) startSolo([$("catSel").value], e.currentTarget); };
 $("advToggle").onclick = () => { $("advWrap").hidden = !$("advWrap").hidden; };
 $("createBtn").onclick = createChallenge;
-$("sprintShare").onclick = () => {
+$("readyStart").onclick = () => runCountdown(() => startRound(0));
+$("readyShare").onclick = () => {
   if (!navigator.clipboard) return prompt("Copy this link:", challengeUrl());
-  navigator.clipboard.writeText(challengeUrl()).then(() => { const b = $("sprintShare"); b.textContent = "Link copied!"; setTimeout(() => { b.textContent = "Copy link to challenge a friend"; }, 2000); }).catch(() => {});
+  navigator.clipboard.writeText(challengeUrl()).then(() => { const b = $("readyShare"); b.textContent = "Link copied!"; setTimeout(() => { b.textContent = "Copy link to challenge a friend"; }, 2000); }).catch(() => {});
 };
 function challengeUrl() { return `${location.origin}/challenge.html?id=${challengeId}`; }
 $("shareBtn").onclick = () => {

@@ -46,13 +46,14 @@ app.use(express.json({ limit: "16kb" })); // for the single-player /track beacon
 // Persist game/round events for the admin board (fire-and-forget; no-ops if Turso isn't set).
 engine.setReporter((room, type, extra) => {
   try {
+    const gid = room.game?.gid || null;
     if (type === "round") {
       analytics.recordRound({ code: room.code, category: extra.category, grp: extra.grp,
-        winner_id: extra.winnerId, winner_name: extra.winnerName, claim: extra.claim, proven: extra.proven, at: Date.now() });
+        winner_id: extra.winnerId, winner_name: extra.winnerName, claim: extra.claim, proven: extra.proven, at: Date.now(), gid });
     } else if (type === "answer") {
-      analytics.recordAnswer({ code: room.code, category: extra.category, grp: extra.grp, display: extra.display, offList: extra.offList, at: Date.now() });
+      analytics.recordAnswer({ code: room.code, category: extra.category, grp: extra.grp, display: extra.display, offList: extra.offList, at: Date.now(), gid, player: extra.player });
     } else if (type === "event") {
-      analytics.recordEvent(extra.type, room.code, extra.detail);
+      analytics.recordEvent(extra.type, room.code, extra.detail, "mp", gid);
     } else if (type === "end") {
       const g = room.game; if (!g) return;
       const [a, b] = g.order;
@@ -62,7 +63,7 @@ engine.setReporter((room, type, extra) => {
         winner_id: extra.winnerId || null, winner_name: extra.winnerId ? g.names[extra.winnerId] : null,
         groups: (g.groups || []).join(","), timer: g.timer, target: g.target === Infinity ? "endless" : String(g.target),
         rounds: g.round, reason: extra.reason || "win",
-        started_at: g.startedAt || null, ended_at: Date.now(), duration_ms: g.startedAt ? Date.now() - g.startedAt : null });
+        started_at: g.startedAt || null, ended_at: Date.now(), duration_ms: g.startedAt ? Date.now() - g.startedAt : null, gid: g.gid || null });
     }
   } catch (e) { console.error("reporter:", e.message); }
 });
@@ -262,6 +263,7 @@ app.get("/admin", async (req, res) => {
       </form>
     </div>
     <p style="margin:0 0 16px"><a href="/admin/health?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🩺 Category health → which answers never get named</a></p>
+    <p style="margin:0 0 16px"><a href="/admin/games?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🎞 Game history → drill into any past game: every guess, chat, and exact timestamp</a></p>
     <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
     ${(() => { const live = liveSessions(); return `<h2>🌐 Live connections (${live.length})</h2>${tbl(["Connected for", "Name", "Doing", "Device"],
       live.map((s) => `<tr><td>${fmtDur(now - s.connectedAt)}</td><td>${esc(s.name || "—")}</td><td>${s.role}${s.room ? " · " + esc(s.room) : ""}</td><td>${s.device}</td></tr>`).join(""), 4)}`; })()}
@@ -313,6 +315,69 @@ app.get("/admin/health", async (req, res) => {
 });
 
 // Owner closes a room (kicks everyone, clears timers). Redirects back to the dashboard.
+// 🎞 Game history — list of every finished game (mp + sp), newest first.
+app.get("/admin/games", async (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const k = encodeURIComponent(req.query.key || "");
+  const num = (x) => Number(x || 0);
+  const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
+    a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
+    table{border-collapse:collapse;font-size:13px;width:100%;max-width:980px} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:6px 9px}
+    td{padding:6px 9px;border-bottom:1px solid #1c2029;vertical-align:top} tr:hover td{background:#141823} .mode{font-weight:700} .sp{color:#ffb454} .mp{color:#3ecf8e}</style>`;
+  const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
+  if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Game history</h1><p class="sub">Persistence not configured.</p></body>`);
+  const games = await analytics.gamesList(100).catch(() => []);
+  const rows = games.map((g) => {
+    const mode = g.mode === "sp" ? `<span class="mode sp">🤖 solo</span>` : `<span class="mode mp">🆚 mp</span>`;
+    const score = `${esc(g.p1_name || "?")} <b>${num(g.p1_score)}–${num(g.p2_score)}</b> ${esc(g.p2_name || "?")}`;
+    const link = g.gid ? `<a href="/admin/game?key=${k}&gid=${encodeURIComponent(g.gid)}">open →</a>` : `<span style="color:#566">— (older game)</span>`;
+    return `<tr><td>${easternFull(num(g.started_at || g.ended_at))}</td><td>${mode}</td><td>${score}</td><td>${esc(g.winner_name || "tie")}</td><td>${num(g.rounds)}</td><td>${esc(g.difficulty || "")}</td><td>${fmtMs(num(g.duration_ms))}</td><td>${link}</td></tr>`;
+  }).join("");
+  res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    <h1>🎞 Game history</h1>
+    <p class="sub">Every finished game, newest first. Click <b>open →</b> to replay the full timeline — every guess, chat message, and exact timestamp. (Only games played after this feature shipped have a timeline.)</p>
+    <table><tr><th>When (ET)</th><th>Mode</th><th>Score</th><th>Winner</th><th>Rounds</th><th>Diff</th><th>Length</th><th></th></tr>${rows}</table>
+    </body>`);
+});
+
+// 🔎 Single game — full chronological timeline: rounds, every answer (who/what/when), chat, events.
+app.get("/admin/game", async (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const k = encodeURIComponent(req.query.key || "");
+  const num = (x) => Number(x || 0);
+  const clock = (ts) => { try { return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(ts)); } catch { return ""; } };
+  const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
+    a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
+    .meta{background:#141823;border:1px solid #262b38;border-radius:10px;padding:12px 14px;max-width:820px;margin:0 0 18px;font-size:13px}
+    .meta b{color:#fff} table{border-collapse:collapse;font-size:13px;width:100%;max-width:820px} td{padding:5px 9px;border-bottom:1px solid #1c2029;vertical-align:top}
+    td.t{color:#8a92a6;white-space:nowrap;font-variant-numeric:tabular-nums;width:1%} .dim{color:#8a92a6} tr.round td{background:#16203a} tr.chat td{background:#1a1726} tr.event td{color:#8a92a6}</style>`;
+  const back = `<a href="/admin/games?key=${k}">← back to game history</a>`;
+  if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Game</h1><p class="sub">Persistence not configured.</p></body>`);
+  const d = await analytics.gameDetail(String(req.query.gid || "")).catch(() => null);
+  if (!d || !d.game) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Game not found</h1><p class="sub">No game with that id (only games played after this feature shipped have a timeline).</p></body>`);
+  const g = d.game;
+  const items = [];
+  d.rounds.forEach((r) => items.push({ at: num(r.at), kind: "round", html: `🎯 <b>Round</b> — ${esc(r.grp || "")}: <b>${esc(r.category || "?")}</b> · claimed ${num(r.claim)} · <b>${esc(r.winner_name || "?")}</b> won it (${num(r.proven)}/${num(r.claim)})` }));
+  d.answers.forEach((a) => items.push({ at: num(a.at), kind: "answer", html: `${a.off_list ? "➕" : "✅"} <b>${esc(a.player || "?")}</b> named <b>${esc(a.display)}</b> <span class="dim">(${esc(a.category || "")}${a.off_list ? " · off-list, accepted" : ""})</span>` }));
+  d.chat.forEach((c) => items.push({ at: num(c.at), kind: "chat", html: `💬 <b>${esc(c.name || "?")}${c.spectator ? " 👀" : ""}</b>: ${esc(c.text || "")}` }));
+  d.events.forEach((e) => items.push({ at: num(e.at), kind: "event", html: `⚙️ ${esc(e.type || "")}${e.detail ? ": " + esc(e.detail) : ""}` }));
+  items.sort((a, b) => a.at - b.at);
+  const tl = items.length
+    ? items.map((it) => `<tr class="${it.kind}"><td class="t">${clock(it.at)}</td><td>${it.html}</td></tr>`).join("")
+    : `<tr><td colspan="2" class="dim">No timeline rows recorded for this game.</td></tr>`;
+  const mode = g.mode === "sp" ? "🤖 single-player" : "🆚 multiplayer";
+  res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    <h1>${esc(g.p1_name || "?")} ${num(g.p1_score)}–${num(g.p2_score)} ${esc(g.p2_name || "?")}</h1>
+    <p class="sub">${mode} · winner: <b>${esc(g.winner_name || "tie")}</b> (${esc(g.reason || "")})</p>
+    <div class="meta">
+      <div>🕐 Started <b>${easternFull(num(g.started_at))}</b> · ended <b>${easternFull(num(g.ended_at))}</b> · lasted <b>${fmtMs(num(g.duration_ms))}</b></div>
+      <div>🎚 ${num(g.rounds)} rounds · timer ${esc(String(g.timer))}s · first to ${esc(String(g.target))}${g.difficulty ? ` · bot: <b>${esc(g.difficulty)}</b>` : ""}</div>
+      <div>🗂 Categories enabled: <span class="dim">${esc(g.groups || "—")}</span></div>
+    </div>
+    <table>${tl}</table>
+    </body>`);
+});
+
 app.get("/admin/close", (req, res) => {
   if (!ownerOk(req)) return res.status(404).send("Not found");
   const code = String(req.query.code || "").toUpperCase().trim();
@@ -338,19 +403,20 @@ app.post("/track", (req, res) => {
   const device = /Mobile|Android|iPhone|iPad|iPod/i.test(req.get("user-agent") || "") ? "mobile" : "desktop";
   const now = Date.now();
   try {
+    const gid = str(e.gid, 40);
     if (e.type === "spRound") {
       analytics.recordRound({ code: "SP", category: str(e.category), grp: str(e.grp), winner_id: e.won ? "you" : "bot",
-        winner_name: e.won ? "You" : "Bot", claim: int(e.claim), proven: int(e.proven), at: now, mode: "sp", difficulty: str(e.difficulty, 10) });
+        winner_name: e.won ? "You" : "Bot", claim: int(e.claim), proven: int(e.proven), at: now, mode: "sp", difficulty: str(e.difficulty, 10), gid });
       if (Array.isArray(e.answers)) e.answers.slice(0, 50).forEach((d) =>
-        analytics.recordAnswer({ code: "SP", category: str(e.category), grp: str(e.grp), display: str(d), offList: false, at: now, mode: "sp" }));
+        analytics.recordAnswer({ code: "SP", category: str(e.category), grp: str(e.grp), display: str(d), offList: false, at: now, mode: "sp", gid, player: "You" }));
     } else if (e.type === "spSkip") {
-      analytics.recordEvent("categorySkipped", "SP", str(e.category), "sp");
+      analytics.recordEvent("categorySkipped", "SP", str(e.category), "sp", gid);
     } else if (e.type === "spGame") {
       const result = str(e.result, 8); // "win" | "loss" | "tie"
       analytics.recordGame({ code: "SP", p1_id: "you", p1_name: "You", p1_score: int(e.scoreMe), p2_id: "bot", p2_name: "Bot", p2_score: int(e.scoreBot),
         winner_id: result === "win" ? "you" : result === "loss" ? "bot" : null, winner_name: result === "win" ? "You" : result === "loss" ? "Bot" : null,
         groups: str(e.groups, 200), timer: int(e.timer), target: str(e.target, 10), rounds: int(e.rounds), reason: result,
-        started_at: int(e.startedAt), ended_at: now, duration_ms: int(e.durationMs), mode: "sp", difficulty: str(e.difficulty, 10) });
+        started_at: int(e.startedAt), ended_at: now, duration_ms: int(e.durationMs), mode: "sp", difficulty: str(e.difficulty, 10), gid });
     } else if (e.type === "spSession") {
       const dur = int(e.durationMs) || 0;
       analytics.recordSession({ connected_at: now - dur, disconnected_at: now, duration_ms: dur, device, played: !!e.played, joined: false, spectated: false, name: "SP", reason: "sp", mode: "sp" });
@@ -639,7 +705,11 @@ io.on("connection", (socket) => {
     if (p.lastChatAt && now - p.lastChatAt < 400) return;
     p.lastChatAt = now;
     const msg = String(text || "").replace(/\s+/g, " ").trim().slice(0, 200);
-    if (msg) io.to(room.code).emit("chat", { id: p.id, name: p.name, text: msg, spectator: !room.players.has(p.id) });
+    if (msg) {
+      const spectator = !room.players.has(p.id);
+      io.to(room.code).emit("chat", { id: p.id, name: p.name, text: msg, spectator });
+      analytics.recordChat({ gid: room.game?.gid, code: room.code, name: p.name, text: msg, at: Date.now(), spectator, mode: "mp" });
+    }
   });
 
   // Typing indicator — relayed to the rest of the room (not echoed back to the sender).

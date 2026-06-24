@@ -93,7 +93,7 @@ function openingCue(on) {
 
 // ---------- single-player analytics (phones home to /track; silently no-ops if the server isn't recording) ----------
 const spLoadedAt = Date.now();
-let spPlayed = false, sessionSent = false, matchStart = 0, roundsPlayed = 0;
+let spPlayed = false, sessionSent = false, matchStart = 0, roundsPlayed = 0, spGid = "";
 function track(type, data) {
   try { fetch("/track", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type, ...data }), keepalive: true }).catch(() => {}); } catch {}
 }
@@ -184,6 +184,7 @@ function beginMatch() {
   $("winOverlay").style.display = "none";
   scoreMe = 0; scoreBot = 0;
   spPlayed = true; matchStart = Date.now(); roundsPlayed = 0;
+  spGid = "sp-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6); // ties this match's rounds/answers together
   usedNames = [];
   $("scoreMe").textContent = "0";
   $("scoreBot").textContent = "0";
@@ -364,7 +365,7 @@ function skipCategory() {
   if (state !== "opening") return;
   clearInterval(reactId);
   openingCue(false);
-  track("spSkip", { category: current.name });
+  track("spSkip", { gid: spGid, category: current.name });
   add("Skipped — new category.", "system");
   newRound();
 }
@@ -643,7 +644,7 @@ function endRound(won, reason, opts = {}) {
   $("scoreBot").textContent = scoreBot;
   claimLineEl.textContent = "";
   roundsPlayed++;
-  track("spRound", { category: current.name, grp: current.group, difficulty, won, claim,
+  track("spRound", { gid: spGid, category: current.name, grp: current.group, difficulty, won, claim,
     proven: proven.length, answers: proven.map(id => (current.entries.find(e => e.id === id) || {}).display).filter(Boolean) });
   if (scoreMe >= targetScore || scoreBot >= targetScore) {
     setTimeout(showWin, 900);  // let the final-point message land first
@@ -666,7 +667,7 @@ function showWin() {
   state = "gameover";
   sfx.fanfare();
   const result = scoreMe > scoreBot ? "win" : scoreBot > scoreMe ? "loss" : "tie";
-  track("spGame", { difficulty, scoreMe, scoreBot, result, rounds: roundsPlayed, durationMs: matchStart ? Date.now() - matchStart : null,
+  track("spGame", { gid: spGid, difficulty, scoreMe, scoreBot, result, rounds: roundsPlayed, durationMs: matchStart ? Date.now() - matchStart : null,
     groups: enabledGroups.join(","), timer: timerLength, target: targetScore === Infinity ? "endless" : String(targetScore) });
   setActions([]);
   setTurn(null);

@@ -178,6 +178,7 @@ function startMatch(io, room) {
     phase: "starting", deadline: null, timeout: null,
     lastResult: null, matchWinnerId: null, challengerId: null,
     startedAt: Date.now(),
+    gid: "g-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7), // unique per match (threads rounds/answers/chat together)
   };
   io.to(room.code).emit("gameStarted", { players: snapshot.length });
   beginRound(io, room);
@@ -305,7 +306,7 @@ function handleAnswer(io, room, socket, text, ack) {
     } else {
       g.proven.push(entry.id);
       log(io, room, socket.data.playerId, me, `${entry.display} ✓ (${total(g)}/${g.claim})`, "ok");
-      report(room, "answer", { category: g.current.name, grp: g.current.group, display: entry.display, offList: false });
+      report(room, "answer", { category: g.current.name, grp: g.current.group, display: entry.display, offList: false, player: me });
       // 🛢️ Strait of Hormuz → rain oil barrels (no points, just chaos).
       if (g.current.name === "Seas and Oceans" && entry.display === "Strait of Hormuz") {
         io.to(room.code).emit("easterEgg", { name: me, phrase: entry.display, fx: "oil" });
@@ -399,9 +400,10 @@ function applyRuling(io, room, p, accept) {
   if (accept) {
     g.granted.push(p.q);
     log(io, room, g.challengerId, g.names[g.challengerId], `accepted "${p.text}" ✓ (${total(g)}/${g.claim})`, "ok");
-    report(room, "answer", { category: g.current.name, grp: g.current.group, display: p.text, offList: true });
+    report(room, "answer", { category: g.current.name, grp: g.current.group, display: p.text, offList: true, player: g.names[g.holderId] });
   } else {
     log(io, room, g.challengerId, g.names[g.challengerId], `rejected "${p.text}"`, "bad");
+    report(room, "event", { type: "rejected", detail: `${p.text} (by ${g.names[g.challengerId]})` });
   }
 }
 

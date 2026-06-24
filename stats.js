@@ -37,11 +37,14 @@ async function init() {
       `CREATE TABLE IF NOT EXISTS sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT, connected_at INTEGER, disconnected_at INTEGER, duration_ms INTEGER,
         device TEXT, played INTEGER, joined INTEGER, spectated INTEGER, name TEXT, reason TEXT)`,
+      `CREATE TABLE IF NOT EXISTS chat (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, gid TEXT, code TEXT, name TEXT, text TEXT, at INTEGER, spectator INTEGER, mode TEXT DEFAULT 'mp')`,
     ], "write");
     // migrate existing tables: mode (mp/sp) + difficulty. ALTER fails harmlessly if the column already exists.
     for (const [t, c] of [["games", "mode TEXT DEFAULT 'mp'"], ["games", "difficulty TEXT"], ["rounds", "mode TEXT DEFAULT 'mp'"],
       ["rounds", "difficulty TEXT"], ["answers", "mode TEXT DEFAULT 'mp'"], ["events", "mode TEXT DEFAULT 'mp'"], ["sessions", "mode TEXT DEFAULT 'mp'"],
-      ["sessions", "singleplayer INTEGER DEFAULT 0"]]) {
+      ["sessions", "singleplayer INTEGER DEFAULT 0"],
+      ["games", "gid TEXT"], ["rounds", "gid TEXT"], ["answers", "gid TEXT"], ["answers", "player TEXT"], ["events", "gid TEXT"]]) {
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
     console.log("📊 stats: connected to Turso ✓");
@@ -57,22 +60,26 @@ const fire = (sql, args) => { if (client) client.execute({ sql, args }).catch((e
 
 function recordGame(g) {
   fire(
-    `INSERT INTO games (code,p1_id,p1_name,p1_score,p2_id,p2_name,p2_score,winner_id,winner_name,groups,timer,target,rounds,reason,started_at,ended_at,duration_ms,mode,difficulty)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    `INSERT INTO games (code,p1_id,p1_name,p1_score,p2_id,p2_name,p2_score,winner_id,winner_name,groups,timer,target,rounds,reason,started_at,ended_at,duration_ms,mode,difficulty,gid)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [g.code, g.p1_id, g.p1_name, g.p1_score, g.p2_id, g.p2_name, g.p2_score, g.winner_id, g.winner_name,
-     g.groups, g.timer, g.target, g.rounds, g.reason, g.started_at, g.ended_at, g.duration_ms, g.mode || "mp", g.difficulty || null]
+     g.groups, g.timer, g.target, g.rounds, g.reason, g.started_at, g.ended_at, g.duration_ms, g.mode || "mp", g.difficulty || null, g.gid || null]
   );
 }
 function recordRound(r) {
-  fire(`INSERT INTO rounds (game_code,category,grp,winner_id,winner_name,claim,proven,at,mode,difficulty) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [r.code, r.category, r.grp, r.winner_id, r.winner_name, r.claim, r.proven, r.at, r.mode || "mp", r.difficulty || null]);
+  fire(`INSERT INTO rounds (game_code,category,grp,winner_id,winner_name,claim,proven,at,mode,difficulty,gid) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [r.code, r.category, r.grp, r.winner_id, r.winner_name, r.claim, r.proven, r.at, r.mode || "mp", r.difficulty || null, r.gid || null]);
 }
 function recordAnswer(a) {
-  fire(`INSERT INTO answers (game_code,category,grp,display,off_list,at,mode) VALUES (?,?,?,?,?,?,?)`,
-    [a.code, a.category, a.grp, a.display, a.offList ? 1 : 0, a.at, a.mode || "mp"]);
+  fire(`INSERT INTO answers (game_code,category,grp,display,off_list,at,mode,gid,player) VALUES (?,?,?,?,?,?,?,?,?)`,
+    [a.code, a.category, a.grp, a.display, a.offList ? 1 : 0, a.at, a.mode || "mp", a.gid || null, a.player || null]);
 }
-function recordEvent(type, code, detail, mode) {
-  fire(`INSERT INTO events (type,code,detail,at,mode) VALUES (?,?,?,?,?)`, [type, code || null, detail || null, Date.now(), mode || "mp"]);
+function recordEvent(type, code, detail, mode, gid) {
+  fire(`INSERT INTO events (type,code,detail,at,mode,gid) VALUES (?,?,?,?,?,?)`, [type, code || null, detail || null, Date.now(), mode || "mp", gid || null]);
+}
+function recordChat(c) {
+  fire(`INSERT INTO chat (gid,code,name,text,at,spectator,mode) VALUES (?,?,?,?,?,?,?)`,
+    [c.gid || null, c.code || null, c.name || null, c.text || null, c.at || Date.now(), c.spectator ? 1 : 0, c.mode || "mp"]);
 }
 function recordSession(s) {
   fire(`INSERT INTO sessions (connected_at,disconnected_at,duration_ms,device,played,joined,spectated,name,reason,mode,singleplayer) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
@@ -155,4 +162,24 @@ async function namedDisplays() {
   return q(`SELECT DISTINCT category, display FROM answers WHERE off_list=0`);
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordSession, summary, namedDisplays };
+// ---- per-game forensics (admin drill-in) ----
+// Recent finished games, newest first. Each has a gid to drill into.
+async function gamesList(limit = 60) {
+  return q(`SELECT id, gid, code, mode, p1_name, p1_score, p2_name, p2_score, winner_name, reason,
+    groups, timer, target, rounds, difficulty, started_at, ended_at, duration_ms
+    FROM games ORDER BY id DESC LIMIT ?`, [limit]);
+}
+// Everything tied to one game instance (by gid): meta + rounds + answers + chat + events.
+async function gameDetail(gid) {
+  if (!gid) return null;
+  const game = await one(`SELECT * FROM games WHERE gid=? ORDER BY id DESC LIMIT 1`, [gid]);
+  return {
+    game,
+    rounds: await q(`SELECT category, grp, winner_name, claim, proven, at FROM rounds WHERE gid=? ORDER BY at ASC, id ASC`, [gid]),
+    answers: await q(`SELECT category, grp, display, off_list, player, at FROM answers WHERE gid=? ORDER BY at ASC, id ASC`, [gid]),
+    chat: await q(`SELECT name, text, spectator, at FROM chat WHERE gid=? ORDER BY at ASC, id ASC`, [gid]),
+    events: await q(`SELECT type, detail, at FROM events WHERE gid=? ORDER BY at ASC, id ASC`, [gid]),
+  };
+}
+
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail };

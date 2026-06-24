@@ -103,12 +103,12 @@ async function createChallenge() {
   else rounds = [...$("customRounds").querySelectorAll("select")].map((s) => s.value);
   rounds = rounds.filter(Boolean);
   if (!rounds.length) { $("createErr").textContent = "Pick at least one category."; return; }
-  $("createBtn").disabled = true; $("createBtn").textContent = "Creating…";
+  $("advStartBtn").disabled = true; $("advStartBtn").textContent = "Creating…";
   const res = await postJSON("/challenge", { type: mode, genre: mode === "genre" ? $("genreSel").value : "", rounds, by, timer: perRound });
-  $("createBtn").disabled = false; $("createBtn").textContent = "Create & play";
+  $("advStartBtn").disabled = false; $("advStartBtn").textContent = "Create & play";
   if (!res.ok) { $("createErr").textContent = res.error || "Could not create challenge."; return; }
   challengeId = res.id; def = { id: res.id, rounds, by, type: mode };
-  history.replaceState({}, "", `challenge.html?id=${challengeId}`);
+  history.replaceState({}, "", "?id=" + challengeId);
   startPlaying(by);
 }
 
@@ -150,9 +150,9 @@ function startRound(i) {
   $("sprintCat").textContent = cat.name;
   $("count").textContent = "0"; $("chips").innerHTML = ""; $("cmsg").textContent = "";
   $("cinput").value = ""; $("cinput").disabled = false; $("cinput").focus();
-  timeLeft = perRound; $("timer").textContent = timeLeft; $("timer").classList.remove("low");
+  timeLeft = perRound; $("sprintTimer").textContent = timeLeft; $("sprintTimer").classList.remove("low");
   clearInterval(tid);
-  tid = setInterval(() => { timeLeft--; $("timer").textContent = Math.max(0, timeLeft); showWpm(); if (timeLeft <= 10) $("timer").classList.add("low"); if (timeLeft <= 0) endRound(); }, 1000);
+  tid = setInterval(() => { timeLeft--; $("sprintTimer").textContent = Math.max(0, timeLeft); showWpm(); if (timeLeft <= 10) $("sprintTimer").classList.add("low"); if (timeLeft <= 0) endRound(); }, 1000);
 }
 function submit(q) {
   rChars += q.length; if (!rT0) rT0 = Date.now(); showWpm(); // typing-speed accounting (all submissions count)
@@ -270,7 +270,7 @@ async function startSolo(rounds, btn) {
   btn.disabled = false; btn.textContent = orig;
   if (!res.ok) { $("createErr").textContent = res.error || "Could not start."; return; }
   challengeId = res.id; def = { id: res.id, rounds, by, type: "custom", timer: perRound };
-  history.replaceState({}, "", `challenge.html?id=${challengeId}`);
+  history.replaceState({}, "", "?id=" + challengeId);
   startPlaying(by);
 }
 
@@ -280,7 +280,7 @@ document.querySelectorAll("#modeSeg button").forEach((b) => b.addEventListener("
 $("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint(x)))[0] || CATS[0]; startSolo([c.name], e.currentTarget); };
 $("chooseBtn").onclick = (e) => { if ($("catSel").value) startSolo([$("catSel").value], e.currentTarget); };
 $("advToggle").onclick = () => { $("advWrap").hidden = !$("advWrap").hidden; };
-$("createBtn").onclick = createChallenge;
+$("advStartBtn").onclick = createChallenge;
 $("readyStart").onclick = () => runCountdown(() => startRound(0));
 $("readyShare").onclick = () => {
   if (!navigator.clipboard) return prompt("Copy this link:", challengeUrl());
@@ -295,12 +295,21 @@ $("shareBtn").onclick = () => {
   else { try { document.execCommand("copy"); ok(); } catch (e) {} }
 };
 $("refreshLB").onclick = () => renderLeaderboard($("lbWrap"));
-$("newChallenge").onclick = () => { location.href = "challenge.html"; };
+$("newChallenge").onclick = () => backToStart();
 
-// top-of-page → back to the beginning (fresh build screen)
-function backToStart() { location.href = "challenge.html"; }
+// top-of-page → back to the beginning (fresh build screen), no page reload
+function backToStart() {
+  clearInterval(tid);
+  challengeId = null; def = null;
+  history.replaceState({}, "", "/");
+  initCreate();
+}
 $("chHome").onclick = backToStart;
 $("chNew").onclick = backToStart;
+// Footer: hop back to the multiplayer home (single-page, no reload)
+$("soloHome").onclick = (e) => { e.preventDefault(); window.PI.showHome(); };
+$("soloMP").onclick = (e) => { e.preventDefault(); window.PI.showHome(); const s = document.getElementById("mpSection"); if (s) s.classList.remove("hidden"); };
 
-// ---- boot ----
-if (challengeId) initJoin(); else initCreate();
+// ---- boot hooks (the router calls these; ?id= deep-links jump straight to join) ----
+window.__soloCreate = initCreate;
+window.__soloJoin = initJoin;

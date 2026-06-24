@@ -69,8 +69,8 @@ engine.setReporter((room, type, extra) => {
   } catch (e) { console.error("reporter:", e.message); }
 });
 
-// Default page is Multiplayer; single-player lives at /index.html.
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "mp.html")));
+// Single-page app: multiplayer + solo share one document (index.html).
+app.get("/", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
 
 // ---------- owner-only live dashboard (gated by the OWNER_KEY secret) ----------
 // Reads server state directly — an INVISIBLE peek (doesn't join as a spectator).
@@ -575,7 +575,7 @@ app.get("/challenge.html", async (req, res, next) => {
   const title = (best && rounds[best.idx])
     ? `⚡ ${by} says you can't name more than ${best.score} ${rounds[best.idx]}`
     : `⚡ ${by} challenged you on Prove It!`;
-  const desc = `${what} — name as many as you can before the clock, then try to beat the leaderboard. No sign-up, just click and play.`;
+  const desc = `${what}. Name as many as you can before the clock runs out, then try to beat the leaderboard. No sign-up, just click and play.`;
   let html;
   try { html = fs.readFileSync(path.join(__dirname, "challenge.html"), "utf8"); } catch (e) { return next(); }
   const a = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));

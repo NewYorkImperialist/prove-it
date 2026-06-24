@@ -1373,6 +1373,7 @@ $("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint
 $("chooseBtn").onclick = (e) => { if ($("catSel").value) startSolo([$("catSel").value], e.currentTarget); };
 $("advToggle").onclick = () => { $("advWrap").hidden = !$("advWrap").hidden; };
 $("advStartBtn").onclick = createChallenge;
+$("readyBack").onclick = () => backToStart(); // ready → back to the solo build screen
 $("readyStart").onclick = () => runCountdown(() => startRound(0));
 $("readyShare").onclick = () => {
   if (!navigator.clipboard) return prompt("Copy this link:", challengeUrl());

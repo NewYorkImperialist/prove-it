@@ -297,12 +297,16 @@
   #soloApp .hbtn { background:var(--panel2); color:var(--muted); border:1px solid var(--line2); border-radius:8px; padding:6px 11px; font-size:13px; font-weight:700; }
   #soloApp .hbtn:hover { border-color:var(--accent); color:var(--accent); }
   #soloApp main { flex:1; min-height:0; overflow-y:auto; display:flex; flex-direction:column; align-items:center; padding:22px 16px; }
-  #soloApp .card { width:min(94vw,560px); max-height:none; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:30px 28px; box-shadow:none; overflow:visible; }
+  #soloApp .card { width:min(94vw,460px); max-height:none; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:34px 32px; box-shadow:0 24px 70px rgba(0,0,0,.6); overflow:visible; }
   #soloApp h1 { font-family:var(--display); font-size:25px; margin:0 0 6px; letter-spacing:-.4px; }
   #soloApp .sub { color:var(--muted); font-size:14px; margin:0 0 16px; }
   #soloApp label.fld { display:block; font-family:var(--mono); font-size:11px; text-transform:uppercase; letter-spacing:1px; color:var(--muted); margin:16px 0 7px; }
   #soloApp select, #soloApp input[type=text] { width:100%; background:var(--bg); border:1px solid var(--line2); border-radius:10px; color:var(--text); padding:12px 13px; font-size:16px; outline:none; font-family:var(--ui); }
   #soloApp select:focus, #soloApp input:focus { border-color:var(--accent); }
+  #soloApp select { -webkit-appearance:none; -moz-appearance:none; appearance:none; cursor:pointer; padding-right:38px;
+    background-color:var(--bg);
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239d8c72' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
+    background-repeat:no-repeat; background-position:right 14px center; }
   #soloApp .seg { display:flex; gap:8px; }
   #soloApp .seg button { flex:1; background:var(--panel2); color:var(--text); border:1px solid var(--line2); border-radius:10px; padding:11px; font-weight:700; font-size:14px; }
   #soloApp .seg button.on { background:var(--accent); border-color:var(--accent); color:var(--markfg); }
@@ -311,6 +315,11 @@
   #soloApp .btn:active { transform:translateY(1px); }
   #soloApp .btn:disabled { opacity:.5; cursor:not-allowed; }
   #soloApp .row { display:flex; gap:10px; } #soloApp .row .btn { margin-top:12px; }
+  #soloApp .pickrow { display:flex; gap:10px; align-items:stretch; }
+  #soloApp .pickrow select { flex:1; min-width:0; }
+  #soloApp .pickrow .btn { width:auto; flex:0 0 auto; margin-top:0; padding:0 26px; }
+  #soloApp .advlink { display:block; width:auto; margin:18px auto 2px; padding:6px 10px; background:none; border:none; color:var(--muted); font-family:var(--mono); font-size:12px; font-weight:600; letter-spacing:.4px; }
+  #soloApp .advlink:hover { color:var(--accent); }
   #soloApp .err { color:var(--bad); font-size:13px; min-height:16px; margin-top:8px; }
   #soloApp .challenger { background:var(--acc-dim); border:1px solid var(--accent); border-radius:12px; padding:14px 16px; margin:0 0 14px; font-size:15px; }
   #soloApp .challenger b { color:var(--accent); }
@@ -523,10 +532,13 @@
       <label class="fld" for="byName">Your name</label>
       <input id="byName" type="text" maxlength="20" placeholder="e.g. Jayden">
       <button class="btn" id="quickBtn">Quick play</button>
-      <label class="fld" for="catSel">…or pick a category</label>
-      <select id="catSel"></select>
-      <button class="btn ghost" id="chooseBtn">Play this category</button>
-      <button class="btn ghost" id="advToggle" style="margin-top:18px">Advanced settings ▾</button>
+      <div class="divider">or</div>
+      <label class="fld" for="catSel">Pick a category</label>
+      <div class="pickrow">
+        <select id="catSel"></select>
+        <button class="btn ghost" id="chooseBtn">Play</button>
+      </div>
+      <button class="advlink" id="advToggle">Advanced settings ▾</button>
       <div id="advWrap" hidden>
         <div class="seg" id="modeSeg" style="margin-top:12px">
           <button data-mode="genre" class="on">One genre</button>

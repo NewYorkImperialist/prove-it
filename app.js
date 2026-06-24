@@ -1373,8 +1373,8 @@ function backToStart() {
   history.replaceState({}, "", "/");
   initCreate();
 }
-$("chHome").onclick = backToStart;
-$("chNew").onclick = backToStart;
+$("chHome").onclick = () => window.PI.showHome(); // logo → main menu
+$("chNew").onclick = backToStart;                 // New → fresh solo build screen
 // Footer: hop back to the multiplayer home (single-page, no reload)
 $("soloHome").onclick = (e) => { e.preventDefault(); window.PI.showHome(); };
 $("soloMP").onclick = (e) => { e.preventDefault(); window.PI.showHome(); const s = document.getElementById("mpSection"); if (s) s.classList.remove("hidden"); };

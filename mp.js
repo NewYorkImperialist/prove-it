@@ -280,10 +280,10 @@ $("spectateBtn").onclick = () => {
     myId = res.you; setRoom(res.code); setSpectator(true); rememberName(nameValue()); show(res.inGame ? "game" : "room");
   });
 };
-$("spBtn").onclick = () => {
-  try { socket.emit("enterSingleplayer"); } catch (e) {}  // tell the server this visit went single-player
-  setTimeout(() => { location.href = "index.html"; }, 90); // small delay so the emit flushes before we navigate
-};
+$("soloBtn").onclick = () => { location.href = "challenge.html"; };
+$("mpToggle").onclick = () => { $("mpSection").classList.remove("hidden"); $("mpToggle").classList.add("hidden"); $("name").focus(); };
+// An invite link (?room=CODE) lands straight on the multiplayer section.
+if (inviteCode) { $("mpSection").classList.remove("hidden"); $("mpToggle").classList.add("hidden"); }
 $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("createBtn").click(); });
 $("name").addEventListener("change", () => rememberName(nameValue()));
 $("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("joinBtn").click(); });

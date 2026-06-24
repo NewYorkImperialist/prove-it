@@ -128,27 +128,34 @@
   <main>
     <!-- CREATE -->
     <section class="card" id="create" hidden>
-      <h1>Build a challenge</h1>
-      <p class="sub">Set up rounds, send the link to friends, and see who tops the leaderboard. Each round is a timed sprint — name as many as you can.</p>
-      <div class="seg" id="modeSeg">
-        <button data-mode="genre" class="on">One genre</button>
-        <button data-mode="custom">Custom rounds</button>
-      </div>
-      <label class="fld">Rounds</label>
-      <div class="seg" id="roundsSeg"></div>
-      <label class="fld">Time per round</label>
-      <div class="seg" id="timeSeg"></div>
-      <div id="genreWrap">
-        <label class="fld" for="genreSel">Genre (a random category each round)</label>
-        <select id="genreSel"></select>
-      </div>
-      <div id="customWrap" hidden>
-        <label class="fld">Pick each round's category</label>
-        <div id="customRounds"></div>
-      </div>
+      <h1>Play solo</h1>
+      <p class="sub">Think you've got what it takes to name it all in time? Prove it! Name as many as you can before the clock runs out — then dare a friend to beat you.</p>
       <label class="fld" for="byName">Your name</label>
       <input id="byName" type="text" maxlength="20" placeholder="e.g. Jayden">
-      <button class="btn" id="createBtn">Create &amp; play</button>
+      <button class="btn" id="quickBtn">Quick play — random category</button>
+      <label class="fld" for="catSel">…or pick a category</label>
+      <select id="catSel"></select>
+      <button class="btn ghost" id="chooseBtn">Play this category</button>
+      <button class="btn ghost" id="advToggle" style="margin-top:18px">Advanced — multi-round &amp; custom ▾</button>
+      <div id="advWrap" hidden>
+        <div class="seg" id="modeSeg" style="margin-top:12px">
+          <button data-mode="genre" class="on">One genre</button>
+          <button data-mode="custom">Custom rounds</button>
+        </div>
+        <label class="fld">Rounds</label>
+        <div class="seg" id="roundsSeg"></div>
+        <label class="fld">Time per round</label>
+        <div class="seg" id="timeSeg"></div>
+        <div id="genreWrap">
+          <label class="fld" for="genreSel">Genre (a random category each round)</label>
+          <select id="genreSel"></select>
+        </div>
+        <div id="customWrap" hidden>
+          <label class="fld">Pick each round's category</label>
+          <div id="customRounds"></div>
+        </div>
+        <button class="btn" id="createBtn">Start</button>
+      </div>
       <div class="err" id="createErr"></div>
     </section>
 
@@ -174,6 +181,7 @@
       <input id="cinput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type a name and hit Enter…">
       <div id="cmsg"></div>
       <div id="chips"></div>
+      <button class="btn ghost" id="sprintShare" style="margin-top:14px">Copy link to challenge a friend</button>
     </section>
 
     <!-- BETWEEN ROUNDS -->
@@ -198,8 +206,8 @@
   </main>
 
   <footer>
-    <a href="/">Multiplayer</a>
-    <a href="index.html">Play with bot</a>
+    <a href="/">← Home</a>
+    <a href="/">Live Multiplayer</a>
   </footer>
 
   <script src="categories.js"></script>

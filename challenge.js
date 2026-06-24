@@ -234,16 +234,38 @@ $("joinLB").onclick = async () => {
   renderLeaderboard(box);
 };
 
+function buildAllCatSelect() { $("catSel").innerHTML = catOptions().innerHTML; }
 function initCreate() {
   show("create");
-  buildRoundsSeg(); buildTimeSeg(); buildGenreSelect(); setMode("genre");
+  buildRoundsSeg(); buildTimeSeg(); buildGenreSelect(); buildAllCatSelect(); setMode("genre");
   $("byName").value = myName;
+}
+// Solo start: create a (DB-backed, shareable) run from a fixed list of categories, then play.
+async function startSolo(rounds, btn) {
+  $("createErr").textContent = "";
+  const by = $("byName").value.trim().slice(0, 20);
+  if (!by) { $("createErr").textContent = "Enter your name first."; $("byName").focus(); return; }
+  rememberName(by);
+  const orig = btn.textContent; btn.disabled = true; btn.textContent = "Starting…";
+  const res = await postJSON("/challenge", { type: "custom", genre: "", rounds, by, timer: perRound });
+  btn.disabled = false; btn.textContent = orig;
+  if (!res.ok) { $("createErr").textContent = res.error || "Could not start."; return; }
+  challengeId = res.id; def = { id: res.id, rounds, by, type: "custom", timer: perRound };
+  history.replaceState({}, "", `challenge.html?id=${challengeId}`);
+  startPlaying(by);
 }
 
 // ---- wire ----
 $("cinput").addEventListener("keydown", (e) => { if (e.key !== "Enter") return; const q = $("cinput").value.trim(); $("cinput").value = ""; if (q) submit(q); });
 document.querySelectorAll("#modeSeg button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+$("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint(x)))[0] || CATS[0]; startSolo([c.name], e.currentTarget); };
+$("chooseBtn").onclick = (e) => { if ($("catSel").value) startSolo([$("catSel").value], e.currentTarget); };
+$("advToggle").onclick = () => { $("advWrap").hidden = !$("advWrap").hidden; };
 $("createBtn").onclick = createChallenge;
+$("sprintShare").onclick = () => {
+  if (!navigator.clipboard) return prompt("Copy this link:", challengeUrl());
+  navigator.clipboard.writeText(challengeUrl()).then(() => { const b = $("sprintShare"); b.textContent = "Link copied!"; setTimeout(() => { b.textContent = "Copy link to challenge a friend"; }, 2000); }).catch(() => {});
+};
 function challengeUrl() { return `${location.origin}/challenge.html?id=${challengeId}`; }
 $("shareBtn").onclick = () => {
   const url = challengeUrl();

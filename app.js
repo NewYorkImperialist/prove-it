@@ -23,6 +23,7 @@ window.PI = (function () {
     MP_VIEWS.forEach((id) => byId(id) && byId(id).classList.add("hidden"));
     const o = byId("online"); if (o) o.classList.add("hidden");
     const c = byId("conn"); if (c) c.style.display = "none";
+    const l = byId("laurel"); if (l) l.classList.add("hidden"); // laurel is a main-menu thing
     byId("soloApp").classList.remove("hidden"); // overlay appears instantly on the same bg — only the inner card animates
   }
   const soloCard = () => byId("soloApp").querySelector(".card:not([hidden])");
@@ -295,6 +296,7 @@ function show(which) {
   $("conn").style.display = which === "game" ? "none" : ""; // sidebar shows it during the game
   if (which !== "game") { $("mpCatMenu").style.display = "none"; $("mpSettingsMenu").style.display = "none"; }
   if (which !== "game") window.PI.flyIn($(which)); // cards fly/fade in (the full-screen game just cuts in)
+  $("laurel").classList.toggle("hidden", which !== "home"); // leaderboard icon lives on the main menu
   updateOnline();
 }
 // Router hook: the solo module / footer calls this to return to the multiplayer home.
@@ -329,7 +331,7 @@ $("spectateBtn").onclick = () => {
   });
 };
 $("soloBtn").onclick = () => window.PI.showSolo();
-$("dailyBtn").onclick = () => window.PI.showDaily();
+// (the daily button + laurel are wired by the solo module, which owns the daily state)
 // Live Multiplayer is its own card now (same full-card swap as solo, not an inline dropdown).
 $("mpBtn").onclick = () => {
   $("homeErr").textContent = "";
@@ -1285,6 +1287,7 @@ async function finish() {
   if (isDaily) {
     // Retro arcade: show the score + streak, then let the player opt in to the leaderboard with their own name.
     const streak = bumpDailyStreak(dailyDate);
+    updateDailyBtn(); // mark the menu button "played" for the rest of today
     $("doneVerdict").innerHTML = "Daily complete!"; $("doneVerdict").className = "verdict win";
     $("doneSub").textContent = `You named ${total} today across ${roundCats.length} rounds at ${avgWpm} wpm avg.${streak > 1 ? ` 🔥 ${streak}-day streak!` : ""}`;
     $("dailyEntry").hidden = false;
@@ -1310,9 +1313,10 @@ function bumpDailyStreak(date) {
   if (last !== date) { streak = last === prevDate(date) ? streak + 1 : 1; try { localStorage.setItem("daily_last", date); localStorage.setItem("daily_streak", String(streak)); } catch (e) {} }
   return streak;
 }
-async function renderLeaderboard(el) {
+async function renderLeaderboard(el, idArg) {
+  const lid = idArg || challengeId;
   el.innerHTML = `<p class="lb-note">Loading leaderboard…</p>`;
-  const data = await getJSON(`/challenge/${challengeId}/results`);
+  const data = await getJSON(`/challenge/${lid}/results`);
   if (!data.ok) { el.innerHTML = `<p class="lb-note">Couldn't load the leaderboard.</p>`; return; }
   const rounds = data.rounds || [];
   // best run per visitor (fallback: per name)
@@ -1399,6 +1403,31 @@ async function initDaily() {
   $("readyShare").textContent = "Copy today's daily link";
   $("readyLB").hidden = false; // let players peek at today's standings before playing
 }
+// ---- daily menu button state + leaderboard modal ----
+function todayEastern() {
+  try { return new Intl.DateTimeFormat("en-CA", { timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date()); }
+  catch (e) { return new Date().toISOString().slice(0, 10); }
+}
+function playedDailyToday() { try { return localStorage.getItem("daily_last") === todayEastern(); } catch (e) { return false; } }
+function updateDailyBtn() {
+  const b = $("dailyBtn"); if (!b) return;
+  const played = playedDailyToday();
+  b.classList.toggle("daily-live", !played);  // glowing-orange when today is still unplayed
+  b.classList.toggle("daily-done", played);   // quiet + "you played" tooltip once finished
+  b.onclick = played ? openDailyLeaderboard : () => window.PI.showDaily(); // played → leaderboard only, no replay
+}
+async function openDailyLeaderboard() {
+  $("lbModal").classList.remove("hidden");
+  $("lbModalTitle").textContent = "Daily Leaderboard";
+  $("lbModalWrap").innerHTML = `<p class="lb-note">Loading…</p>`;
+  const d = await getJSON("/daily"); // ensures today's puzzle exists + gives its id/date
+  if (d && d.ok) { $("lbModalTitle").textContent = `Daily Leaderboard · ${d.date}`; renderLeaderboard($("lbModalWrap"), d.id); }
+  else { $("lbModalWrap").innerHTML = `<p class="lb-note">Couldn't load today's leaderboard.</p>`; }
+}
+function closeLbModal() { $("lbModal").classList.add("hidden"); }
+$("laurel").onclick = openDailyLeaderboard;
+$("lbModalClose").onclick = closeLbModal;
+$("lbModal").onclick = (e) => { if (e.target === $("lbModal")) closeLbModal(); };
 // Solo start: create a (DB-backed, shareable) run from a fixed list of categories, then play.
 async function startSolo(rounds, btn) {
   $("createErr").textContent = "";
@@ -1464,6 +1493,7 @@ document.querySelectorAll(".js-soloback").forEach((b) => { b.onclick = () => win
 window.__soloCreate = initCreate;
 window.__soloJoin = initJoin;
 window.__soloDaily = initDaily;
+updateDailyBtn(); // set the menu's Daily button to glow (unplayed) or quiet (played today)
 
 })();
 

@@ -96,6 +96,24 @@
   .backbtn { display:inline-flex; align-items:center; gap:6px; background:none; border:none; color:var(--muted);
     font-family:var(--ui); font-size:13px; font-weight:700; padding:0; margin:0 0 14px; cursor:pointer; }
   .backbtn:hover { color:var(--accent); }
+  /* laurel leaderboard icon (top-right) */
+  #laurel { position:fixed; top:14px; right:14px; z-index:60; display:grid; place-items:center; width:42px; height:42px;
+    background:var(--panel2); border:1px solid var(--line2); border-radius:11px; color:var(--gold); cursor:pointer; transition:.14s; }
+  #laurel:hover { border-color:var(--accent); color:var(--accent); transform:translateY(-1px); }
+  /* daily button states: glowing-orange when today is unplayed, quiet + tooltip once done */
+  #dailyBtn.daily-live { background:var(--accent); color:var(--markfg); border-color:var(--accent); animation:dailyGlow 1.9s ease-in-out infinite; }
+  @keyframes dailyGlow { 0%,100% { box-shadow:0 0 0 0 rgba(245,166,35,.45); } 50% { box-shadow:0 0 18px 3px rgba(245,166,35,.6); } }
+  #dailyBtn.daily-done { position:relative; }
+  #dailyBtn.daily-done::after { content:"You played! Check back tomorrow."; position:absolute; bottom:calc(100% + 8px); left:50%; transform:translateX(-50%);
+    background:#0c0d10; color:#fff; padding:6px 10px; border-radius:8px; font-size:12px; font-weight:600; white-space:nowrap; opacity:0; pointer-events:none; transition:opacity .14s; border:1px solid var(--line2); z-index:5; }
+  #dailyBtn.daily-done:hover::after { opacity:1; }
+  @media (prefers-reduced-motion:reduce) { #dailyBtn.daily-live { animation:none; } }
+  /* daily leaderboard modal */
+  #lbModal { position:fixed; inset:0; z-index:100; display:grid; place-items:center; background:rgba(8,7,4,.72); padding:16px; }
+  #lbModalCard { width:min(94vw,520px); max-height:88vh; overflow-y:auto; position:relative; background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:24px 24px 26px; box-shadow:0 24px 70px rgba(0,0,0,.6); }
+  #lbModalCard h2 { font-family:var(--display); font-size:20px; margin:0 0 12px; }
+  #lbModalClose { position:absolute; top:10px; right:14px; background:none; border:none; color:var(--muted); font-size:26px; line-height:1; cursor:pointer; padding:0 4px; }
+  #lbModalClose:hover { color:var(--accent); }
   .conn { position:fixed; bottom:10px; left:14px; font-size:11px; color:var(--muted); z-index:30; }
   #confirmOverlay { position:fixed; inset:0; z-index:40; display:grid; place-items:center; background:rgba(8,10,15,.7); backdrop-filter:blur(3px); }
   #confirmOverlay.hidden { display:none !important; }
@@ -354,15 +372,15 @@
   #soloApp #cmsg { min-height:18px; font-size:13px; color:var(--muted); margin-top:8px; }
   #soloApp .big { font-family:var(--ui); font-size:46px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--accent); margin:6px 0; }
   #soloApp .verdict { font-size:17px; font-weight:700; margin:0 0 12px; } #soloApp .win { color:var(--accent); } #soloApp .lose { color:var(--bad); }
-  #soloApp table.lb { border-collapse:collapse; width:100%; font-size:14px; margin-top:8px; }
-  #soloApp table.lb th { text-align:right; color:var(--muted); font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.6px; padding:7px 9px; border-bottom:1px solid var(--line2); }
-  #soloApp table.lb th:first-child, #soloApp table.lb td:first-child { text-align:left; }
-  #soloApp table.lb td { padding:8px 9px; border-bottom:1px solid var(--line); text-align:right; font-family:var(--ui); font-variant-numeric:tabular-nums; font-weight:600; color:var(--muted); }
-  #soloApp table.lb td.pname { text-align:left; font-family:var(--display); font-weight:600; font-size:15px; letter-spacing:-.2px; color:var(--text); }
-  #soloApp table.lb td.tot { font-family:var(--ui); font-weight:800; font-size:15px; color:var(--text); }
-  #soloApp table.lb .hi { color:var(--accent); font-weight:800; }
-  #soloApp table.lb tr.me td { background:var(--acc-dim); }
-  #soloApp .lb-note { font-size:13px; color:var(--muted); margin:12px 0 0; }
+  table.lb { border-collapse:collapse; width:100%; font-size:14px; margin-top:8px; }
+  table.lb th { text-align:right; color:var(--muted); font-family:var(--mono); font-size:10px; text-transform:uppercase; letter-spacing:.6px; padding:7px 9px; border-bottom:1px solid var(--line2); }
+  table.lb th:first-child, table.lb td:first-child { text-align:left; }
+  table.lb td { padding:8px 9px; border-bottom:1px solid var(--line); text-align:right; font-family:var(--ui); font-variant-numeric:tabular-nums; font-weight:600; color:var(--muted); }
+  table.lb td.pname { text-align:left; font-family:var(--display); font-weight:600; font-size:15px; letter-spacing:-.2px; color:var(--text); }
+  table.lb td.tot { font-family:var(--ui); font-weight:800; font-size:15px; color:var(--text); }
+  table.lb .hi { color:var(--accent); font-weight:800; }
+  table.lb tr.me td { background:var(--acc-dim); }
+  .lb-note { font-size:13px; color:var(--muted); margin:12px 0 0; }
   #soloApp .crown { position:relative; display:inline-flex; align-items:center; justify-content:center; width:21px; height:21px;
     margin-left:7px; vertical-align:middle; border-radius:6px; font-size:12px; line-height:1; cursor:default;
     background:linear-gradient(150deg,#4a3617 0%,#352712 50%,#221809 100%); border:1px solid rgba(245,166,35,.6);
@@ -389,6 +407,37 @@
   <div id="announce" class="hidden"></div>
   <div class="conn" id="conn">connecting…</div>
   <div id="online" class="hidden">0 online</div>
+
+  <!-- Laurel: opens the daily leaderboard (shown on the main menu) -->
+  <button id="laurel" title="Daily leaderboard" aria-label="Daily leaderboard">
+    <svg viewBox="0 0 24 24" width="23" height="23" aria-hidden="true">
+      <g fill="currentColor">
+        <ellipse cx="7" cy="18" rx="2.3" ry="1.05" transform="rotate(-35 7 18)"/>
+        <ellipse cx="5.5" cy="14.8" rx="2.4" ry="1.05" transform="rotate(-18 5.5 14.8)"/>
+        <ellipse cx="5.2" cy="11.4" rx="2.4" ry="1.05" transform="rotate(-2 5.2 11.4)"/>
+        <ellipse cx="5.8" cy="8.1" rx="2.3" ry="1.05" transform="rotate(16 5.8 8.1)"/>
+        <ellipse cx="7.4" cy="5.4" rx="2.1" ry="1" transform="rotate(34 7.4 5.4)"/>
+        <ellipse cx="17" cy="18" rx="2.3" ry="1.05" transform="rotate(35 17 18)"/>
+        <ellipse cx="18.5" cy="14.8" rx="2.4" ry="1.05" transform="rotate(18 18.5 14.8)"/>
+        <ellipse cx="18.8" cy="11.4" rx="2.4" ry="1.05" transform="rotate(2 18.8 11.4)"/>
+        <ellipse cx="18.2" cy="8.1" rx="2.3" ry="1.05" transform="rotate(-16 18.2 8.1)"/>
+        <ellipse cx="16.6" cy="5.4" rx="2.1" ry="1" transform="rotate(-34 16.6 5.4)"/>
+      </g>
+      <g fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round">
+        <path d="M12 21 C 8 20, 6 16, 6 12 C 6 9, 7 6.5, 9 4.8"/>
+        <path d="M12 21 C 16 20, 18 16, 18 12 C 18 9, 17 6.5, 15 4.8"/>
+      </g>
+    </svg>
+  </button>
+
+  <!-- Daily leaderboard modal -->
+  <div id="lbModal" class="hidden">
+    <div id="lbModalCard">
+      <button id="lbModalClose" title="Close" aria-label="Close">×</button>
+      <h2 id="lbModalTitle">Daily Leaderboard</h2>
+      <div id="lbModalWrap"></div>
+    </div>
+  </div>
 
   <!-- Home -->
   <div class="card" id="home">

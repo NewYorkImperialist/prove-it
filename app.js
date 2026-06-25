@@ -667,10 +667,10 @@ function render() {
     // (proving handled below)
   }
 
-  // Either player can propose skipping the category before the duel starts.
-  if (gs.phase === "opening" || gs.phase === "bidding") {
-    addBtn(actions, gs.skipVotes ? `Skip category (${gs.skipVotes}/2)` : "Skip category", "", () => socket.emit("voteSkip"));
-  }
+  // Skip-category lives in the ⋯ menu now (declutters the action row); shown only when it's valid.
+  const canSkip = (gs.phase === "opening" || gs.phase === "bidding") && !isSpectator;
+  $("skipCatBtn").classList.toggle("hidden", !canSkip);
+  if (canSkip) $("skipCatBtn").textContent = gs.skipVotes ? `Skip category (${gs.skipVotes}/2)` : "Skip category";
 
   if (gs.phase === "proving") {
     if (myTurn) {
@@ -985,6 +985,7 @@ document.addEventListener("keydown", (e) => {
   socket.emit("nextRound");
 });
 $("mpLeave").onclick = () => { socket.emit("leaveRoom"); setRoom(null); show("home"); };
+$("skipCatBtn").onclick = () => { socket.emit("voteSkip"); $("mpSettingsMenu").style.display = "none"; };
 
 // Logo (top-left) → confirm before leaving a game.
 $("mpLogo").onclick = () => $("confirmOverlay").classList.remove("hidden");

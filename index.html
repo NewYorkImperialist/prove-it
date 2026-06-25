@@ -305,23 +305,24 @@
 
   /* mobile: stack like index.html */
   @media (max-width:640px) {
-    /* mobile: strip to essentials — slim header (badge + ⋯ only), everything else folds into the ⋯ menu */
-    #game { grid-template-rows:44px auto 1fr; grid-template-columns:1fr; grid-template-areas:"top" "side" "main"; }
-    #topbar { padding:0 8px 0 10px; gap:8px; }
-    #topbar .room { display:none; }
-    #topbar .logo .wd { display:none; }                 /* drop the wordmark, keep the badge to leave */
-    #topbar .logo .logobadge { width:26px; height:26px; font-size:14px; }
-    #mpCatBtn { display:none !important; }               /* category control off the header (use ⋯ / desktop) */
-    #specBadge { font-size:11px; padding:3px 7px; }
-    #mpCatMenu, #mpSettingsMenu { top:44px; right:8px; }
+    /* mobile: the SCORES are the top header strip; the old header collapses to just a floating ⋯;
+       everything else is squeezed so the feed (chat) gets the screen. */
+    #game { grid-template-rows:auto 1fr; grid-template-columns:1fr; grid-template-areas:"side" "main"; }
+    /* topbar shrinks to the floating ⋯ trigger only (kept in the DOM so its menu stays anchored) */
+    #topbar { position:absolute; top:0; right:0; left:auto; width:auto; height:auto; padding:6px 8px; background:transparent; border:none; gap:6px; z-index:7; }
+    #topbar .logo, #topbar .room, #specBadge, #mpCatBtn, #topbar .spacer { display:none; }
+    #mpCatMenu, #mpSettingsMenu { top:42px; right:8px; }
     #chatToggle { display:none; }                        /* no chat button on mobile — auto chat-mode handles it */
-    #side { flex-direction:row; border-left:none; border-bottom:1px solid var(--line); overflow-y:hidden; }
+    /* scores row = the top header */
+    #side { flex-direction:row; border-left:none; border-bottom:1px solid var(--line); overflow:hidden; padding-right:46px; }
     #side h2, #side .side-foot { display:none; }
-    #side .player { flex:1; border-bottom:none; border-right:1px solid var(--line); padding:8px 12px; }
+    #side .player { flex:1; border-bottom:none; border-right:1px solid var(--line); padding:7px 12px; gap:8px; }
     #side .player:last-child { border-right:none; }
-    #banner { margin:8px 12px 0; padding:10px 14px; }
+    #side .player .avatar { width:26px; height:26px; font-size:13px; }
+    #side .player .name { font-size:13px; }
+    #banner { margin:8px 12px 0; padding:9px 14px; }
     #banner .label { display:none; }                     /* the big category name says it all */
-    #banner .cat { font-size:19px; margin-top:0; } #banner .claim { font-size:13px; }
+    #banner .cat { font-size:18px; margin-top:0; } #banner .claim { font-size:13px; }
     #feed { padding:10px 12px; gap:7px; } .msg { max-width:88%; }
     #actions, #gpending, #gstatus { padding-left:12px; padding-right:12px; }
     #actions { padding-top:6px; }

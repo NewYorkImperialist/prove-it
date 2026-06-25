@@ -729,6 +729,19 @@ app.post("/challenge/:id/result", async (req, res) => {
   await analytics.addChallengeResult({ challenge_id: id, name: String(b.name || "Anon").slice(0, 24), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, crown, gid });
   res.json({ ok: true });
 });
+// Rename a player's leaderboard entries everywhere (all challenges/days). Owner key → also renames
+// every crowned row so the creator's name stays consistent across devices.
+app.post("/challenge/rename", async (req, res) => {
+  if (!analytics.enabled()) return res.json({ ok: false });
+  const b = req.body || {};
+  const name = String(b.name || "").slice(0, 24).trim();
+  if (!name) return res.json({ ok: false });
+  const visitorId = String(b.visitorId || "").slice(0, 40) || null;
+  const crownAll = !!(process.env.OWNER_KEY && b.ownerKey === process.env.OWNER_KEY);
+  if (!visitorId && !crownAll) return res.json({ ok: false });
+  const updated = await analytics.renameResults({ name, visitorId, crownAll }).catch(() => 0);
+  res.json({ ok: true, updated });
+});
 // Exact guesses for one round of a solo/daily run (every Enter press: ok / miss / dup).
 app.post("/challenge/:id/guesses", async (req, res) => {
   if (!analytics.enabled()) return res.json({ ok: false });

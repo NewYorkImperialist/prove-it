@@ -1549,6 +1549,8 @@ async function submitDailyResult(name, btn) {
   const id = (isDaily && challengeId) ? challengeId : (modalDailyId || ("d-" + todayEastern().replace(/-/g, "")));
   if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
   await postJSON(`/challenge/${id}/result`, { name: n, scores: scores || [], wpms: wpms || [], visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid });
+  // propagate the new name to ALL of this player's entries everywhere (and every crowned row, for the creator)
+  await postJSON(`/challenge/rename`, { name: n, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned() });
   if (btn) { btn.disabled = false; btn.textContent = "Update my entry"; }
   return true;
 }

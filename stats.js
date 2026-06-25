@@ -279,6 +279,18 @@ async function recentResults(limit = 300) {
             FROM challenge_results cr LEFT JOIN challenges c ON c.id = cr.challenge_id
             ORDER BY cr.id DESC LIMIT ?`, [limit]);
 }
+// Rename a player's leaderboard entries everywhere (across all challenges/days). Renames the
+// visitor's rows; when crownAll is set (verified owner key) also renames every crowned row, so the
+// creator's name stays consistent across devices.
+async function renameResults({ name, visitorId, crownAll }) {
+  if (!client) return 0;
+  let n = 0;
+  try {
+    if (visitorId) { const r = await client.execute({ sql: `UPDATE challenge_results SET name=? WHERE visitor_id=?`, args: [name, visitorId] }); n += r.rowsAffected || 0; }
+    if (crownAll) { const r = await client.execute({ sql: `UPDATE challenge_results SET name=? WHERE crown=1`, args: [name] }); n += r.rowsAffected || 0; }
+  } catch (e) { console.error("📊 rename:", e.message); }
+  return n;
+}
 // Delete a single leaderboard entry by its row id (owner moderation).
 async function deleteResult(rowId) {
   if (!client) return 0;
@@ -335,4 +347,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults };

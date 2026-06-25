@@ -623,6 +623,10 @@ function render() {
       <div class="name">${p.name}${p.crown ? '<span class="crown">👑</span>' : ""}</div><div class="pts">${gs.scores[p.id] ?? 0}</div>`;
     sidePlayers.appendChild(d);
   });
+  // compact score for the mobile header (logo · names · ⋯ on one line); hidden on desktop via CSS
+  $("topScore").innerHTML = [me, opp].filter(Boolean).map((p) =>
+    `<span class="tsp${live && gs.turnId === p.id ? " turn" : ""}"><span class="tsn">${p.name}${p.crown ? " 👑" : ""}</span><span class="tspt">${gs.scores[p.id] ?? 0}</span></span>`
+  ).join('<span class="tsdash">·</span>');
 
   // banner
   $("catLabel").textContent = `${gs.category.emoji} ${gs.category.group}`;

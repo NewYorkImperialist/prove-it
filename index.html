@@ -190,6 +190,13 @@
     font-weight:800; font-size:14px; text-align:center; padding:10px 16px; cursor:pointer; box-shadow:0 2px 12px rgba(0,0,0,.4); animation:slideDown .3s ease; }
   @keyframes slideDown { from{transform:translateY(-100%)} to{transform:translateY(0)} }
   #topbar .spacer { flex:1; }
+  /* compact in-header score (mobile only; desktop uses the sidebar) */
+  #topScore { display:none; align-items:center; gap:7px; min-width:0; overflow:hidden; font-size:13px; }
+  #topScore .tsp { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; min-width:0; }
+  #topScore .tsp.turn .tsn { color:var(--accent2); }
+  #topScore .tsn { font-weight:700; max-width:90px; overflow:hidden; text-overflow:ellipsis; }
+  #topScore .tspt { font-variant-numeric:tabular-nums; font-weight:800; color:var(--gold); }
+  #topScore .tsdash { color:var(--muted); }
   #mpLeave { background:var(--panel2); color:var(--muted); border:1px solid var(--line); border-radius:8px;
     padding:6px 12px; font-size:13px; font-weight:700; cursor:pointer; transition:.12s; }
   #mpLeave:hover { background:var(--bad); border-color:var(--bad); color:#fff; }
@@ -305,29 +312,28 @@
 
   /* mobile: stack like index.html */
   @media (max-width:640px) {
-    /* mobile: the SCORES are the top header strip; the old header collapses to just a floating ⋯;
-       everything else is squeezed so the feed (chat) gets the screen. */
-    #game { grid-template-rows:auto 1fr; grid-template-columns:1fr; grid-template-areas:"side" "main"; }
-    /* topbar shrinks to the floating ⋯ trigger only (kept in the DOM so its menu stays anchored) */
-    #topbar { position:absolute; top:0; right:0; left:auto; width:auto; height:auto; padding:6px 8px; background:transparent; border:none; gap:6px; z-index:7; }
-    #topbar .logo, #topbar .room, #specBadge, #mpCatBtn, #topbar .spacer { display:none; }
-    #mpCatMenu, #mpSettingsMenu { top:42px; right:8px; }
-    #chatToggle { display:none; }                        /* no chat button on mobile — auto chat-mode handles it */
-    /* scores row = the top header */
-    #side { flex-direction:row; border-left:none; border-bottom:1px solid var(--line); overflow:hidden; padding-right:46px; }
-    #side h2, #side .side-foot { display:none; }
-    #side .player { flex:1; border-bottom:none; border-right:1px solid var(--line); padding:7px 12px; gap:8px; }
-    #side .player:last-child { border-right:none; }
-    #side .player .avatar { width:26px; height:26px; font-size:13px; }
-    #side .player .name { font-size:13px; }
-    #banner { margin:8px 12px 0; padding:9px 14px; }
-    #banner .label { display:none; }                     /* the big category name says it all */
-    #banner .cat { font-size:18px; margin-top:0; } #banner .claim { font-size:13px; }
-    #feed { padding:10px 12px; gap:7px; } .msg { max-width:88%; }
+    /* mobile: ONE slim header line — logo · player names+scores · ⋯ — then the rest is the feed. */
+    #game { grid-template-rows:46px 1fr; grid-template-columns:1fr; grid-template-areas:"top" "main"; }
+    #topbar { padding:0 6px 0 9px; gap:8px; }
+    #topbar .room, #specBadge, #mpCatBtn { display:none; }
+    #topbar .logo .wd { display:none; }                  /* keep the badge (tap to leave), drop the wordmark */
+    #topbar .logo .logobadge { width:25px; height:25px; font-size:14px; }
+    #topScore { display:flex; flex:1; }                  /* names + scores share the header line */
+    #mpCatMenu, #mpSettingsMenu { top:46px; right:8px; }
+    #chatToggle { display:none; }                        /* no chat button — auto chat-mode handles it */
+    #side { display:none; }                              /* scores live in the header now */
+    /* smaller "question" (category banner) */
+    #banner { margin:7px 12px 0; padding:8px 13px; }
+    #banner .label { display:none; }
+    #banner .cat { font-size:16px; margin-top:0; } #banner .claim { font-size:12px; margin-top:3px; }
+    #feed { padding:9px 12px; gap:7px; } .msg { max-width:88%; }
+    /* smaller timer + tighter actions (incl. the skip-category button) */
+    #timer:not(:empty) { margin:0 12px 5px; padding:5px 10px; font-size:14px; }
     #actions, #gpending, #gstatus { padding-left:12px; padding-right:12px; }
-    #actions { padding-top:6px; }
-    #timer:not(:empty) { margin:0 12px 6px; padding:6px 12px; }
-    #inputbar { padding:9px 12px; gap:8px; } #input { font-size:16px; }
+    #actions { padding-top:6px; gap:6px; }
+    #actions button { padding:9px; font-size:13px; }
+    #gstatus { font-size:12px; padding-top:4px; }
+    #inputbar { padding:8px 12px; gap:8px; } #input { font-size:16px; }
   }
 
   /* ===================== solo overlay (#soloApp, single-page) ===================== */
@@ -521,6 +527,7 @@
   <div class="hidden" id="game">
     <div id="topbar">
       <span class="logo" id="mpLogo" style="cursor:pointer" title="Leave game"><span class="logobadge">◎</span><span class="wd">prove it!</span></span>
+      <span id="topScore"></span>
       <span class="room" id="gRoom"></span>
       <span id="specBadge" class="hidden">Spectating</span>
       <span class="spacer"></span>

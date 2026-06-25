@@ -1150,6 +1150,7 @@ let mode = "genre", numRounds = 5;
 let named = new Set(), count = 0, tid = null, timeLeft = 0;
 let rChars = 0, rT0 = 0, roundWpm = []; // live typing-speed tracking (chars since first keystroke)
 let runGid = "", roundGuesses = []; // per-run id + buffered exact guesses for the admin guess-log
+let modalDailyId = ""; // today's daily id, captured when the leaderboard modal opens (for rename/update)
 function genGid() { return "s-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function liveWpm() { return rT0 ? Math.round((rChars / 5) / Math.max(1 / 60, (Date.now() - rT0) / 60000)) : 0; }
 function showWpm() { $("wpm").textContent = rT0 ? liveWpm() + " wpm" : ""; }
@@ -1306,7 +1307,7 @@ async function finish() {
   if (isDaily) {
     // Retro arcade: show the score + streak, then let the player opt in to the leaderboard with their own name.
     const streak = bumpDailyStreak(dailyDate);
-    try { localStorage.setItem("daily_score", String(total)); } catch (e) {} // remembered for the share/laurel later today
+    try { localStorage.setItem("daily_score", String(total)); localStorage.setItem("daily_run", JSON.stringify({ date: dailyDate, scores: roundScores, wpms: roundWpm, gid: runGid })); } catch (e) {} // remembered so the laurel modal can update/rename later today
     updateDailyBtn(); // mark the menu button "played" for the rest of today
     $("shareBtn").textContent = "Copy invite + my score";
     $("doneVerdict").innerHTML = "Daily complete!"; $("doneVerdict").className = "verdict win";
@@ -1344,7 +1345,8 @@ async function renderLeaderboard(el, idArg) {
   // best run per visitor (fallback: per name)
   const best = new Map();
   // the creator (crowned) always collapses to ONE entry, even across devices/names
-  (data.results || []).forEach((r) => { const key = r.crown ? "__creator__" : (r.visitor_id || ("name:" + r.name)); const prev = best.get(key); if (!prev || r.total > prev.total) best.set(key, r); });
+  // keep each player's best; on a tie prefer the latest submission so a name-rewrite shows through (results arrive total DESC, at ASC)
+  (data.results || []).forEach((r) => { const key = r.crown ? "__creator__" : (r.visitor_id || ("name:" + r.name)); const prev = best.get(key); if (!prev || r.total >= prev.total) best.set(key, r); });
   const players = [...best.values()].sort((a, b) => b.total - a.total);
   if (!players.length) { el.innerHTML = `<p class="lb-note">No one has played yet · be the first!</p>`; return; }
   const colMax = rounds.map((_, i) => Math.max(...players.map((p) => p.scores[i] || 0)));
@@ -1464,11 +1466,15 @@ function showLbTab(which) {
 }
 async function openTodayBoard() {
   $("lbModalTitle").textContent = ""; $("lbModalWrap").innerHTML = `<p class="lb-note">Loading…</p>`;
+  const played = playedDailyToday();
+  $("lbEntry").hidden = !played;                    // rewrite-your-name only once you've played today
+  if (played) $("lbName").value = myName || "";
   const d = await getJSON("/daily"); // ensures today's puzzle exists + gives its id/date
-  if (d && d.ok) { $("lbModalTitle").textContent = `Today's puzzle · ${d.date}`; renderLeaderboard($("lbModalWrap"), d.id); }
+  if (d && d.ok) { modalDailyId = d.id; $("lbModalTitle").textContent = `Today's puzzle · ${d.date}`; renderLeaderboard($("lbModalWrap"), d.id); }
   else { $("lbModalWrap").innerHTML = `<p class="lb-note">Couldn't load today's leaderboard.</p>`; }
 }
 async function openAllTimeBoard() {
+  $("lbEntry").hidden = true;                        // name-rewrite applies to today's board only
   $("lbModalTitle").textContent = "Highest daily score, all time"; $("lbModalWrap").innerHTML = `<p class="lb-note">Loading…</p>`;
   const d = await getJSON("/daily/alltime");
   if (!d || !d.ok) { $("lbModalWrap").innerHTML = `<p class="lb-note">Couldn't load the all-time board.</p>`; return; }
@@ -1531,16 +1537,23 @@ $("shareBtn").onclick = (e) => {
 };
 $("refreshLB").onclick = () => renderLeaderboard($("lbWrap"));
 $("newChallenge").onclick = () => { if (isDaily) window.PI.showHome(); else backToStart(); };
-// Daily: opt-in arcade leaderboard submit (resubmittable — the board keeps your best total, newest name).
-$("dailySubmit").onclick = async () => {
-  const n = $("dailyName").value.trim().slice(0, 20);
-  if (!n) { $("dailyName").focus(); return; }
+// Daily: opt-in arcade leaderboard submit/update (resubmittable — keeps your best total, newest name).
+// Uses the in-memory run if you just played, else the run persisted in localStorage (so the laurel
+// modal can rename your entry later today after a reload).
+async function submitDailyResult(name, btn) {
+  const n = String(name || "").trim().slice(0, 20);
+  if (!n) return false;
   rememberName(n);
-  $("dailySubmit").disabled = true; $("dailySubmit").textContent = "Submitting…";
-  await postJSON(`/challenge/${challengeId}/result`, { name: n, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid: runGid });
-  $("dailySubmit").disabled = false; $("dailySubmit").textContent = "Update my entry";
-  renderLeaderboard($("lbWrap"));
-};
+  let scores = (isDaily && roundScores.length) ? roundScores : null, wpms = (isDaily && roundWpm.length) ? roundWpm : null, gid = runGid;
+  if (!scores) { let run = null; try { run = JSON.parse(localStorage.getItem("daily_run") || "null"); } catch (e) {} if (run && run.date === todayEastern()) { scores = run.scores || []; wpms = run.wpms || []; gid = run.gid || ""; } }
+  const id = (isDaily && challengeId) ? challengeId : (modalDailyId || ("d-" + todayEastern().replace(/-/g, "")));
+  if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+  await postJSON(`/challenge/${id}/result`, { name: n, scores: scores || [], wpms: wpms || [], visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid });
+  if (btn) { btn.disabled = false; btn.textContent = "Update my entry"; }
+  return true;
+}
+$("dailySubmit").onclick = async () => { if (await submitDailyResult($("dailyName").value, $("dailySubmit"))) renderLeaderboard($("lbWrap")); else $("dailyName").focus(); };
+$("lbUpdate").onclick = async () => { if (await submitDailyResult($("lbName").value, $("lbUpdate"))) openTodayBoard(); else $("lbName").focus(); };
 
 // top-of-page → back to the beginning (fresh build screen), no page reload
 function backToStart() {

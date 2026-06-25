@@ -119,6 +119,10 @@
   #lbModalCard h2 { font-family:var(--display); font-size:20px; margin:0 0 12px; }
   #lbModalClose { position:absolute; top:10px; right:14px; background:none; border:none; color:var(--muted); font-size:26px; line-height:1; cursor:pointer; padding:0 4px; }
   #lbModalClose:hover { color:var(--accent); }
+  #lbEntry .lbentry-row { display:flex; gap:8px; margin:0 0 10px; }
+  #lbEntry input { flex:1; min-width:0; background:var(--bg); border:1px solid var(--line2); border-radius:10px; color:var(--text); padding:11px 12px; font-size:15px; outline:none; }
+  #lbEntry input:focus { border-color:var(--accent); }
+  #lbEntry button { flex:0 0 auto; background:var(--accent); color:var(--markfg); border:none; border-radius:10px; padding:0 16px; font-weight:800; font-size:14px; cursor:pointer; }
   .conn { position:fixed; bottom:10px; left:14px; font-size:11px; color:var(--muted); z-index:30; }
   #confirmOverlay { position:fixed; inset:0; z-index:40; display:grid; place-items:center; background:rgba(8,10,15,.7); backdrop-filter:blur(3px); }
   #confirmOverlay.hidden { display:none !important; }
@@ -447,6 +451,13 @@
       </div>
       <p class="lb-note" id="lbModalTitle" style="margin:0 0 12px"></p>
       <div id="lbModalWrap"></div>
+      <div id="lbEntry" hidden>
+        <p class="lb-note" style="margin:14px 0 6px">You're on today's board — rewrite your name anytime:</p>
+        <div class="lbentry-row">
+          <input id="lbName" type="text" maxlength="20" placeholder="Your name">
+          <button id="lbUpdate">Update my entry</button>
+        </div>
+      </div>
       <button class="primary" id="lbShare" hidden>Share your score &amp; invite friends</button>
     </div>
   </div>

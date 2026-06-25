@@ -305,17 +305,28 @@
 
   /* mobile: stack like index.html */
   @media (max-width:640px) {
-    #game { grid-template-rows:52px auto 1fr; grid-template-columns:1fr; grid-template-areas:"top" "side" "main"; }
-    #topbar { padding:0 12px; gap:10px; } #topbar .room { display:none; }
+    /* mobile: strip to essentials — slim header (badge + ⋯ only), everything else folds into the ⋯ menu */
+    #game { grid-template-rows:44px auto 1fr; grid-template-columns:1fr; grid-template-areas:"top" "side" "main"; }
+    #topbar { padding:0 8px 0 10px; gap:8px; }
+    #topbar .room { display:none; }
+    #topbar .logo .wd { display:none; }                 /* drop the wordmark, keep the badge to leave */
+    #topbar .logo .logobadge { width:26px; height:26px; font-size:14px; }
+    #mpCatBtn { display:none !important; }               /* category control off the header (use ⋯ / desktop) */
+    #specBadge { font-size:11px; padding:3px 7px; }
+    #mpCatMenu, #mpSettingsMenu { top:44px; right:8px; }
+    #chatToggle { display:none; }                        /* no chat button on mobile — auto chat-mode handles it */
     #side { flex-direction:row; border-left:none; border-bottom:1px solid var(--line); overflow-y:hidden; }
     #side h2, #side .side-foot { display:none; }
-    #side .player { flex:1; border-bottom:none; border-right:1px solid var(--line); }
+    #side .player { flex:1; border-bottom:none; border-right:1px solid var(--line); padding:8px 12px; }
     #side .player:last-child { border-right:none; }
-    #banner { margin:10px 12px 0; padding:12px 14px; } #banner .cat { font-size:20px; }
-    #feed { padding:12px; } .msg { max-width:88%; }
+    #banner { margin:8px 12px 0; padding:10px 14px; }
+    #banner .label { display:none; }                     /* the big category name says it all */
+    #banner .cat { font-size:19px; margin-top:0; } #banner .claim { font-size:13px; }
+    #feed { padding:10px 12px; gap:7px; } .msg { max-width:88%; }
     #actions, #gpending, #gstatus { padding-left:12px; padding-right:12px; }
-    #timer:not(:empty) { margin:0 12px 8px; }
-    #inputbar { padding:10px 12px; } #input { font-size:16px; }
+    #actions { padding-top:6px; }
+    #timer:not(:empty) { margin:0 12px 6px; padding:6px 12px; }
+    #inputbar { padding:9px 12px; gap:8px; } #input { font-size:16px; }
   }
 
   /* ===================== solo overlay (#soloApp, single-page) ===================== */
@@ -342,6 +353,12 @@
   #soloApp .seg { display:flex; gap:8px; }
   #soloApp .seg button { flex:1; background:var(--panel2); color:var(--text); border:1px solid var(--line2); border-radius:10px; padding:11px; font-weight:700; font-size:14px; }
   #soloApp .seg button.on { background:var(--accent); border-color:var(--accent); color:var(--markfg); }
+  #soloApp .timecustom { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  #soloApp .timecustom button { width:42px; height:42px; flex:0 0 auto; font-size:22px; font-weight:700; background:var(--panel2); color:var(--text); border:1px solid var(--line2); border-radius:10px; }
+  #soloApp .timecustom button:hover { border-color:var(--accent); color:var(--accent); }
+  #soloApp .timecustom input { width:84px; flex:0 0 auto; text-align:center; font-variant-numeric:tabular-nums; -moz-appearance:textfield; }
+  #soloApp .timecustom input::-webkit-outer-spin-button, #soloApp .timecustom input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  #soloApp .timecustom .unit { color:var(--muted); font-size:13px; }
   #soloApp .btn { display:block; width:100%; background:var(--accent); color:var(--markfg); border:none; border-radius:12px; padding:15px; font-size:16px; font-weight:800; margin-top:18px; }
   #soloApp .btn.ghost { background:var(--panel2); color:var(--text); border:1px solid var(--line2); }
   #soloApp .btn:active { transform:translateY(1px); }
@@ -597,6 +614,12 @@
         <div class="seg" id="roundsSeg"></div>
         <label class="fld">Time per round</label>
         <div class="seg" id="timeSeg"></div>
+        <div class="timecustom">
+          <button type="button" id="timeMinus" aria-label="less time">−</button>
+          <input id="timeCustom" type="number" min="5" max="600" step="5" inputmode="numeric">
+          <span class="unit">seconds</span>
+          <button type="button" id="timePlus" aria-label="more time">+</button>
+        </div>
         <div id="genreWrap">
           <label class="fld" for="genreSel">Genre (a random category each round)</label>
           <select id="genreSel"></select>

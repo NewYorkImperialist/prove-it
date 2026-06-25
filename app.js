@@ -1174,9 +1174,17 @@ function buildRoundsSeg() {
   const seg = $("roundsSeg"); seg.innerHTML = "";
   [1, 3, 5, 10].forEach((n) => { const b = document.createElement("button"); b.textContent = n; if (n === numRounds) b.classList.add("on"); b.onclick = () => { numRounds = n; [...seg.children].forEach((c) => c.classList.remove("on")); b.classList.add("on"); if (mode === "custom") buildCustomRounds(); }; seg.appendChild(b); });
 }
+const TIME_PRESETS = [20, 30, 45, 60, 90];
+// Set the per-round time (any value 5–600s) and keep presets + the custom field in sync.
+function setPerRound(s) {
+  perRound = Math.max(5, Math.min(600, parseInt(s, 10) || 45));
+  [...$("timeSeg").children].forEach((c) => c.classList.toggle("on", Number(c.dataset.s) === perRound));
+  if ($("timeCustom") && document.activeElement !== $("timeCustom")) $("timeCustom").value = perRound;
+}
 function buildTimeSeg() {
   const seg = $("timeSeg"); seg.innerHTML = "";
-  [20, 30, 45, 60, 90].forEach((s) => { const b = document.createElement("button"); b.textContent = s + "s"; if (s === perRound) b.classList.add("on"); b.onclick = () => { perRound = s; [...seg.children].forEach((c) => c.classList.remove("on")); b.classList.add("on"); }; seg.appendChild(b); });
+  TIME_PRESETS.forEach((s) => { const b = document.createElement("button"); b.dataset.s = s; b.textContent = s + "s"; if (s === perRound) b.classList.add("on"); b.onclick = () => setPerRound(s); seg.appendChild(b); });
+  $("timeCustom").value = perRound;
 }
 function setMode(m) {
   mode = m;
@@ -1496,6 +1504,10 @@ $("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint
 $("chooseBtn").onclick = (e) => { if ($("catSel").value) startSolo([$("catSel").value], e.currentTarget); };
 $("advToggle").onclick = () => { $("advWrap").hidden = !$("advWrap").hidden; };
 $("advStartBtn").onclick = createChallenge;
+$("timeMinus").onclick = () => setPerRound(perRound - 5);
+$("timePlus").onclick = () => setPerRound(perRound + 5);
+$("timeCustom").addEventListener("input", () => { const v = parseInt($("timeCustom").value, 10); if (v) setPerRound(v); });
+$("timeCustom").addEventListener("blur", () => { $("timeCustom").value = perRound; });
 $("readyBack").onclick = () => { if (isDaily) window.PI.showHome(); else backToStart(); }; // daily → menu, solo → build screen
 $("readyStart").onclick = () => runCountdown(() => startRound(0));
 $("readyLB").onclick = () => { $("readyLB").textContent = "Refresh leaderboard"; renderLeaderboard($("readyLBWrap")); };

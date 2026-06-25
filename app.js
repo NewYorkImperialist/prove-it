@@ -1289,7 +1289,9 @@ function endRound() {
 $("nextBtn").onclick = () => { if (cur + 1 >= roundCats.length) finish(); else startRound(cur + 1); };
 
 // ============ FINISH + LEADERBOARD ============
-function ownerKeyIfCrowned() { try { return localStorage.getItem("crownOn") === "1" ? localStorage.getItem("ownerKey") : null; } catch (e) { return null; } }
+// Always crown the creator's runs when this device holds the owner key (independent of the MP
+// crown toggle), so every run collapses into ONE consistent creator entry on the leaderboards.
+function ownerKeyIfCrowned() { try { return localStorage.getItem("ownerKey") || null; } catch (e) { return null; } }
 async function finish() {
   const total = roundScores.reduce((a, n) => a + n, 0);
   const avgWpm = roundWpm.length ? Math.round(roundWpm.reduce((a, n) => a + n, 0) / roundWpm.length) : 0;

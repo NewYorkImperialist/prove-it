@@ -603,6 +603,16 @@ function confettiBurst() {
 
 function scrollFeed() { const f = $("feed"); if (f) f.scrollTop = f.scrollHeight; }
 function feedNearBottom() { const f = $("feed"); return !f || (f.scrollHeight - f.scrollTop - f.clientHeight < 90); }
+// Big center-screen category reveal at the start of a round; fades on its own after 3s.
+let lastPromptKey = null;
+function showPrompt(cat) {
+  const el = $("promptpop");
+  $("ppLabel").textContent = `${cat.emoji} ${cat.group}`;
+  $("ppCat").textContent = cat.name;
+  el.hidden = false;
+  el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
+  clearTimeout(el._t); el._t = setTimeout(() => { el.hidden = true; el.classList.remove("show"); }, 3000);
+}
 function render() {
   if (!gs) return;
   const stick = feedNearBottom(); // re-pin to the latest once actions/timer reflow & shrink the feed
@@ -637,6 +647,10 @@ function render() {
   $("catLabel").textContent = `${gs.category.emoji} ${gs.category.group}`;
   $("catName").textContent = gs.category.name;
   $("claimLine").textContent = gs.claim ? `Standing claim: ${gs.claim} (${nameOf(gs.holderId)})` : "";
+
+  // big center reveal of the category once per round, during the opening
+  const promptKey = gs.round + "|" + gs.category.name;
+  if (gs.phase === "opening" && promptKey !== lastPromptKey) { lastPromptKey = promptKey; showPrompt(gs.category); }
 
   $("mpCatBtn").style.display = iAmHost ? "inline-block" : "none"; // host can switch categories
   if ($("mpCatMenu").style.display !== "none") syncCatMenu();

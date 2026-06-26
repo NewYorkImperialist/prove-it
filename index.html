@@ -224,6 +224,16 @@
     100%{transform:scale(1) rotate(0)}
   }
 
+  /* big category reveal during the opening (fades after 3s; taps pass through) */
+  #promptpop { position:fixed; inset:0; z-index:150; display:grid; place-items:center; pointer-events:none; padding:20px; }
+  #promptpop .pp-inner { text-align:center; padding:26px 34px; background:rgba(12,10,7,.86); border:1px solid var(--line2);
+    border-radius:18px; box-shadow:0 24px 80px rgba(0,0,0,.6); max-width:92vw; }
+  #promptpop .pp-label { font-family:var(--mono); font-size:13px; text-transform:uppercase; letter-spacing:2px; color:var(--accent); margin-bottom:8px; }
+  #promptpop .pp-cat { font-family:var(--display); font-weight:700; font-size:clamp(28px,7vw,56px); letter-spacing:-1px; color:var(--text); line-height:1.1; }
+  #promptpop.show .pp-inner { animation:promptPop 3s ease forwards; }
+  @keyframes promptPop { 0%{opacity:0;transform:scale(.86)} 9%{opacity:1;transform:scale(1)} 78%{opacity:1;transform:scale(1)} 100%{opacity:0;transform:scale(1.06)} }
+  @media (prefers-reduced-motion:reduce) { #promptpop.show .pp-inner { animation:none; } }
+
   .oil-drop { position:fixed; top:-8vh; z-index:9999; pointer-events:none; will-change:transform; user-select:none; }
   @keyframes oilFall { 0%{transform:translateY(-10vh) rotate(0)} 100%{transform:translateY(120vh) rotate(540deg)} }
 
@@ -593,6 +603,13 @@
       <div class="side-foot">
         <div class="conn-side" id="connSide">connecting…</div>
         <div class="note">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></div>
+      </div>
+    </div>
+    <!-- big category reveal at the start of each round (fades after 3s) -->
+    <div id="promptpop" hidden>
+      <div class="pp-inner">
+        <div class="pp-label" id="ppLabel"></div>
+        <div class="pp-cat" id="ppCat"></div>
       </div>
     </div>
   </div>

@@ -1291,15 +1291,50 @@ function startRound(i) {
   clearInterval(tid);
   tid = setInterval(() => { timeLeft--; $("sprintTimer").textContent = Math.max(0, timeLeft); showWpm(); if (timeLeft <= 10) $("sprintTimer").classList.add("low"); if (timeLeft <= 0) endRound(); }, 1000);
 }
+// Levenshtein edit distance (short strings; early-out once it can't be ≤2).
+function editDistance(a, b) {
+  const m = a.length, n = b.length;
+  if (Math.abs(m - n) > 2) return 3;
+  let prev = []; for (let j = 0; j <= n; j++) prev[j] = j;
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1] : 1 + Math.min(prev[j - 1], prev[j], cur[j - 1]);
+    prev = cur;
+  }
+  return prev[n];
+}
+// Is the guess a near-miss of some answer? "spell" = a typo (small edit distance), "specific" = a
+// prefix of a longer answer (not specific enough). Returns { entry, kind } or null for a real miss.
+function nearMiss(nq, cat) {
+  if (nq.length < 3) return null;
+  let best = null;
+  for (const e of cat.entries) for (const a of e.aliases) {
+    if (a === nq) continue;
+    const maxD = a.length <= 5 ? 1 : 2;
+    if (Math.abs(a.length - nq.length) <= maxD) {
+      const d = editDistance(nq, a);
+      if (d > 0 && d <= maxD && (!best || best.kind === "specific" || d < best.d)) best = { entry: e, kind: "spell", d };
+    }
+    if (!best && a.length > nq.length && nq.length >= 4 && a.startsWith(nq)) best = { entry: e, kind: "specific", d: 9 };
+  }
+  return best;
+}
+// Returns true if the text should be KEPT in the box (a near-miss → let them re-spell), false otherwise.
 function submit(q) {
   rChars += q.length; if (!rT0) rT0 = Date.now(); showWpm(); // typing-speed accounting (all submissions count)
-  const cat = roundCats[cur];
-  const m = cat.entries.find((e) => e.aliases.includes(norm(q)));
-  if (!m) { roundGuesses.push({ display: q, verdict: "miss", at: Date.now() }); flash("✗ not on the list"); return; }
-  if (named.has(m.id)) { roundGuesses.push({ display: m.display, verdict: "dup", at: Date.now() }); flash("already got that one"); return; }
-  named.add(m.id); count++; $("count").textContent = count; $("cmsg").textContent = "";
-  roundGuesses.push({ display: m.display, verdict: "ok", at: Date.now() });
-  const sp = document.createElement("span"); sp.textContent = m.display; $("chips").prepend(sp);
+  const cat = roundCats[cur]; const nq = norm(q);
+  const m = cat.entries.find((e) => e.aliases.includes(nq));
+  if (m) {
+    if (named.has(m.id)) { roundGuesses.push({ display: m.display, verdict: "dup", at: Date.now() }); flash("already got that one"); return false; }
+    named.add(m.id); count++; $("count").textContent = count; $("cmsg").textContent = "";
+    roundGuesses.push({ display: m.display, verdict: "ok", at: Date.now() });
+    const sp = document.createElement("span"); sp.textContent = m.display; $("chips").prepend(sp);
+    return false;
+  }
+  const near = nearMiss(nq, cat);
+  if (near && named.has(near.entry.id)) { flash("you've already named that one"); return false; }
+  if (near) { flash(near.kind === "specific" ? "almost — be more specific" : "almost — check your spelling"); return true; } // keep the text so they can re-spell
+  roundGuesses.push({ display: q, verdict: "miss", at: Date.now() }); flash("✗ not on the list"); return false;
 }
 function flash(msg) { $("cmsg").textContent = msg; const i = $("cinput"); i.classList.remove("shake"); void i.offsetWidth; i.classList.add("shake"); }
 function endRound() {
@@ -1533,7 +1568,7 @@ async function startSolo(rounds, btn) {
 }
 
 // ---- wire ----
-$("cinput").addEventListener("keydown", (e) => { if (e.key !== "Enter") return; const q = $("cinput").value.trim(); $("cinput").value = ""; if (q) submit(q); });
+$("cinput").addEventListener("keydown", (e) => { if (e.key !== "Enter") return; const q = $("cinput").value.trim(); if (!q) return; if (!submit(q)) $("cinput").value = ""; }); // keep the text when it's a near-miss (re-spell)
 document.querySelectorAll("#modeSeg button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
 $("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint(x)))[0] || CATS[0]; startSolo([c.name], e.currentTarget); };
 $("chooseBtn").onclick = (e) => { if ($("catSel").value) startSolo([$("catSel").value], e.currentTarget); };

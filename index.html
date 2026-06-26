@@ -338,10 +338,13 @@
     #actions button { padding:9px; font-size:13px; }
     #gstatus { font-size:12px; padding-top:4px; }
     #inputbar { padding:8px 12px; gap:8px; } #input { font-size:16px; }
+    /* solo: top-align (don't vertically center) so opening the keyboard doesn't jump the card; cap chips */
+    #soloApp main { justify-content:flex-start; padding:16px 14px; }
+    #soloApp #chips { max-height:24vh; }
   }
 
   /* ===================== solo overlay (#soloApp, single-page) ===================== */
-  #soloApp { position:fixed; inset:0; z-index:50; background:var(--bg); color:var(--text);
+  #soloApp { position:fixed; top:var(--app-top,0); left:0; right:0; z-index:50; background:var(--bg); color:var(--text);
     height:var(--app-height,100dvh); display:flex; flex-direction:column; }
   #soloApp button { font-family:inherit; cursor:pointer; }
   #soloApp .wd { font-size:20px; }

@@ -56,6 +56,8 @@ function setAppHeight() {
   const s = document.documentElement.style;
   s.setProperty("--app-height", h + "px");
   s.setProperty("--app-top", top + "px");
+  // keyboard opened/closed mid-game → keep the latest message above the input
+  if (!document.getElementById("game").classList.contains("hidden")) requestAnimationFrame(scrollFeed);
 }
 if (window.visualViewport) {
   window.visualViewport.addEventListener("resize", setAppHeight);
@@ -599,8 +601,11 @@ function confettiBurst() {
   })();
 }
 
+function scrollFeed() { const f = $("feed"); if (f) f.scrollTop = f.scrollHeight; }
+function feedNearBottom() { const f = $("feed"); return !f || (f.scrollHeight - f.scrollTop - f.clientHeight < 90); }
 function render() {
   if (!gs) return;
+  const stick = feedNearBottom(); // re-pin to the latest once actions/timer reflow & shrink the feed
   show("game");
   const me = gs.players.find((p) => p.id === myId) || gs.players[0];
   const opp = gs.players.find((p) => p.id !== myId) || gs.players[1];
@@ -737,6 +742,7 @@ function render() {
   input.classList.toggle("opening-cue", iAmOpening);
   if (iAmOpening && !wasMyOpen) shakeInput();
   wasMyOpen = iAmOpening;
+  if (stick) scrollFeed(); // Give-up/actions just appeared → keep the last message in view
 }
 let wasMyOpen = false;
 let prevActKey = null;
@@ -744,6 +750,7 @@ let prevActKey = null;
 function addBtn(parent, label, cls, onClick) {
   const b = document.createElement("button");
   b.textContent = label; b.className = cls; b.onclick = onClick;
+  b.addEventListener("mousedown", (e) => e.preventDefault()); // don't steal focus → keyboard stays open (Raise/Prove It/Give up)
   parent.appendChild(b);
 }
 
@@ -894,6 +901,7 @@ function shakeInput() {
 }
 $("input").addEventListener("animationend", () => $("input").classList.remove("shake"));
 $("send").onclick = gameSend;
+$("send").addEventListener("mousedown", (e) => e.preventDefault()); // keep the keyboard open after sending
 
 // Live: a completed :shortcode: turns into its emoji as you type (no popup, just replaces).
 $("input").addEventListener("input", () => {
@@ -1117,7 +1125,7 @@ function setTheme(t) {
 setTheme("amber"); // cyan retired · amber only
 
 // ---- mobile viewport ----
-function setAppHeight() { const vv = window.visualViewport; document.documentElement.style.setProperty("--app-height", ((vv && vv.height) || window.innerHeight) + "px"); }
+function setAppHeight() { const vv = window.visualViewport; const s = document.documentElement.style; s.setProperty("--app-height", ((vv && vv.height) || window.innerHeight) + "px"); s.setProperty("--app-top", ((vv && vv.offsetTop) || 0) + "px"); }
 if (window.visualViewport) { window.visualViewport.addEventListener("resize", setAppHeight); window.visualViewport.addEventListener("scroll", setAppHeight); }
 window.addEventListener("resize", setAppHeight); window.addEventListener("orientationchange", setAppHeight); setAppHeight();
 

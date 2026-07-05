@@ -1879,6 +1879,9 @@ const CATEGORY_GROUPS = {
     { name: "Months of the Year", exact: true, items: [
       "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
     ]},
+    { name: "Days of the Week", exact: true, items: [
+      "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+    ]},
   ]},
   Mythology: { emoji: "🔱", cats: [
     { name: "Religions", items: [

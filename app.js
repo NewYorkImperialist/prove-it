@@ -1304,7 +1304,7 @@ function startRound(i) {
   // show a countries/states grid you fill in by typing the capital (grid replaces chips).
   mapActive = false;
   geoMode = (window.GeoMap && GeoMap.mode(cat.name)) || null;
-  $("sprint").classList.toggle("geo", !!geoMode); // wider card + map-above-input layout
+  $("soloApp").classList.toggle("mapmode", !!geoMode); // full-screen map/grid layout
   $("chips").classList.remove("with-map", "hidden");
   $("solomap").classList.add("hidden"); $("solomap").innerHTML = "";
   if (geoMode) {
@@ -1419,7 +1419,9 @@ async function finish() {
     $("newChallenge").textContent = "New challenge";
     $("shareBtn").textContent = "Copy challenge link";
     await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid: runGid });
-    renderLeaderboard($("lbWrap"));
+    // single-category runs show that category's all-time board (more meaningful than the one-off link board)
+    if (roundCats.length === 1) { $("doneSub").textContent = `You named ${total} ${roundCats[0].name} at ${avgWpm} wpm avg.`; renderCategoryLB($("lbWrap"), roundCats[0].name); }
+    else renderLeaderboard($("lbWrap"));
   }
 }
 // Local-only daily streak (no accounts): +1 if you played yesterday, reset to 1 after a gap.
@@ -1429,6 +1431,20 @@ function bumpDailyStreak(date) {
   try { last = localStorage.getItem("daily_last") || ""; streak = parseInt(localStorage.getItem("daily_streak") || "0", 10) || 0; } catch (e) {}
   if (last !== date) { streak = last === prevDate(date) ? streak + 1 : 1; try { localStorage.setItem("daily_last", date); localStorage.setItem("daily_streak", String(streak)); } catch (e) {} }
   return streak;
+}
+// Public all-time leaderboard for a single category (each geography "question" has one).
+async function renderCategoryLB(el, catName) {
+  el.innerHTML = `<p class="lb-note">Loading ${esc(catName)} leaderboard…</p>`;
+  const d = await getJSON("/category-leaderboard?name=" + encodeURIComponent(catName));
+  if (!d || !d.ok) { el.innerHTML = `<p class="lb-note">Couldn't load the leaderboard.</p>`; return; }
+  const rows = d.results || [];
+  if (!rows.length) { el.innerHTML = `<p class="lb-note">No scores yet — be the first!</p>`; return; }
+  const body = rows.map((r, i) => {
+    const mine = r.visitor_id && r.visitor_id === VISITOR_ID;
+    return `<tr class="${mine ? "me" : ""}"><td>${i + 1}</td><td class="pname">${esc(r.name || "?")}${r.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td><td class="tot">${r.score}</td></tr>`;
+  }).join("");
+  el.innerHTML = `<table class="lb"><tr><th>#</th><th>Player</th><th>Best</th></tr>${body}</table>
+    <p class="lb-note">All-time best on <b>${esc(catName)}</b> · ${rows.length} player${rows.length > 1 ? "s" : ""}.</p>`;
 }
 async function renderLeaderboard(el, idArg) {
   const lid = idArg || challengeId;
@@ -1556,7 +1572,23 @@ function closeLbModal() { $("lbModal").classList.add("hidden"); }
 function showLbTab(which) {
   $("tabToday").classList.toggle("on", which === "today");
   $("tabAll").classList.toggle("on", which === "alltime");
-  if (which === "alltime") openAllTimeBoard(); else openTodayBoard();
+  $("tabCat").classList.toggle("on", which === "cat");
+  $("lbCatSel").hidden = which !== "cat";
+  $("lbShare").hidden = !(which === "today" && playedDailyToday());
+  if (which !== "today") $("lbEntry").hidden = true;
+  if (which === "alltime") openAllTimeBoard();
+  else if (which === "cat") openCategoryTab();
+  else openTodayBoard();
+}
+function buildLbCatSel() {
+  if ($("lbCatSel").options.length) return;
+  const geo = CATS.filter((c) => c.group === "Geography" && !nonSprint(c)).map((c) => c.name);
+  $("lbCatSel").innerHTML = geo.map((n) => `<option>${esc(n)}</option>`).join("");
+}
+async function openCategoryTab() {
+  buildLbCatSel();
+  $("lbModalTitle").textContent = "All-time best per category";
+  renderCategoryLB($("lbModalWrap"), $("lbCatSel").value);
 }
 async function openTodayBoard() {
   $("lbModalTitle").textContent = ""; $("lbModalWrap").innerHTML = `<p class="lb-note">Loading…</p>`;
@@ -1587,6 +1619,8 @@ $("lbModalClose").onclick = closeLbModal;
 $("lbModal").onclick = (e) => { if (e.target === $("lbModal")) closeLbModal(); };
 $("tabToday").onclick = () => showLbTab("today");
 $("tabAll").onclick = () => showLbTab("alltime");
+$("tabCat").onclick = () => showLbTab("cat");
+$("lbCatSel").onchange = () => renderCategoryLB($("lbModalWrap"), $("lbCatSel").value);
 $("lbShare").onclick = (e) => copyText(dailyInvite(storedDailyScore()), e.currentTarget, "Copied — send it to a friend!");
 // Solo start: create a (DB-backed, shareable) run from a fixed list of categories, then play.
 async function startSolo(rounds, btn) {

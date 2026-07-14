@@ -805,6 +805,14 @@ app.get("/daily", async (req, res) => {
   const results = await analytics.getChallengeResults(id).catch(() => []);
   res.json({ ok: true, id, date, rounds: c.rounds, timer: c.timer || DAILY_TIMER, players: results.length });
 });
+// Public per-category leaderboard (each geography "question" gets its own board).
+app.get("/category-leaderboard", async (req, res) => {
+  if (!analytics.enabled()) return res.json({ ok: false });
+  const name = String(req.query.name || "").slice(0, 60);
+  if (!ALL_CAT_NAMES.has(name)) return res.json({ ok: false });
+  const results = await analytics.categoryLeaderboard(name, 50).catch(() => []);
+  res.json({ ok: true, name, results });
+});
 // All-time daily high scores (across every day's puzzle).
 app.get("/daily/alltime", async (req, res) => {
   if (!analytics.enabled()) return res.json({ ok: false });

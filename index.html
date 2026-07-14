@@ -119,6 +119,7 @@
   #lbModalCard h2 { font-family:var(--display); font-size:20px; margin:0 0 12px; }
   #lbModalClose { position:absolute; top:10px; right:14px; background:none; border:none; color:var(--muted); font-size:26px; line-height:1; cursor:pointer; padding:0 4px; }
   #lbModalClose:hover { color:var(--accent); }
+  #lbCatSel { background:var(--bg); border:1px solid var(--line2); border-radius:10px; color:var(--text); padding:9px 12px; font-size:14px; }
   #lbEntry .lbentry-row { display:flex; gap:8px; margin:0 0 10px; }
   #lbEntry input { flex:1; min-width:0; background:var(--bg); border:1px solid var(--line2); border-radius:10px; color:var(--text); padding:11px 12px; font-size:15px; outline:none; }
   #lbEntry input:focus { border-color:var(--accent); }
@@ -415,9 +416,15 @@
   #soloApp #chips span { background:var(--acc-dim); border:1px solid var(--line2); color:var(--text); border-radius:8px; padding:5px 9px; font-size:13px; animation:cpop .14s ease; }
   @keyframes cpop { from{transform:scale(.6);opacity:0} to{transform:scale(1);opacity:1} }
   /* geography visuals */
-  #soloApp #sprint.geo { width:min(96vw,820px); } /* wider card so the map has room */
   #soloApp #solomap { width:100%; margin:12px 0; }
   #soloApp .geomap-wrap { width:100%; height:min(66vh,620px); }
+  /* geography rounds go full-screen so the map/grid is as big as possible */
+  #soloApp.mapmode main { justify-content:flex-start; align-items:stretch; padding:8px 10px; overflow:hidden; }
+  #soloApp.mapmode #sprint { width:100%; max-width:1000px; margin:0 auto; height:100%; display:flex; flex-direction:column; padding:10px 14px; border-radius:0; box-shadow:none; }
+  #soloApp.mapmode #solomap { flex:1 1 auto; min-height:0; display:flex; margin:8px 0; }
+  #soloApp.mapmode .geomap-wrap { height:100%; width:100%; }
+  #soloApp.mapmode .geofill { max-height:none; height:100%; }
+  #soloApp.mapmode #chips.with-map { max-height:11vh; margin-top:6px; }
   #soloApp .geomap-svg { width:100%; height:100%; display:block; }
   #soloApp .geomap-c { fill:rgba(255,220,170,.07); stroke:rgba(255,214,150,.62); stroke-width:1.1; stroke-linejoin:round; vector-effect:non-scaling-stroke; transition:fill .2s ease; }
   #soloApp .geomap-c.lit { fill:var(--accent); stroke:#fff3dc; }
@@ -482,7 +489,9 @@
       <div class="lbtabs">
         <button class="lbtab on" id="tabToday">Daily</button>
         <button class="lbtab" id="tabAll">All-time</button>
+        <button class="lbtab" id="tabCat">Geography</button>
       </div>
+      <select id="lbCatSel" hidden style="width:100%;margin:0 0 12px"></select>
       <p class="lb-note" id="lbModalTitle" style="margin:0 0 12px"></p>
       <div id="lbModalWrap"></div>
       <div id="lbEntry" hidden>

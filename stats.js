@@ -273,6 +273,25 @@ async function categoryLeaderboards(topN = 10) {
   return out;
 }
 
+// Public per-category leaderboard: each player's best score for one category across all runs
+// (solo/daily/link). Deduped per visitor; all crowned rows collapse to a single creator entry.
+async function categoryLeaderboard(catName, limit = 50) {
+  const chs = await q(`SELECT id, rounds FROM challenges`);
+  const roundsById = {};
+  for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } }
+  const results = await q(`SELECT challenge_id, name, visitor_id, scores, at, crown FROM challenge_results`);
+  const best = {};
+  for (const r of results) {
+    const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
+    let scores; try { scores = JSON.parse(r.scores || "[]"); } catch (e) { scores = []; }
+    let sc = 0; rounds.forEach((cn, i) => { if (cn === catName) sc = Math.max(sc, Number(scores[i]) || 0); });
+    if (sc <= 0) continue;
+    const key = r.crown ? "__creator__" : (r.visitor_id || ("name:" + r.name));
+    if (!best[key] || sc > best[key].score) best[key] = { name: r.name, visitor_id: r.visitor_id, score: sc, at: Number(r.at), crown: r.crown };
+  }
+  return Object.values(best).sort((a, b) => b.score - a.score || a.at - b.at).slice(0, limit);
+}
+
 // Recent leaderboard entries across all challenges (for owner moderation), each with its row id.
 async function recentResults(limit = 300) {
   return q(`SELECT cr.id, cr.challenge_id, cr.name, cr.visitor_id, cr.total, cr.at, c.type, c.genre
@@ -347,4 +366,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard };

@@ -1174,6 +1174,7 @@ let named = new Set(), count = 0, tid = null, timeLeft = 0;
 let rChars = 0, rT0 = 0, roundWpm = []; // live typing-speed tracking (chars since first keystroke)
 let runGid = "", roundGuesses = []; // per-run id + buffered exact guesses for the admin guess-log
 let modalDailyId = ""; // today's daily id, captured when the leaderboard modal opens (for rename/update)
+let mapActive = false; // geography rounds show an outlined map that lights up instead of chips
 function genGid() { return "s-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function liveWpm() { return rT0 ? Math.round((rChars / 5) / Math.max(1 / 60, (Date.now() - rT0) / 60000)) : 0; }
 function showWpm() { $("wpm").textContent = rT0 ? liveWpm() + " wpm" : ""; }
@@ -1286,6 +1287,20 @@ function startRound(i) {
   $("sprintGroup").textContent = `Round ${i + 1} of ${roundCats.length} · ${cat.emoji} ${cat.group}`;
   $("sprintCat").textContent = cat.name;
   $("count").textContent = "0"; $("chips").innerHTML = ""; $("cmsg").textContent = "";
+  // geography categories get an outlined map that lights up; everything else uses the chip list
+  mapActive = false;
+  if (window.GeoMap && GeoMap.supports(cat.name)) {
+    mapActive = true;
+    $("chips").classList.add("hidden");
+    const mapEl = $("solomap"); mapEl.classList.remove("hidden");
+    GeoMap.setup(cat.name, cat.entries, mapEl, named).catch(() => { // any failure → fall back to chips
+      mapActive = false; mapEl.classList.add("hidden"); mapEl.innerHTML = ""; $("chips").classList.remove("hidden");
+    });
+  } else {
+    if (window.GeoMap) GeoMap.teardown();
+    $("solomap").classList.add("hidden"); $("solomap").innerHTML = "";
+    $("chips").classList.remove("hidden");
+  }
   $("cinput").value = ""; $("cinput").disabled = false; $("cinput").focus();
   timeLeft = perRound; $("sprintTimer").textContent = timeLeft; $("sprintTimer").classList.remove("low");
   clearInterval(tid);
@@ -1328,6 +1343,7 @@ function submit(q) {
     if (named.has(m.id)) { roundGuesses.push({ display: m.display, verdict: "dup", at: Date.now() }); flash("already got that one"); return false; }
     named.add(m.id); count++; $("count").textContent = count; $("cmsg").textContent = "";
     roundGuesses.push({ display: m.display, verdict: "ok", at: Date.now() });
+    if (mapActive && window.GeoMap) GeoMap.light(m.id); // light up the country/state on the map
     const sp = document.createElement("span"); sp.textContent = m.display; $("chips").prepend(sp);
     return false;
   }

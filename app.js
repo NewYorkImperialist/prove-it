@@ -1176,6 +1176,11 @@ let runGid = "", roundGuesses = []; // per-run id + buffered exact guesses for t
 let modalDailyId = ""; // today's daily id, captured when the leaderboard modal opens (for rename/update)
 let mapActive = false; // geography map rounds light up shapes as you name them
 let geoMode = null;    // "map" | "fill" | null for the current round
+let showTotal = false; // show "X / total" progress (geography only)
+function updateCount() {
+  if (geoMode === "fill" && window.GeoMap) { $("count").textContent = GeoMap.filled() + " / " + GeoMap.total(); return; }
+  $("count").textContent = showTotal && roundCats[cur] ? (count + " / " + roundCats[cur].entries.length) : String(count);
+}
 function genGid() { return "s-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function liveWpm() { return rT0 ? Math.round((rChars / 5) / Math.max(1 / 60, (Date.now() - rT0) / 60000)) : 0; }
 function showWpm() { $("wpm").textContent = rT0 ? liveWpm() + " wpm" : ""; }
@@ -1299,7 +1304,9 @@ function startRound(i) {
   roundCats.forEach((_, j) => { const s = document.createElement("span"); s.className = j < i ? "done" : j === i ? "cur" : ""; pips.appendChild(s); });
   $("sprintGroup").textContent = `Round ${i + 1} of ${roundCats.length} · ${cat.emoji} ${cat.group}`;
   $("sprintCat").textContent = cat.name;
-  $("count").textContent = "0 / " + cat.entries.length; $("chips").innerHTML = ""; $("cmsg").textContent = "";
+  showTotal = cat.group === "Geography"; // the "/ total" progress only makes sense for finite geography lists
+  $("chips").innerHTML = ""; $("cmsg").textContent = "";
+  updateCount();
   // geography visuals: "map" categories light up shapes (chips stay); "fill" categories (capitals)
   // show a countries/states grid you fill in by typing the capital (grid replaces chips).
   mapActive = false;
@@ -1353,7 +1360,7 @@ function submit(q) {
   rChars += q.length; if (!rT0) rT0 = Date.now(); showWpm(); // typing-speed accounting (all submissions count)
   if (geoMode === "fill") { // capitals fill-in: type a capital, it fills the matching country/state
     const r = GeoMap.tryFill(q);
-    if (r === "ok") { count = GeoMap.filled(); $("count").textContent = count + " / " + GeoMap.total(); $("cmsg").textContent = ""; roundGuesses.push({ display: q, verdict: "ok", at: Date.now() }); return false; }
+    if (r === "ok") { count = GeoMap.filled(); updateCount(); $("cmsg").textContent = ""; roundGuesses.push({ display: q, verdict: "ok", at: Date.now() }); return false; }
     if (r === "dup") { flash("already filled in"); return false; }
     roundGuesses.push({ display: q, verdict: "miss", at: Date.now() }); flash("✗ not a capital on the board"); return false;
   }
@@ -1361,7 +1368,7 @@ function submit(q) {
   const m = cat.entries.find((e) => e.aliases.includes(nq));
   if (m) {
     if (named.has(m.id)) { roundGuesses.push({ display: m.display, verdict: "dup", at: Date.now() }); flash("already got that one"); return false; }
-    named.add(m.id); count++; $("count").textContent = count + " / " + cat.entries.length; $("cmsg").textContent = "";
+    named.add(m.id); count++; updateCount(); $("cmsg").textContent = "";
     roundGuesses.push({ display: m.display, verdict: "ok", at: Date.now() });
     if (mapActive && window.GeoMap) GeoMap.light(m.id); // light up the country/state on the map
     const sp = document.createElement("span"); sp.textContent = m.display; $("chips").prepend(sp);
@@ -1641,6 +1648,8 @@ async function startSolo(rounds, btn) {
 $("cinput").addEventListener("keydown", (e) => { if (e.key !== "Enter") return; const q = $("cinput").value.trim(); if (!q) return; if (!submit(q)) $("cinput").value = ""; }); // keep the text when it's a near-miss (re-spell)
 // geography rounds: when the keyboard opens, pull the input to the bottom so the map above stays in view
 $("cinput").addEventListener("focus", () => { if (geoMode) setTimeout(() => { try { $("cinput").scrollIntoView({ block: "end", behavior: "smooth" }); } catch (e) {} }, 260); });
+// leave a run mid-sprint → back to the main menu (lobby)
+$("sprintBack").onclick = () => { clearInterval(tid); window.PI.showHome(); };
 document.querySelectorAll("#modeSeg button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
 $("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint(x)))[0] || CATS[0]; setPerRound(recommendedTime(c.name)); startSolo([c.name], e.currentTarget); };
 $("chooseBtn").onclick = (e) => { const v = $("catSel").value; if (v) { setPerRound(recommendedTime(v)); startSolo([v], e.currentTarget); } };

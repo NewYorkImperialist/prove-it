@@ -60,8 +60,15 @@
     container.innerHTML = "";
     const wrap = document.createElement("div"); wrap.className = "geomap-wrap"; container.appendChild(wrap);
     const svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", `0 0 ${w} ${h}`); svg.setAttribute("preserveAspectRatio", "xMidYMid meet"); svg.setAttribute("class", "geomap-svg"); wrap.appendChild(svg);
+    const g = document.createElementNS(NS, "g"); svg.appendChild(g);
     const byId = new Map();
-    for (const e of entries) { const f = featByEntry.get(e.id); if (!f) continue; const p = document.createElementNS(NS, "path"); p.setAttribute("d", path(f) || ""); p.setAttribute("class", "geomap-c"); svg.appendChild(p); byId.set(e.id, { t: "path", el: p }); }
+    for (const e of entries) { const f = featByEntry.get(e.id); if (!f) continue; const p = document.createElementNS(NS, "path"); p.setAttribute("d", path(f) || ""); p.setAttribute("class", "geomap-c"); g.appendChild(p); byId.set(e.id, { t: "path", el: p }); }
+    // pan + zoom (pinch on touch, wheel/drag on desktop) so tiny countries are reachable
+    try {
+      const zoom = d3.zoom().scaleExtent([1, 14]).translateExtent([[0, 0], [w, h]]).on("zoom", (ev) => g.setAttribute("transform", ev.transform.toString()));
+      d3.select(svg).call(zoom).on("dblclick.zoom", () => d3.select(svg).transition().duration(250).call(zoom.transform, d3.zoomIdentity));
+      svg.style.touchAction = "none"; svg.style.cursor = "grab";
+    } catch (e) {}
     if (boxEntries.length) {
       const boxes = document.createElement("div"); boxes.className = "geomap-boxes"; container.appendChild(boxes);
       for (const e of boxEntries) { const b = document.createElement("div"); b.className = "geobox"; boxes.appendChild(b); byId.set(e.id, { t: "box", el: b, name: e.display }); }

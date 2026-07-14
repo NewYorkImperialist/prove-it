@@ -9,7 +9,7 @@
     world: "https://cdn.jsdelivr.net/npm/world-atlas@2/countries-50m.json",
     us: "https://cdn.jsdelivr.net/npm/us-atlas@3/states-10m.json",
   };
-  const WORLD_CATS = new Set(["Countries of the World", "Countries in Europe", "Countries in Asia", "Countries in Africa", "Countries in South America", "Countries in Oceania"]);
+  const WORLD_CATS = new Set(["Countries of the World", "Countries in Europe", "Countries in Asia", "Countries in Africa", "Countries in South America", "Countries in Oceania", "Countries in North America", "Countries in Central America", "European Union Members", "Countries in the Middle East"]);
   const US_CATS = new Set(["US States"]);
   // Feature name (normalized, as it appears in the dataset) → extra answer aliases to accept.
   const PATCH = {

@@ -395,6 +395,29 @@ const CATEGORY_GROUPS = {
       ["Micronesia","micronesia","federated states of micronesia","fsm"], ["Marshall Islands","marshall islands","marshalls"],
       "Palau","Nauru","Tuvalu",
     ]},
+    { name: "Countries in North America", exact: true, items: [
+      "Canada", ["United States","usa","us","america"], "Mexico",
+      "Guatemala","Belize",["El Salvador","el salvador"],"Honduras","Nicaragua",["Costa Rica","costa rica"],"Panama",
+      "Cuba","Jamaica","Haiti",["Dominican Republic","dominican republic","dr"],["Bahamas","the bahamas"],
+      "Barbados",["Antigua and Barbuda","antigua"],"Dominica","Grenada",
+      ["Saint Kitts and Nevis","st kitts and nevis","st kitts"],["Saint Lucia","st lucia"],
+      ["Saint Vincent and the Grenadines","st vincent"],["Trinidad and Tobago","trinidad"],
+    ]},
+    { name: "Countries in Central America", exact: true, items: [
+      "Guatemala","Belize","Honduras",["El Salvador","el salvador"],"Nicaragua",["Costa Rica","costa rica"],"Panama",
+    ]},
+    { name: "European Union Members", exact: true, items: [
+      "Austria","Belgium","Bulgaria","Croatia","Cyprus",["Czechia","czech republic"],"Denmark","Estonia","Finland","France",
+      "Germany","Greece","Hungary","Ireland","Italy","Latvia","Lithuania","Luxembourg","Malta","Netherlands","Poland","Portugal",
+      "Romania","Slovakia","Slovenia","Spain","Sweden",
+    ]},
+    { name: "Countries in the Middle East", exact: true, items: [
+      "Saudi Arabia","Iran","Iraq","Turkey","Israel","Jordan","Lebanon","Syria","Yemen","Oman",
+      ["United Arab Emirates","uae"],"Qatar","Kuwait","Bahrain",
+    ]},
+    { name: "Continents", exact: true, items: [
+      "Asia","Africa","North America","South America","Antarctica","Europe",["Australia","oceania"],
+    ]},
     { name: "Tourist Attractions in America", items: [
       ["Statue of Liberty","statue of liberty"], ["Grand Canyon","grand canyon"], ["Times Square","times square"], ["Golden Gate Bridge","golden gate bridge"],
       ["Mount Rushmore","mount rushmore","rushmore"], ["Walt Disney World","walt disney world","disney world"], "Disneyland", "Yellowstone", ["Niagara Falls","niagara falls","niagara"],

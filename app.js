@@ -1205,8 +1205,20 @@ function buildRoundsSeg() {
 }
 const TIME_PRESETS = [20, 30, 45, 60, 90];
 // Set the per-round time (any value 5–600s) and keep presets + the custom field in sync.
+// Recommended default time (seconds) for the big list categories; everything else stays 45s.
+const RECOMMENDED_TIME = {
+  "Countries of the World": 900, "World Capitals": 900,
+  "US States": 240, "US State Capitals": 240, "Major American Cities": 240,
+  "Countries in Europe": 300, "Countries in Asia": 300, "Countries in Africa": 360,
+  "Countries in North America": 240, "European Union Members": 240, "Languages of the World": 180,
+  "Countries in South America": 120, "Countries in Oceania": 150, "Countries in Central America": 90,
+  "Countries in the Middle East": 180,
+};
+const recommendedTime = (name) => RECOMMENDED_TIME[name] || 45;
+// mm:ss for longer timers, bare seconds under a minute
+const fmtClock = (s) => s >= 60 ? Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") : String(s);
 function setPerRound(s) {
-  perRound = Math.max(5, Math.min(600, parseInt(s, 10) || 45));
+  perRound = Math.max(5, Math.min(1800, parseInt(s, 10) || 45));
   [...$("timeSeg").children].forEach((c) => c.classList.toggle("on", Number(c.dataset.s) === perRound));
   if ($("timeCustom") && document.activeElement !== $("timeCustom")) $("timeCustom").value = perRound;
 }
@@ -1286,7 +1298,7 @@ function startRound(i) {
   roundCats.forEach((_, j) => { const s = document.createElement("span"); s.className = j < i ? "done" : j === i ? "cur" : ""; pips.appendChild(s); });
   $("sprintGroup").textContent = `Round ${i + 1} of ${roundCats.length} · ${cat.emoji} ${cat.group}`;
   $("sprintCat").textContent = cat.name;
-  $("count").textContent = "0"; $("chips").innerHTML = ""; $("cmsg").textContent = "";
+  $("count").textContent = "0 / " + cat.entries.length; $("chips").innerHTML = ""; $("cmsg").textContent = "";
   // geography categories get an outlined map above the chip list (chips stay visible)
   mapActive = false;
   $("chips").classList.remove("with-map");
@@ -1302,9 +1314,9 @@ function startRound(i) {
     $("solomap").classList.add("hidden"); $("solomap").innerHTML = "";
   }
   $("cinput").value = ""; $("cinput").disabled = false; $("cinput").focus();
-  timeLeft = perRound; $("sprintTimer").textContent = timeLeft; $("sprintTimer").classList.remove("low");
+  timeLeft = perRound; $("sprintTimer").textContent = fmtClock(timeLeft); $("sprintTimer").classList.remove("low");
   clearInterval(tid);
-  tid = setInterval(() => { timeLeft--; $("sprintTimer").textContent = Math.max(0, timeLeft); showWpm(); if (timeLeft <= 10) $("sprintTimer").classList.add("low"); if (timeLeft <= 0) endRound(); }, 1000);
+  tid = setInterval(() => { timeLeft--; $("sprintTimer").textContent = fmtClock(Math.max(0, timeLeft)); showWpm(); if (timeLeft <= 10) $("sprintTimer").classList.add("low"); if (timeLeft <= 0) endRound(); }, 1000);
 }
 // Levenshtein edit distance (short strings; early-out once it can't be ≤2).
 function editDistance(a, b) {
@@ -1341,7 +1353,7 @@ function submit(q) {
   const m = cat.entries.find((e) => e.aliases.includes(nq));
   if (m) {
     if (named.has(m.id)) { roundGuesses.push({ display: m.display, verdict: "dup", at: Date.now() }); flash("already got that one"); return false; }
-    named.add(m.id); count++; $("count").textContent = count; $("cmsg").textContent = "";
+    named.add(m.id); count++; $("count").textContent = count + " / " + cat.entries.length; $("cmsg").textContent = "";
     roundGuesses.push({ display: m.display, verdict: "ok", at: Date.now() });
     if (mapActive && window.GeoMap) GeoMap.light(m.id); // light up the country/state on the map
     const sp = document.createElement("span"); sp.textContent = m.display; $("chips").prepend(sp);
@@ -1586,8 +1598,8 @@ async function startSolo(rounds, btn) {
 // ---- wire ----
 $("cinput").addEventListener("keydown", (e) => { if (e.key !== "Enter") return; const q = $("cinput").value.trim(); if (!q) return; if (!submit(q)) $("cinput").value = ""; }); // keep the text when it's a near-miss (re-spell)
 document.querySelectorAll("#modeSeg button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
-$("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint(x)))[0] || CATS[0]; startSolo([c.name], e.currentTarget); };
-$("chooseBtn").onclick = (e) => { if ($("catSel").value) startSolo([$("catSel").value], e.currentTarget); };
+$("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint(x)))[0] || CATS[0]; setPerRound(recommendedTime(c.name)); startSolo([c.name], e.currentTarget); };
+$("chooseBtn").onclick = (e) => { const v = $("catSel").value; if (v) { setPerRound(recommendedTime(v)); startSolo([v], e.currentTarget); } };
 $("advToggle").onclick = () => { $("advWrap").hidden = !$("advWrap").hidden; };
 $("advStartBtn").onclick = createChallenge;
 $("timeMinus").onclick = () => setPerRound(perRound - 5);

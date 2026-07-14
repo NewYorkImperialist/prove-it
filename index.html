@@ -415,8 +415,9 @@
   #soloApp #chips span { background:var(--acc-dim); border:1px solid var(--line2); color:var(--text); border-radius:8px; padding:5px 9px; font-size:13px; animation:cpop .14s ease; }
   @keyframes cpop { from{transform:scale(.6);opacity:0} to{transform:scale(1);opacity:1} }
   /* geography visuals */
-  #soloApp #solomap { width:100%; margin-top:14px; }
-  #soloApp .geomap-wrap { width:100%; height:min(58vh,500px); }
+  #soloApp #sprint.geo { width:min(96vw,820px); } /* wider card so the map has room */
+  #soloApp #solomap { width:100%; margin:12px 0; }
+  #soloApp .geomap-wrap { width:100%; height:min(66vh,620px); }
   #soloApp .geomap-svg { width:100%; height:100%; display:block; }
   #soloApp .geomap-c { fill:rgba(255,220,170,.07); stroke:rgba(255,214,150,.62); stroke-width:1.1; stroke-linejoin:round; vector-effect:non-scaling-stroke; transition:fill .2s ease; }
   #soloApp .geomap-c.lit { fill:var(--accent); stroke:#fff3dc; }
@@ -713,9 +714,9 @@
         <div id="sprintTimer">45</div>
       </div>
       <div style="display:flex;align-items:baseline;gap:14px"><span id="count">0</span><span id="wpm" class="catlabel"></span></div>
+      <div id="solomap" class="hidden"></div>
       <input id="cinput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type a name and hit Enter…">
       <div id="cmsg"></div>
-      <div id="solomap" class="hidden"></div>
       <div id="chips"></div>
     </section>
 

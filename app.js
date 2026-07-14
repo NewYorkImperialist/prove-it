@@ -1304,6 +1304,7 @@ function startRound(i) {
   // show a countries/states grid you fill in by typing the capital (grid replaces chips).
   mapActive = false;
   geoMode = (window.GeoMap && GeoMap.mode(cat.name)) || null;
+  $("sprint").classList.toggle("geo", !!geoMode); // wider card + map-above-input layout
   $("chips").classList.remove("with-map", "hidden");
   $("solomap").classList.add("hidden"); $("solomap").innerHTML = "";
   if (geoMode) {
@@ -1604,6 +1605,8 @@ async function startSolo(rounds, btn) {
 
 // ---- wire ----
 $("cinput").addEventListener("keydown", (e) => { if (e.key !== "Enter") return; const q = $("cinput").value.trim(); if (!q) return; if (!submit(q)) $("cinput").value = ""; }); // keep the text when it's a near-miss (re-spell)
+// geography rounds: when the keyboard opens, pull the input to the bottom so the map above stays in view
+$("cinput").addEventListener("focus", () => { if (geoMode) setTimeout(() => { try { $("cinput").scrollIntoView({ block: "end", behavior: "smooth" }); } catch (e) {} }, 260); });
 document.querySelectorAll("#modeSeg button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
 $("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint(x)))[0] || CATS[0]; setPerRound(recommendedTime(c.name)); startSolo([c.name], e.currentTarget); };
 $("chooseBtn").onclick = (e) => { const v = $("catSel").value; if (v) { setPerRound(recommendedTime(v)); startSolo([v], e.currentTarget); } };

@@ -415,10 +415,11 @@
   #soloApp #chips span { background:var(--acc-dim); border:1px solid var(--line2); color:var(--text); border-radius:8px; padding:5px 9px; font-size:13px; animation:cpop .14s ease; }
   @keyframes cpop { from{transform:scale(.6);opacity:0} to{transform:scale(1);opacity:1} }
   /* geography map: outlined shapes on the dark UI; each fills orange when named */
-  #soloApp #solomap { width:100%; height:min(42vh,340px); margin-top:14px; display:grid; place-items:center; }
+  #soloApp #solomap { width:100%; height:min(60vh,520px); margin-top:14px; display:grid; place-items:center; }
   #soloApp .geomap-svg { width:100%; height:100%; display:block; }
-  #soloApp .geomap-c { fill:var(--panel2); stroke:var(--line2); stroke-width:.5; stroke-linejoin:round; vector-effect:non-scaling-stroke; transition:fill .25s ease; }
-  #soloApp .geomap-c.lit { fill:var(--accent); stroke:var(--accent); }
+  #soloApp .geomap-c { fill:rgba(255,220,170,.07); stroke:rgba(255,214,150,.62); stroke-width:1.1; stroke-linejoin:round; vector-effect:non-scaling-stroke; transition:fill .2s ease; }
+  #soloApp .geomap-c.lit { fill:var(--accent); stroke:#fff3dc; }
+  #soloApp #chips.with-map { max-height:18vh; margin-top:10px; }
   #soloApp .geomap-msg { color:var(--muted); font-size:13px; }
   #soloApp #cinput.shake { animation:cshake .3s; } @keyframes cshake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
   #soloApp #cmsg { min-height:18px; font-size:13px; color:var(--muted); margin-top:8px; }
@@ -701,8 +702,8 @@
       <div style="display:flex;align-items:baseline;gap:14px"><span id="count">0</span><span id="wpm" class="catlabel"></span></div>
       <input id="cinput" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" placeholder="Type a name and hit Enter…">
       <div id="cmsg"></div>
-      <div id="chips"></div>
       <div id="solomap" class="hidden"></div>
+      <div id="chips"></div>
     </section>
 
     <!-- READY (pre-game: share link + start) -->

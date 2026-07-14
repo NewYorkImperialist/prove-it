@@ -1287,19 +1287,19 @@ function startRound(i) {
   $("sprintGroup").textContent = `Round ${i + 1} of ${roundCats.length} · ${cat.emoji} ${cat.group}`;
   $("sprintCat").textContent = cat.name;
   $("count").textContent = "0"; $("chips").innerHTML = ""; $("cmsg").textContent = "";
-  // geography categories get an outlined map that lights up; everything else uses the chip list
+  // geography categories get an outlined map above the chip list (chips stay visible)
   mapActive = false;
+  $("chips").classList.remove("with-map");
   if (window.GeoMap && GeoMap.supports(cat.name)) {
     mapActive = true;
-    $("chips").classList.add("hidden");
+    $("chips").classList.add("with-map");
     const mapEl = $("solomap"); mapEl.classList.remove("hidden");
-    GeoMap.setup(cat.name, cat.entries, mapEl, named).catch(() => { // any failure → fall back to chips
-      mapActive = false; mapEl.classList.add("hidden"); mapEl.innerHTML = ""; $("chips").classList.remove("hidden");
+    GeoMap.setup(cat.name, cat.entries, mapEl, named).catch(() => { // any failure → just the chips
+      mapActive = false; mapEl.classList.add("hidden"); mapEl.innerHTML = ""; $("chips").classList.remove("with-map");
     });
   } else {
     if (window.GeoMap) GeoMap.teardown();
     $("solomap").classList.add("hidden"); $("solomap").innerHTML = "";
-    $("chips").classList.remove("hidden");
   }
   $("cinput").value = ""; $("cinput").disabled = false; $("cinput").focus();
   timeLeft = perRound; $("sprintTimer").textContent = timeLeft; $("sprintTimer").classList.remove("low");

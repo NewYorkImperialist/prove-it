@@ -414,13 +414,26 @@
   #soloApp #chips { display:flex; flex-wrap:wrap; gap:6px; max-height:30vh; overflow-y:auto; margin-top:12px; }
   #soloApp #chips span { background:var(--acc-dim); border:1px solid var(--line2); color:var(--text); border-radius:8px; padding:5px 9px; font-size:13px; animation:cpop .14s ease; }
   @keyframes cpop { from{transform:scale(.6);opacity:0} to{transform:scale(1);opacity:1} }
-  /* geography map: outlined shapes on the dark UI; each fills orange when named */
-  #soloApp #solomap { width:100%; height:min(60vh,520px); margin-top:14px; display:grid; place-items:center; }
+  /* geography visuals */
+  #soloApp #solomap { width:100%; margin-top:14px; }
+  #soloApp .geomap-wrap { width:100%; height:min(58vh,500px); }
   #soloApp .geomap-svg { width:100%; height:100%; display:block; }
   #soloApp .geomap-c { fill:rgba(255,220,170,.07); stroke:rgba(255,214,150,.62); stroke-width:1.1; stroke-linejoin:round; vector-effect:non-scaling-stroke; transition:fill .2s ease; }
   #soloApp .geomap-c.lit { fill:var(--accent); stroke:#fff3dc; }
+  #soloApp .geomap-msg { color:var(--muted); font-size:13px; text-align:center; padding:30px 0; }
   #soloApp #chips.with-map { max-height:18vh; margin-top:10px; }
-  #soloApp .geomap-msg { color:var(--muted); font-size:13px; }
+  /* Oceania island fill-in boxes (scattered nations that don't map well) */
+  #soloApp .geomap-boxes { display:flex; flex-wrap:wrap; gap:6px; justify-content:center; margin-top:10px; }
+  #soloApp .geobox { min-width:42px; padding:5px 9px; border:1px dashed var(--line2); border-radius:8px; font-size:12px; color:var(--muted); text-align:center; }
+  #soloApp .geobox.lit { border-style:solid; border-color:var(--accent); background:var(--acc-dim); color:var(--accent); font-weight:700; }
+  /* capitals fill-in grid: list of countries/states, type the capital to fill each */
+  #soloApp .geofill { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:6px; width:100%; max-height:min(58vh,500px); overflow-y:auto; }
+  #soloApp .geofill-cell { display:flex; justify-content:space-between; align-items:center; gap:8px; padding:6px 10px; border:1px solid var(--line2); border-radius:8px; font-size:13px; }
+  #soloApp .geofill-cell .gf-p { color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #soloApp .geofill-cell .gf-a { color:var(--line2); font-weight:700; flex:0 0 auto; }
+  #soloApp .geofill-cell.lit { border-color:var(--accent); background:var(--acc-dim); }
+  #soloApp .geofill-cell.lit .gf-p { color:var(--text); }
+  #soloApp .geofill-cell.lit .gf-a { color:var(--accent); }
   #soloApp #cinput.shake { animation:cshake .3s; } @keyframes cshake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
   #soloApp #cmsg { min-height:18px; font-size:13px; color:var(--muted); margin-top:8px; }
   #soloApp .big { font-family:var(--ui); font-size:46px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--accent); margin:6px 0; }
@@ -751,6 +764,7 @@
 </div>
   <script src="/socket.io/socket.io.js"></script>
   <script src="categories.js"></script>
+  <script src="capitals.js"></script>
   <script src="geomap.js"></script>
   <script src="app.js"></script>
 </body>

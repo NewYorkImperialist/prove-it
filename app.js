@@ -1174,7 +1174,8 @@ let named = new Set(), count = 0, tid = null, timeLeft = 0;
 let rChars = 0, rT0 = 0, roundWpm = []; // live typing-speed tracking (chars since first keystroke)
 let runGid = "", roundGuesses = []; // per-run id + buffered exact guesses for the admin guess-log
 let modalDailyId = ""; // today's daily id, captured when the leaderboard modal opens (for rename/update)
-let mapActive = false; // geography rounds show an outlined map that lights up instead of chips
+let mapActive = false; // geography map rounds light up shapes as you name them
+let geoMode = null;    // "map" | "fill" | null for the current round
 function genGid() { return "s-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
 function liveWpm() { return rT0 ? Math.round((rChars / 5) / Math.max(1 / 60, (Date.now() - rT0) / 60000)) : 0; }
 function showWpm() { $("wpm").textContent = rT0 ? liveWpm() + " wpm" : ""; }
@@ -1299,20 +1300,20 @@ function startRound(i) {
   $("sprintGroup").textContent = `Round ${i + 1} of ${roundCats.length} · ${cat.emoji} ${cat.group}`;
   $("sprintCat").textContent = cat.name;
   $("count").textContent = "0 / " + cat.entries.length; $("chips").innerHTML = ""; $("cmsg").textContent = "";
-  // geography categories get an outlined map above the chip list (chips stay visible)
+  // geography visuals: "map" categories light up shapes (chips stay); "fill" categories (capitals)
+  // show a countries/states grid you fill in by typing the capital (grid replaces chips).
   mapActive = false;
-  $("chips").classList.remove("with-map");
-  if (window.GeoMap && GeoMap.supports(cat.name)) {
-    mapActive = true;
-    $("chips").classList.add("with-map");
+  geoMode = (window.GeoMap && GeoMap.mode(cat.name)) || null;
+  $("chips").classList.remove("with-map", "hidden");
+  $("solomap").classList.add("hidden"); $("solomap").innerHTML = "";
+  if (geoMode) {
     const mapEl = $("solomap"); mapEl.classList.remove("hidden");
-    GeoMap.setup(cat.name, cat.entries, mapEl, named).catch(() => { // any failure → just the chips
-      mapActive = false; mapEl.classList.add("hidden"); mapEl.innerHTML = ""; $("chips").classList.remove("with-map");
-    });
-  } else {
-    if (window.GeoMap) GeoMap.teardown();
-    $("solomap").classList.add("hidden"); $("solomap").innerHTML = "";
-  }
+    if (geoMode === "fill") $("chips").classList.add("hidden");
+    else { mapActive = true; $("chips").classList.add("with-map"); }
+    GeoMap.setup(cat.name, cat.entries, mapEl, named)
+      .then(() => { if (geoMode === "fill") $("count").textContent = GeoMap.filled() + " / " + GeoMap.total(); })
+      .catch(() => { geoMode = null; mapActive = false; mapEl.classList.add("hidden"); mapEl.innerHTML = ""; $("chips").classList.remove("hidden", "with-map"); });
+  } else if (window.GeoMap) GeoMap.teardown();
   $("cinput").value = ""; $("cinput").disabled = false; $("cinput").focus();
   timeLeft = perRound; $("sprintTimer").textContent = fmtClock(timeLeft); $("sprintTimer").classList.remove("low");
   clearInterval(tid);
@@ -1349,6 +1350,12 @@ function nearMiss(nq, cat) {
 // Returns true if the text should be KEPT in the box (a near-miss → let them re-spell), false otherwise.
 function submit(q) {
   rChars += q.length; if (!rT0) rT0 = Date.now(); showWpm(); // typing-speed accounting (all submissions count)
+  if (geoMode === "fill") { // capitals fill-in: type a capital, it fills the matching country/state
+    const r = GeoMap.tryFill(q);
+    if (r === "ok") { count = GeoMap.filled(); $("count").textContent = count + " / " + GeoMap.total(); $("cmsg").textContent = ""; roundGuesses.push({ display: q, verdict: "ok", at: Date.now() }); return false; }
+    if (r === "dup") { flash("already filled in"); return false; }
+    roundGuesses.push({ display: q, verdict: "miss", at: Date.now() }); flash("✗ not a capital on the board"); return false;
+  }
   const cat = roundCats[cur]; const nq = norm(q);
   const m = cat.entries.find((e) => e.aliases.includes(nq));
   if (m) {

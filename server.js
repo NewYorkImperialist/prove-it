@@ -183,8 +183,12 @@ function histHtml(h, k) {
   const skips = (h.skips || []).map((r) => `<tr><td>${esc(r.category)}</td><td>${num(r.n)}</td></tr>`).join("");
   const sp = h.sp || {};
   const solo = h.solo || {};
+  const daily = h.daily || {};
   const soloRecent = (solo.recent || []).map((r) => { const cat = (r.rounds && r.rounds.length === 1) ? r.rounds[0] : (r.genre ? r.genre + " · " + (r.rounds || []).length + "r" : (r.rounds || []).length + "r"); return `<tr><td>${easternTime(num(r.at))}</td><td>${esc(r.name || "?")}${r.crown ? " 👑" : ""}</td><td>${esc(cat)}</td><td>${num(r.total)}</td></tr>`; }).join("");
   const soloDay = (solo.perDay || []).map((r) => `<tr><td>${esc(r.day)}</td><td>${num(r.n)}</td></tr>`).join("");
+  const soloCats = (solo.topCats || []).map((r) => `<tr><td>${esc(r.cat)}</td><td>${num(r.plays)}</td><td>${num(r.players)}</td><td>${num(r.avg).toFixed(1)}</td><td>${num(r.top)}</td></tr>`).join("");
+  const dDay = (c) => String(c || "").replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3");
+  const dailyDayRows = (daily.perDay || []).map((r) => `<tr><td>${dDay(r.challenge_id)}</td><td>${num(r.plays)}</td><td>${num(r.players)}</td><td>${num(r.avg).toFixed(1)}</td><td><b>${num(r.top)}</b> ${esc(r.name || "?")}</td></tr>`).join("");
   return `
     <h2>All-time history</h2>
     <p class="stats"><b>${h.games}</b> games · <b>${h.rounds}</b> rounds · <b>${h.players}</b> unique players · avg game <b>${fmtMs(h.avgDurationMs)}</b></p>
@@ -212,11 +216,17 @@ function histHtml(h, k) {
       <div><h3>📅 Games per day</h3>${tbl(["Day", "Games"], day, 2)}</div>
       <div><h3>🕑 Recent games</h3>${tbl(["When", "Code", "Result", "Winner", "Rds", "End", "Len"], rec, 7)}</div>
     </div>
-    <h2>🏃 Solo runs (challenges)</h2>
-    <p class="stats"><b>${solo.plays || 0}</b> solo runs · <b>${solo.challenges || 0}</b> challenges created · avg score <b>${num(solo.avg).toFixed(1)}</b> · best <b>${solo.best || 0}</b></p>
+    <h2>🏃 Solo runs</h2>
+    <p class="stats"><b>${solo.plays || 0}</b> runs · <b>${solo.players || 0}</b> players · <b>${solo.challenges || 0}</b> challenges created · avg <b>${num(solo.avg).toFixed(1)}</b> · best <b>${solo.best || 0}</b> · <a href="/admin/runs?key=${k}" style="color:#5b8cff">every run + guesses →</a></p>
     <div class="cols">
+      <div><h3>🗂 Most-played solo categories</h3>${tbl(["Category", "Runs", "Players", "Avg", "Best"], soloCats, 5)}</div>
       <div><h3>🕒 Recent solo runs (Eastern)</h3>${tbl(["When", "Player", "Category", "Score"], soloRecent, 4)}</div>
       <div><h3>📅 Solo runs per day</h3>${tbl(["Day", "Runs"], soloDay, 2)}</div>
+    </div>
+    <h2>🗓 Daily challenge</h2>
+    <p class="stats"><b>${daily.plays || 0}</b> plays · <b>${daily.players || 0}</b> players · <b>${daily.days || 0}</b> days run · avg <b>${num(daily.avg).toFixed(1)}</b> · best ever <b>${daily.best || 0}</b></p>
+    <div class="cols">
+      <div><h3>📆 Each day — plays · players · avg · top scorer</h3>${tbl(["Date", "Plays", "Players", "Avg", "Top"], dailyDayRows, 5)}</div>
     </div>
     <h2 style="opacity:.6">🤖 Single-player vs bot — retired</h2>
     <p class="stats" style="opacity:.6">Historical only (the bot mode was retired). <b>${sp.games || 0}</b> games · <b>${sp.rounds || 0}</b> rounds.</p>`;

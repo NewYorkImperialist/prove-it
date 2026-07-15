@@ -128,25 +128,48 @@ async function summary() {
     skips: await q(`SELECT detail category, COUNT(*) n FROM events WHERE type='categorySkipped' AND detail IS NOT NULL GROUP BY detail ORDER BY n DESC LIMIT 25`),
     sessions: await sessionStats(),
     solo: await soloStats(),
+    daily: await dailyStats(),
     sp: await spStats(),
+  };
+}
+// Daily-challenge analytics: overall + per-day participation.
+async function dailyStats() {
+  const agg = await one(`SELECT COUNT(*) n, COUNT(DISTINCT COALESCE(visitor_id,name)) players, COALESCE(AVG(total),0) avg, COALESCE(MAX(total),0) best, COUNT(DISTINCT challenge_id) days FROM challenge_results WHERE challenge_id LIKE 'd-%'`);
+  // per day: plays, unique players, avg, top score + who got it (SQLite returns name from the MAX(total) row)
+  const perDay = await q(`SELECT challenge_id, COUNT(*) plays, COUNT(DISTINCT COALESCE(visitor_id,name)) players, COALESCE(AVG(total),0) avg, MAX(total) top, name
+    FROM challenge_results WHERE challenge_id LIKE 'd-%' GROUP BY challenge_id ORDER BY challenge_id DESC LIMIT 21`);
+  return {
+    plays: agg ? Number(agg.n) : 0, players: agg ? Number(agg.players) : 0,
+    avg: agg ? Number(agg.avg) : 0, best: agg ? Number(agg.best) : 0, days: agg ? Number(agg.days) : 0,
+    perDay,
   };
 }
 
 // Solo play = challenge runs (every solo sprint is a DB-backed, shareable challenge).
 async function soloStats() {
-  const ch = await one(`SELECT COUNT(*) n FROM challenges`);
-  const rs = await one(`SELECT COUNT(*) n, COALESCE(AVG(total),0) avg, COALESCE(MAX(total),0) best FROM challenge_results`);
+  // "solo" = non-daily challenge runs (Quick play / choose / link challenges). Daily has its own block.
+  const ch = await one(`SELECT COUNT(*) n FROM challenges WHERE id NOT LIKE 'd-%'`);
+  const rs = await one(`SELECT COUNT(*) n, COUNT(DISTINCT COALESCE(visitor_id,name)) players, COALESCE(AVG(total),0) avg, COALESCE(MAX(total),0) best FROM challenge_results WHERE challenge_id NOT LIKE 'd-%'`);
   const recent = await q(`SELECT r.name, r.total, r.at, r.crown, c.rounds, c.genre, c.type
     FROM challenge_results r LEFT JOIN challenges c ON c.id = r.challenge_id
-    ORDER BY r.id DESC LIMIT 20`);
+    WHERE r.challenge_id NOT LIKE 'd-%' ORDER BY r.id DESC LIMIT 20`);
   recent.forEach((x) => { try { x.rounds = JSON.parse(x.rounds || "[]"); } catch { x.rounds = []; } });
+  // most-played single-category solo runs (uses SQLite JSON functions on the challenge's rounds)
+  let topCats = [];
+  try {
+    topCats = await q(`SELECT json_extract(c.rounds,'$[0]') cat, COUNT(*) plays, COUNT(DISTINCT COALESCE(r.visitor_id,r.name)) players, COALESCE(AVG(r.total),0) avg, COALESCE(MAX(r.total),0) top
+      FROM challenge_results r JOIN challenges c ON c.id = r.challenge_id
+      WHERE r.challenge_id NOT LIKE 'd-%' AND json_array_length(c.rounds) = 1 AND json_extract(c.rounds,'$[0]') IS NOT NULL
+      GROUP BY cat ORDER BY plays DESC, players DESC LIMIT 25`);
+  } catch (e) { /* JSON funcs unavailable → skip the breakdown */ }
   return {
     challenges: ch ? Number(ch.n) : 0,
     plays: rs ? Number(rs.n) : 0,
+    players: rs ? Number(rs.players) : 0,
     avg: rs ? Number(rs.avg) : 0,
     best: rs ? Number(rs.best) : 0,
-    recent,
-    perDay: await q(`SELECT date(at/1000,'unixepoch') day, COUNT(*) n FROM challenge_results GROUP BY day ORDER BY day DESC LIMIT 14`),
+    recent, topCats,
+    perDay: await q(`SELECT date(at/1000,'unixepoch') day, COUNT(*) n FROM challenge_results WHERE challenge_id NOT LIKE 'd-%' GROUP BY day ORDER BY day DESC LIMIT 14`),
   };
 }
 

@@ -1304,13 +1304,13 @@ function startRound(i) {
   roundCats.forEach((_, j) => { const s = document.createElement("span"); s.className = j < i ? "done" : j === i ? "cur" : ""; pips.appendChild(s); });
   $("sprintGroup").textContent = `Round ${i + 1} of ${roundCats.length} · ${cat.emoji} ${cat.group}`;
   $("sprintCat").textContent = cat.name;
-  showTotal = cat.group === "Geography"; // the "/ total" progress only makes sense for finite geography lists
   $("chips").innerHTML = ""; $("cmsg").textContent = "";
-  updateCount();
   // geography visuals: "map" categories light up shapes (chips stay); "fill" categories (capitals)
   // show a countries/states grid you fill in by typing the capital (grid replaces chips).
   mapActive = false;
   geoMode = (window.GeoMap && GeoMap.mode(cat.name)) || null;
+  showTotal = !!geoMode; // "/ total" only for the map/fill enumerations (countries/states/capitals), not misc geo like Natural Disasters
+  updateCount();
   $("soloApp").classList.toggle("mapmode", !!geoMode); // full-screen map/grid layout
   $("chips").classList.remove("with-map", "hidden");
   $("solomap").classList.add("hidden"); $("solomap").innerHTML = "";

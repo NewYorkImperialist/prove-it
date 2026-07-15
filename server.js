@@ -289,6 +289,13 @@ app.get("/admin", async (req, res) => {
         <a class="preset" href="/admin/announce?key=${k}&msg=${encodeURIComponent("⚠️ Server updating in ~5 minutes — wrap up soon!")}">⚠️ 5-min restart</a>
       </form>
     </div>
+    <div class="announce" style="${lockdown ? "border-color:#e5484d;background:#2a1618" : ""}">
+      <span class="lbl">🔌 Server control:</span>
+      <a class="preset" href="/admin/killall?key=${k}" onclick="return confirm('End ALL active games right now and kick everyone?')">🛑 End all games now</a>
+      ${lockdown
+        ? `<b style="color:#e5484d">● MAINTENANCE MODE — game is DOWN</b> <a class="preset" style="background:#1d3a26;color:#8ef0b4" href="/admin/lockdown?key=${k}&on=0">✅ Bring the game back ON</a>`
+        : `<a class="preset" style="background:#3a2030;color:#ffb4b4" href="/admin/lockdown?key=${k}&on=1" onclick="return confirm('Take the game DOWN for maintenance? Kicks everyone, ends all games, and blocks new games (solo + multiplayer) until you toggle it back on.')">🔧 Take game down (maintenance)</a>`}
+    </div>
     <p style="margin:0 0 16px"><a href="/admin/health?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🩺 Category health → which answers never get named</a></p>
     <p style="margin:0 0 16px"><a href="/admin/games?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🎞 Game history → drill into any past game: every guess, chat, and exact timestamp</a></p>
     <p style="margin:0 0 16px"><a href="/admin/chat?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">💬 All chat → every message across the whole server (searchable)</a></p>
@@ -649,6 +656,22 @@ app.get("/admin/close", (req, res) => {
   res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));
 });
 
+// Kill switch: end every active game right now (one-shot).
+app.get("/admin/killall", (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const n = closeAllRooms();
+  io.emit("announce", { text: "🛑 The server was reset — all games ended." });
+  console.log(`🛑 owner ended ALL games (${n} rooms)`);
+  res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));
+});
+// Maintenance mode: take the game fully down (kick everyone, block new games) until toggled back on.
+app.get("/admin/lockdown", (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  lockdown = req.query.on === "1";
+  if (lockdown) { closeAllRooms(); io.emit("announce", { text: "🔧 The game is down for maintenance — back soon." }); console.log("🔒 LOCKDOWN ON — new games blocked"); }
+  else { io.emit("announce", { text: "✅ Back online — the game is up!" }); console.log("🔓 lockdown OFF — game back up"); }
+  res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));
+});
 // Owner broadcasts a banner message to EVERY connected client (e.g. a pre-deploy heads-up).
 app.get("/admin/announce", (req, res) => {
   if (!ownerOk(req)) return res.status(404).send("Not found");
@@ -700,6 +723,7 @@ const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char u
 
 app.post("/challenge", async (req, res) => {
   const b = req.body || {};
+  if (lockdown) return res.json({ ok: false, error: "The game is down for maintenance — check back soon." });
   if (!analytics.enabled()) return res.json({ ok: false, error: "Challenges need persistence (not configured)." });
   const type = b.type === "custom" ? "custom" : "genre";
   const rounds = (Array.isArray(b.rounds) ? b.rounds : []).filter((n) => ALL_CAT_NAMES.has(n)).slice(0, 10);
@@ -866,6 +890,7 @@ app.use(express.static(path.join(__dirname), {
 // Identity is the stable playerId (the client keeps it in sessionStorage), NOT the
 // socket id — so a reconnect with a new socket re-claims the same player slot.
 const rooms = new Map();
+let lockdown = false; // owner maintenance kill-switch: blocks new games until toggled back on
 const MAX_PLAYERS = 2;
 const GRACE_MS = 30000; // time to reconnect before forfeiting
 const serverStartedAt = Date.now();
@@ -938,6 +963,7 @@ function closeRoom(code) {
   return true;
 }
 
+function closeAllRooms() { let n = 0; for (const code of [...rooms.keys()]) if (closeRoom(code)) n++; return n; }
 function leaveCurrentRoom(socket) {
   const code = socket.data.roomCode, pid = socket.data.playerId;
   socket.data.roomCode = null;
@@ -977,6 +1003,7 @@ io.on("connection", (socket) => {
   }
 
   socket.on("createRoom", ({ name, playerId } = {}, ack) => {
+    if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
     leaveCurrentRoom(socket);
     const code = makeCode();
     const pid = playerId || genId();
@@ -994,6 +1021,7 @@ io.on("connection", (socket) => {
   });
 
   socket.on("joinRoom", ({ code, name, playerId } = {}, ack) => {
+    if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
     code = String(code || "").toUpperCase().trim();
     const room = rooms.get(code);
     if (!room) return ack?.({ ok: false, error: "No room with that code." });
@@ -1011,6 +1039,7 @@ io.on("connection", (socket) => {
 
   // Join a room as a read-only spectator (watch the duel; can chat but can't play).
   socket.on("spectateRoom", ({ code, name, playerId } = {}, ack) => {
+    if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
     code = String(code || "").toUpperCase().trim();
     const room = rooms.get(code);
     if (!room) return ack?.({ ok: false, error: "No room with that code." });

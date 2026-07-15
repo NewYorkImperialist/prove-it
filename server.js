@@ -255,7 +255,7 @@ app.get("/admin", async (req, res) => {
     </div>`;
   };
   res.set("content-type", "text/html").send(`<!doctype html><html><head><meta charset="utf-8">
-    <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="4">
+    <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15">
     <title>Prove It! — server</title><style>
     body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
     h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;margin:0 0 6px;font-size:13px}

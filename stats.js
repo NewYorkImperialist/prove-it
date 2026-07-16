@@ -51,7 +51,7 @@ async function init() {
       ["games", "gid TEXT"], ["rounds", "gid TEXT"], ["answers", "gid TEXT"], ["answers", "player TEXT"], ["events", "gid TEXT"],
       ["sessions", "ip TEXT"], ["sessions", "visitor_id TEXT"], ["sessions", "tz TEXT"], ["sessions", "locale TEXT"], ["sessions", "geo TEXT"],
       ["challenges", "timer INTEGER DEFAULT 45"], ["challenge_results", "wpms TEXT"], ["challenge_results", "crown INTEGER DEFAULT 0"],
-      ["challenge_results", "gid TEXT"], ["answers", "verdict TEXT"]]) { // gid links a solo/daily run to its guesses; verdict = ok/miss/dup
+      ["challenge_results", "gid TEXT"], ["challenge_results", "times TEXT"], ["answers", "verdict TEXT"]]) { // gid links a run to its guesses; times[] = seconds to complete each round (speed ranking); verdict = ok/miss/dup
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
     console.log("📊 stats: connected to Turso ✓");
@@ -271,16 +271,17 @@ function collapseBoard(rows, limit = 50, forcedName) {
   const crownRow = rows.find((r) => r.crown);
   const creatorName = crownRow ? nn(crownRow.name) : (forcedName ? nn(forcedName) : null);
   const creatorDisplay = crownRow ? crownRow.name : (forcedName || null);
+  const tv = (t) => (t == null || !(t > 0)) ? Infinity : Number(t); // no full-clear time → ranks last on a score tie
+  const beats = (a, b) => a.score !== b.score ? a.score > b.score : tv(a.time) < tv(b.time); // higher score, else faster clear
   const best = {};
   for (const r of rows) {
     if (!(Number(r.score) > 0)) continue;
     const isCreator = !!r.crown || (creatorName && nn(r.name) === creatorName);
     const key = isCreator ? "__creator__" : (r.visitor_id || ("name:" + r.name));
-    if (!best[key] || Number(r.score) > best[key].score) {
-      best[key] = { name: isCreator ? (creatorDisplay || r.name) : r.name, visitor_id: r.visitor_id, score: Number(r.score), at: Number(r.at), crown: isCreator ? 1 : 0, challenge_id: r.challenge_id };
-    }
+    const cand = { name: isCreator ? (creatorDisplay || r.name) : r.name, visitor_id: r.visitor_id, score: Number(r.score), time: (r.time != null && r.time > 0) ? Number(r.time) : null, at: Number(r.at), crown: isCreator ? 1 : 0, challenge_id: r.challenge_id };
+    if (!best[key] || beats(cand, best[key])) best[key] = cand;
   }
-  return Object.values(best).sort((a, b) => b.score - a.score || a.at - b.at).slice(0, limit);
+  return Object.values(best).sort((a, b) => (b.score - a.score) || (tv(a.time) - tv(b.time)) || (a.at - b.at)).slice(0, limit);
 }
 // All-time daily high scores: each player's best single-day total across every daily puzzle.
 async function dailyAllTime(limit = 50) {
@@ -322,13 +323,14 @@ async function categoryLeaderboard(catName, limit = 50) {
   const chs = await q(`SELECT id, rounds FROM challenges`);
   const roundsById = {};
   for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } }
-  const results = await q(`SELECT challenge_id, name, visitor_id, scores, at, crown FROM challenge_results`);
+  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, at, crown FROM challenge_results`);
   const rows = [];
   for (const r of results) {
     const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
-    let scores; try { scores = JSON.parse(r.scores || "[]"); } catch (e) { scores = []; }
-    let sc = 0; rounds.forEach((cn, i) => { if (cn === catName) sc = Math.max(sc, Number(scores[i]) || 0); });
-    if (sc > 0) rows.push({ name: r.name, visitor_id: r.visitor_id, score: sc, at: Number(r.at), crown: r.crown });
+    let scores = [], times = []; try { scores = JSON.parse(r.scores || "[]"); } catch (e) {} try { times = JSON.parse(r.times || "[]"); } catch (e) {}
+    let sc = 0, tm = null; // best score for this category + its completion time
+    rounds.forEach((cn, i) => { if (cn === catName) { const s = Number(scores[i]) || 0; if (s > sc) { sc = s; tm = times[i] != null ? Number(times[i]) : null; } } });
+    if (sc > 0) rows.push({ name: r.name, visitor_id: r.visitor_id, score: sc, time: tm, at: Number(r.at), crown: r.crown });
   }
   return collapseBoard(rows, limit, await getCreatorName());
 }
@@ -376,8 +378,8 @@ async function getChallenge(id) {
 async function addChallengeResult(x) {
   if (!client) return false;
   try {
-    await client.execute({ sql: `INSERT INTO challenge_results (challenge_id,name,visitor_id,scores,total,at,wpms,crown,gid) VALUES (?,?,?,?,?,?,?,?,?)`,
-      args: [x.challenge_id, x.name || "Anon", x.visitor_id || null, JSON.stringify(x.scores || []), x.total || 0, Date.now(), JSON.stringify(x.wpms || []), x.crown ? 1 : 0, x.gid || null] });
+    await client.execute({ sql: `INSERT INTO challenge_results (challenge_id,name,visitor_id,scores,total,at,wpms,crown,gid,times) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      args: [x.challenge_id, x.name || "Anon", x.visitor_id || null, JSON.stringify(x.scores || []), x.total || 0, Date.now(), JSON.stringify(x.wpms || []), x.crown ? 1 : 0, x.gid || null, JSON.stringify(x.times || [])] });
     return true;
   } catch (e) { console.error("📊 challenge result:", e.message); return false; }
 }
@@ -403,8 +405,8 @@ async function soloRunDetail(gid) {
   return { result, answers };
 }
 async function getChallengeResults(id) {
-  const rows = await q(`SELECT name, visitor_id, scores, total, at, wpms, crown FROM challenge_results WHERE challenge_id=? ORDER BY total DESC, at ASC`, [id]);
-  return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } return r; });
+  const rows = await q(`SELECT name, visitor_id, scores, total, at, wpms, crown, times FROM challenge_results WHERE challenge_id=? ORDER BY total DESC, at ASC`, [id]);
+  return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
 module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName };

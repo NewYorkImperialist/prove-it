@@ -757,10 +757,12 @@ app.post("/challenge/:id/result", async (req, res) => {
   const b = req.body || {};
   const scores = (Array.isArray(b.scores) ? b.scores : []).map((n) => Math.max(0, Math.min(999, parseInt(n, 10) || 0))).slice(0, c.rounds.length);
   const wpms = (Array.isArray(b.wpms) ? b.wpms : []).map((n) => Math.max(0, Math.min(9999, parseInt(n, 10) || 0))).slice(0, c.rounds.length);
+  // seconds-to-complete per round (null when not fully completed) — for speed ranking on maxed boards
+  const times = (Array.isArray(b.times) ? b.times : []).map((n) => { const t = parseInt(n, 10); return t > 0 ? Math.min(3600, t) : null; }).slice(0, c.rounds.length);
   const total = scores.reduce((a, n) => a + n, 0);
   const crown = !!(process.env.OWNER_KEY && b.ownerKey === process.env.OWNER_KEY); // creator crown (server-validated)
   const gid = String(b.gid || "").slice(0, 40); // links this run to its captured guesses
-  await analytics.addChallengeResult({ challenge_id: id, name: String(b.name || "Anon").slice(0, 24), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, crown, gid });
+  await analytics.addChallengeResult({ challenge_id: id, name: String(b.name || "Anon").slice(0, 24), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, times, crown, gid });
   res.json({ ok: true });
 });
 // Rename a player's leaderboard entries everywhere (all challenges/days). Owner key → also renames

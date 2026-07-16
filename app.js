@@ -1147,7 +1147,19 @@ window.addEventListener("resize", setAppHeight); window.addEventListener("orient
 function norm(s) { return s.normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase().replace(/\s+/g, " "); }
 function buildCat(cat, group, emoji) { return { name: cat.name, group, emoji, entries: cat.items.map((it, id) => { const n = Array.isArray(it) ? it : [it]; return { id, display: n[0], aliases: n.map(norm) }; }) }; }
 const CATS = []; const GENRES = [];
-for (const [g, v] of Object.entries(CATEGORY_GROUPS)) { if (v.defaultOff) continue; GENRES.push(g); for (const c of v.cats) CATS.push(buildCat(c, g, v.emoji)); }
+const GEO_MISC = "Geography Misc"; // geography categories without a map/grid live here (Rivers, Disasters, Cities…)
+for (const [g, v] of Object.entries(CATEGORY_GROUPS)) {
+  if (v.defaultOff) continue;
+  for (const c of v.cats) {
+    // split the Geography group: map/fill categories stay "Geography", the rest become "Geography Misc"
+    const misc = g === "Geography" && !(window.GeoMap && GeoMap.supports(c.name));
+    CATS.push(buildCat(c, misc ? GEO_MISC : g, misc ? "🧭" : v.emoji));
+  }
+}
+// order groups: Geography first, then Geography Misc, then everything else in its original order
+const grank = (g) => g === "Geography" ? 0 : g === GEO_MISC ? 1 : 2;
+CATS.sort((a, b) => grank(a.group) - grank(b.group)); // stable → geo cats float to the top, rest keep order
+{ const seen = new Set(); for (const c of CATS) if (!seen.has(c.group)) { seen.add(c.group); GENRES.push(c.group); } }
 const findCat = (name) => CATS.find((c) => c.name === name) || null;
 // Troll / too-small categories make bad sprints → flagged "non-sprint" (excluded from genre mode, allowed in custom).
 const TROLL = new Set(["Things the Nyan Cat Says", "Counting Numbers", "Nobel Peace Prize Loser", "People in the Epstein Files", "Italian Brainrot", "Cities Mistaken for Australia's Capital", "Seasons of the Year", "Months of the Year"]);
@@ -1172,6 +1184,9 @@ let roundCats = [], roundScores = [], cur = 0;
 let mode = "genre", numRounds = 5;
 let named = new Set(), count = 0, tid = null, timeLeft = 0;
 let rChars = 0, rT0 = 0, roundWpm = []; // live typing-speed tracking (chars since first keystroke)
+let roundTimes = []; // seconds to complete each round (only when you name them ALL), for speed ranking
+// Named everything in the round → record how long it took and end the round now (faster = ranks higher).
+function finishRoundEarly() { if (roundTimes[cur] == null) roundTimes[cur] = Math.max(1, perRound - timeLeft); endRound(); }
 let runGid = "", roundGuesses = []; // per-run id + buffered exact guesses for the admin guess-log
 let modalDailyId = ""; // today's daily id, captured when the leaderboard modal opens (for rename/update)
 let mapActive = false; // geography map rounds light up shapes as you name them
@@ -1270,7 +1285,7 @@ function startPlaying(playerName) {
   rememberName(playerName);
   roundCats = def.rounds.map(findCat).filter(Boolean);
   if (!roundCats.length) { show("create"); $("createErr").textContent = "This challenge's categories are unavailable."; return; }
-  roundScores = []; cur = 0;
+  roundScores = []; roundTimes = []; cur = 0;
   // Pre-game "ready" screen: copy the link to a friend, then start (with a 3-2-1 countdown).
   show("ready");
   $("readyLB").hidden = true; $("readyLBWrap").innerHTML = ""; // leaderboard preview is daily-only
@@ -1360,7 +1375,7 @@ function submit(q) {
   rChars += q.length; if (!rT0) rT0 = Date.now(); showWpm(); // typing-speed accounting (all submissions count)
   if (geoMode === "fill") { // capitals fill-in: type a capital, it fills the matching country/state
     const r = GeoMap.tryFill(q);
-    if (r === "ok") { count = GeoMap.filled(); updateCount(); $("cmsg").textContent = ""; roundGuesses.push({ display: q, verdict: "ok", at: Date.now() }); return false; }
+    if (r === "ok") { count = GeoMap.filled(); updateCount(); $("cmsg").textContent = ""; roundGuesses.push({ display: q, verdict: "ok", at: Date.now() }); if (count >= GeoMap.total()) finishRoundEarly(); return false; }
     if (r === "dup") { flash("already filled in"); return false; }
     roundGuesses.push({ display: q, verdict: "miss", at: Date.now() }); flash("✗ not a capital on the board"); return false;
   }
@@ -1372,6 +1387,7 @@ function submit(q) {
     roundGuesses.push({ display: m.display, verdict: "ok", at: Date.now() });
     if (mapActive && window.GeoMap) GeoMap.light(m.id); // light up the country/state on the map
     const sp = document.createElement("span"); sp.textContent = m.display; $("chips").prepend(sp);
+    if (count >= cat.entries.length) finishRoundEarly(); // got them all → record the finish time and end the round
     return false;
   }
   const near = nearMiss(nq, cat);
@@ -1408,7 +1424,7 @@ async function finish() {
   if (isDaily) {
     // Retro arcade: show the score + streak, then let the player opt in to the leaderboard with their own name.
     const streak = bumpDailyStreak(dailyDate);
-    try { localStorage.setItem("daily_score", String(total)); localStorage.setItem("daily_run", JSON.stringify({ date: dailyDate, scores: roundScores, wpms: roundWpm, gid: runGid })); } catch (e) {} // remembered so the laurel modal can update/rename later today
+    try { localStorage.setItem("daily_score", String(total)); localStorage.setItem("daily_run", JSON.stringify({ date: dailyDate, scores: roundScores, wpms: roundWpm, times: roundTimes, gid: runGid })); } catch (e) {} // remembered so the laurel modal can update/rename later today
     updateDailyBtn(); // mark the menu button "played" for the rest of today
     $("shareBtn").textContent = "Copy invite + my score";
     $("doneVerdict").innerHTML = "Daily complete!"; $("doneVerdict").className = "verdict win";
@@ -1425,7 +1441,7 @@ async function finish() {
     $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`;
     $("newChallenge").textContent = "New challenge";
     $("shareBtn").textContent = "Copy challenge link";
-    await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid: runGid });
+    await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, times: roundTimes, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid: runGid });
     // single-category runs show that category's all-time board (more meaningful than the one-off link board)
     if (roundCats.length === 1) { $("doneSub").textContent = `You named ${total} ${roundCats[0].name} at ${avgWpm} wpm avg.`; renderCategoryLB($("lbWrap"), roundCats[0].name); }
     else renderLeaderboard($("lbWrap"));
@@ -1446,12 +1462,13 @@ async function renderCategoryLB(el, catName) {
   if (!d || !d.ok) { el.innerHTML = `<p class="lb-note">Couldn't load the leaderboard.</p>`; return; }
   const rows = d.results || [];
   if (!rows.length) { el.innerHTML = `<p class="lb-note">No scores yet — be the first!</p>`; return; }
+  const fmtT = (t) => t == null ? "—" : (t >= 60 ? Math.floor(t / 60) + ":" + String(t % 60).padStart(2, "0") : t + "s");
   const body = rows.map((r, i) => {
     const mine = r.visitor_id && r.visitor_id === VISITOR_ID;
-    return `<tr class="${mine ? "me" : ""}"><td>${i + 1}</td><td class="pname">${esc(r.name || "?")}${r.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td><td class="tot">${r.score}</td></tr>`;
+    return `<tr class="${mine ? "me" : ""}"><td>${i + 1}</td><td class="pname">${esc(r.name || "?")}${r.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td><td class="tot">${r.score}</td><td>${fmtT(r.time)}</td></tr>`;
   }).join("");
-  el.innerHTML = `<table class="lb"><tr><th>#</th><th>Player</th><th>Best</th></tr>${body}</table>
-    <p class="lb-note">All-time best on <b>${esc(catName)}</b> · ${rows.length} player${rows.length > 1 ? "s" : ""}.</p>`;
+  el.innerHTML = `<table class="lb"><tr><th>#</th><th>Player</th><th>Best</th><th>Time</th></tr>${body}</table>
+    <p class="lb-note">All-time best on <b>${esc(catName)}</b> · ${rows.length} player${rows.length > 1 ? "s" : ""}. Tie at the top? Fastest full clear wins.</p>`;
 }
 async function renderLeaderboard(el, idArg) {
   const lid = idArg || challengeId;
@@ -1546,7 +1563,7 @@ async function initDaily() {
   def = { id: d.id, rounds: d.rounds || [], by: "Daily", type: "daily", timer: d.timer || 30 };
   perRound = def.timer;
   roundCats = def.rounds.map(findCat).filter(Boolean);
-  roundScores = []; cur = 0;
+  roundScores = []; roundTimes = []; cur = 0;
   $("readyTitle").textContent = "Daily Challenge";
   $("readySub").textContent = `${d.date} · ${roundCats.length} rounds · ${d.timer}s each · same puzzle for everyone. ${d.players} played today.`;
   $("readyShare").textContent = "Copy today's daily link";
@@ -1691,11 +1708,11 @@ async function submitDailyResult(name, btn) {
   const n = String(name || "").trim().slice(0, 20);
   if (!n) return false;
   rememberName(n);
-  let scores = (isDaily && roundScores.length) ? roundScores : null, wpms = (isDaily && roundWpm.length) ? roundWpm : null, gid = runGid;
-  if (!scores) { let run = null; try { run = JSON.parse(localStorage.getItem("daily_run") || "null"); } catch (e) {} if (run && run.date === todayEastern()) { scores = run.scores || []; wpms = run.wpms || []; gid = run.gid || ""; } }
+  let scores = (isDaily && roundScores.length) ? roundScores : null, wpms = (isDaily && roundWpm.length) ? roundWpm : null, times = (isDaily && roundScores.length) ? roundTimes : null, gid = runGid;
+  if (!scores) { let run = null; try { run = JSON.parse(localStorage.getItem("daily_run") || "null"); } catch (e) {} if (run && run.date === todayEastern()) { scores = run.scores || []; wpms = run.wpms || []; times = run.times || []; gid = run.gid || ""; } }
   const id = (isDaily && challengeId) ? challengeId : (modalDailyId || ("d-" + todayEastern().replace(/-/g, "")));
   if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
-  await postJSON(`/challenge/${id}/result`, { name: n, scores: scores || [], wpms: wpms || [], visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid });
+  await postJSON(`/challenge/${id}/result`, { name: n, scores: scores || [], wpms: wpms || [], times: times || [], visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid });
   // propagate the new name to ALL of this player's entries everywhere (and every crowned row, for the creator)
   await postJSON(`/challenge/rename`, { name: n, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned() });
   if (btn) { btn.disabled = false; btn.textContent = "Update my entry"; }

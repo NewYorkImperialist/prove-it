@@ -1624,7 +1624,7 @@ async function openAllTimeBoard() {
   const body = rows.map((r, i) => {
     const mine = r.visitor_id && r.visitor_id === VISITOR_ID;
     const day = String(r.challenge_id || "").replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3");
-    return `<tr class="${mine ? "me" : ""}"><td>${i + 1}</td><td class="pname">${esc(r.name || "?")}${r.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td><td>${esc(day)}</td><td class="tot">${r.total}</td></tr>`;
+    return `<tr class="${mine ? "me" : ""}"><td>${i + 1}</td><td class="pname">${esc(r.name || "?")}${r.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td><td>${esc(day)}</td><td class="tot">${r.score}</td></tr>`;
   }).join("");
   $("lbModalWrap").innerHTML = `<table class="lb"><tr><th>#</th><th>Player</th><th>Best day</th><th>Score</th></tr>${body}</table>
     <p class="lb-note">Each player's best single-day daily score, across every day.</p>`;

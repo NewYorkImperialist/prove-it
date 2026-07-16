@@ -338,6 +338,7 @@ const CATEGORY_GROUPS = {
       "Afghanistan","Pakistan","Bangladesh","Sri Lanka","Nepal","Bhutan","Iran","Iraq","Saudi Arabia","Yemen","Oman",
       ["United Arab Emirates","uae","united arab emirates"], "Qatar","Bahrain","Kuwait","Jordan","Israel","Lebanon",
       "Syria","Turkey","Georgia","Armenia","Azerbaijan","Brunei","Taiwan","Maldives",
+      ["Palestine","palestinian territories","state of palestine"],
     ]},
     { name: "Countries in Africa", exact: true, items: [
       "Algeria","Angola","Benin","Botswana","Burkina Faso","Burundi", ["Cabo Verde","cabo verde","cape verde"],
@@ -353,6 +354,7 @@ const CATEGORY_GROUPS = {
     ]},
     { name: "Countries in South America", exact: true, items: [
       "Brazil","Argentina","Chile","Peru","Colombia","Venezuela","Ecuador","Bolivia","Paraguay","Uruguay","Guyana","Suriname",
+      ["French Guiana","french guiana"],
     ]},
     { name: "Natural Disasters", items: [
       "Earthquake","Tsunami","Hurricane","Tornado","Flood", ["Wildfire","wildfire","forest fire"],
@@ -413,7 +415,7 @@ const CATEGORY_GROUPS = {
     ]},
     { name: "Countries in the Middle East", exact: true, items: [
       "Saudi Arabia","Iran","Iraq","Turkey","Israel","Jordan","Lebanon","Syria","Yemen","Oman",
-      ["United Arab Emirates","uae"],"Qatar","Kuwait","Bahrain",
+      ["United Arab Emirates","uae"],"Qatar","Kuwait","Bahrain",["Palestine","palestinian territories","state of palestine"],
     ]},
     { name: "Continents", exact: true, items: [
       "Asia","Africa","North America","South America","Antarctica","Europe",["Australia","oceania"],

@@ -34,6 +34,7 @@
     "fiji": [178, -17.8], "solomon islands": [160, -9.6], "vanuatu": [167, -16.3], "samoa": [-172, -13.8],
     "tonga": [-175.2, -21.2], "kiribati": [173, 1.4], "micronesia": [158, 6.9], "marshall islands": [171, 7.1],
     "palau": [134.5, 7.5], "nauru": [166.9, -0.5], "tuvalu": [179.2, -8.5], "bahamas": [-77.4, 24.5],
+    "french guiana": [-53.1, 4.0],
   };
 
   let libsReady = false;

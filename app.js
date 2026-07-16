@@ -1256,6 +1256,14 @@ function setMode(m) {
   document.querySelectorAll("#modeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.mode === m));
   $("genreWrap").hidden = m !== "genre"; $("customWrap").hidden = m !== "custom";
   if (m === "custom") buildCustomRounds();
+  updateRecTimesVisibility();
+}
+// The "recommended time per round" toggle is only relevant for geography — show it for a Geography
+// genre, or in custom mode (where you'd build a multi-round geography set). Hidden (and off) otherwise.
+function updateRecTimesVisibility() {
+  const geo = mode === "custom" || (mode === "genre" && /^Geography/.test($("genreSel").value || ""));
+  $("recTimesBtn").hidden = !geo;
+  if (!geo && recTimes) { recTimes = false; $("recTimesBtn").classList.remove("on"); $("recTimesBtn").textContent = "⏱ Recommended time per round: off"; }
 }
 function pickGenreRounds(genre, n) {
   let pool = shuffle(CATS.filter((c) => c.group === genre && !nonSprint(c)));
@@ -1690,6 +1698,7 @@ $("giveUpBtn").onclick = () => { if (!$("cinput").disabled) endRound(); };
 $("remainBtn").onclick = () => { remOn = !remOn; if (window.GeoMap) GeoMap.toggleRemaining(remOn); $("remainBtn").classList.toggle("on", remOn); $("remainBtn").textContent = remOn ? "Hide what's left" : "Show what's left"; };
 // recommended-time-per-round toggle (custom rounds): each category uses its recommended length
 $("recTimesBtn").onclick = () => { recTimes = !recTimes; $("recTimesBtn").classList.toggle("on", recTimes); $("recTimesBtn").textContent = "⏱ Recommended time per round: " + (recTimes ? "on" : "off"); };
+$("genreSel").addEventListener("change", updateRecTimesVisibility); // toggle only shows for the Geography genre
 document.querySelectorAll("#modeSeg button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
 $("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint(x)))[0] || CATS[0]; setPerRound(recommendedTime(c.name)); startSolo([c.name], e.currentTarget); };
 $("chooseBtn").onclick = (e) => { const v = $("catSel").value; if (v) { setPerRound(recommendedTime(v)); startSolo([v], e.currentTarget); } };

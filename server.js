@@ -762,7 +762,9 @@ app.post("/challenge/:id/result", async (req, res) => {
   const total = scores.reduce((a, n) => a + n, 0);
   const crown = !!(process.env.OWNER_KEY && b.ownerKey === process.env.OWNER_KEY); // creator crown (server-validated)
   const gid = String(b.gid || "").slice(0, 40); // links this run to its captured guesses
-  await analytics.addChallengeResult({ challenge_id: id, name: String(b.name || "Anon").slice(0, 24), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, times, crown, gid });
+  // play origin — keeps the solo-map geography boards separate from daily/shared-link plays.
+  const mode = id.startsWith("d-") ? "daily" : (["solo", "link"].includes(b.mode) ? b.mode : "solo");
+  await analytics.addChallengeResult({ challenge_id: id, name: String(b.name || "Anon").slice(0, 24), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, times, crown, gid, mode });
   res.json({ ok: true });
 });
 // Rename a player's leaderboard entries everywhere (all challenges/days). Owner key → also renames

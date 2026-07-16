@@ -1180,6 +1180,7 @@ const params = new URLSearchParams(location.search);
 let challengeId = params.get("id");
 let def = null;            // { id, rounds:[names], by, type, genre }
 let isDaily = false, dailyDate = ""; // daily-challenge mode + its Eastern date
+let playOrigin = "solo"; // where this run came from: solo (own play) / link (friend's shared link) / daily — keeps the solo-map geography boards separate
 let roundCats = [], roundScores = [], cur = 0;
 let mode = "genre", numRounds = 5;
 let named = new Set(), count = 0, tid = null, timeLeft = 0;
@@ -1457,7 +1458,7 @@ async function finish() {
     $("doneSub").textContent = `You named ${total} across ${roundCats.length} rounds at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`;
     $("newChallenge").textContent = "New challenge";
     $("shareBtn").textContent = "Copy challenge link";
-    await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, times: roundTimes, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid: runGid });
+    await postJSON(`/challenge/${challengeId}/result`, { name: myName, scores: roundScores, wpms: roundWpm, times: roundTimes, visitorId: VISITOR_ID, ownerKey: ownerKeyIfCrowned(), gid: runGid, mode: playOrigin });
     // single-category runs show that category's all-time board (more meaningful than the one-off link board)
     if (roundCats.length === 1) { $("doneSub").textContent = `You named ${total} ${roundCats[0].name} at ${avgWpm} wpm avg.`; renderCategoryLB($("lbWrap"), roundCats[0].name); }
     else renderLeaderboard($("lbWrap"));
@@ -1535,7 +1536,7 @@ async function renderLeaderboard(el, idArg) {
 
 // ============ JOIN (opened a ?id= link) ============
 async function initJoin() {
-  isDaily = false;
+  isDaily = false; playOrigin = "link"; // playing a friend's shared link → excluded from the solo geography boards
   show("join");
   $("joinInfo").innerHTML = "Loading challenge…";
   def = null;
@@ -1563,14 +1564,14 @@ $("joinLB").onclick = async () => {
 
 function buildAllCatSelect() { $("catSel").innerHTML = catOptions().innerHTML; }
 function initCreate() {
-  isDaily = false;
+  isDaily = false; playOrigin = "solo";
   show("create");
   buildRoundsSeg(); buildTimeSeg(); buildGenreSelect(); buildAllCatSelect(); setMode("genre");
   $("byName").value = myName;
 }
 // ============ DAILY CHALLENGE ============
 async function initDaily() {
-  isDaily = true;
+  isDaily = true; playOrigin = "daily";
   show("ready");
   $("readyLB").hidden = true; $("readyLBWrap").innerHTML = "";
   $("readyTitle").textContent = "Loading today's daily…"; $("readySub").textContent = ""; window.PI.flyIn($("ready"));
@@ -1673,7 +1674,7 @@ $("lbCatSel").onchange = () => renderCategoryLB($("lbModalWrap"), $("lbCatSel").
 $("lbShare").onclick = (e) => copyText(dailyInvite(storedDailyScore()), e.currentTarget, "Copied — send it to a friend!");
 // Solo start: create a (DB-backed, shareable) run from a fixed list of categories, then play.
 async function startSolo(rounds, btn) {
-  $("createErr").textContent = "";
+  $("createErr").textContent = ""; playOrigin = "solo"; // quick solo play → counts on the solo geography boards
   const by = $("byName").value.trim().slice(0, 20);
   if (!by) { $("createErr").textContent = "Enter your name first."; $("byName").focus(); return; }
   rememberName(by);

@@ -51,7 +51,7 @@ async function init() {
       ["games", "gid TEXT"], ["rounds", "gid TEXT"], ["answers", "gid TEXT"], ["answers", "player TEXT"], ["events", "gid TEXT"],
       ["sessions", "ip TEXT"], ["sessions", "visitor_id TEXT"], ["sessions", "tz TEXT"], ["sessions", "locale TEXT"], ["sessions", "geo TEXT"],
       ["challenges", "timer INTEGER DEFAULT 45"], ["challenge_results", "wpms TEXT"], ["challenge_results", "crown INTEGER DEFAULT 0"],
-      ["challenge_results", "gid TEXT"], ["challenge_results", "times TEXT"], ["answers", "verdict TEXT"]]) { // gid links a run to its guesses; times[] = seconds to complete each round (speed ranking); verdict = ok/miss/dup
+      ["challenge_results", "gid TEXT"], ["challenge_results", "times TEXT"], ["challenge_results", "mode TEXT"], ["answers", "verdict TEXT"]]) { // gid→guesses; times[]=speed; mode=solo/daily/link (keeps solo boards separate); verdict=ok/miss/dup
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
     console.log("📊 stats: connected to Turso ✓");
@@ -323,7 +323,9 @@ async function categoryLeaderboard(catName, limit = 50) {
   const chs = await q(`SELECT id, rounds FROM challenges`);
   const roundsById = {};
   for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } }
-  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, at, crown FROM challenge_results`);
+  // Geography boards count ONLY solo-map plays (mode='solo'): live-multiplayer lives in the separate
+  // `games` table and never reached here, and we also exclude shared friend-link plays + old untagged rows.
+  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, at, crown FROM challenge_results WHERE mode='solo'`);
   const rows = [];
   for (const r of results) {
     const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
@@ -378,8 +380,8 @@ async function getChallenge(id) {
 async function addChallengeResult(x) {
   if (!client) return false;
   try {
-    await client.execute({ sql: `INSERT INTO challenge_results (challenge_id,name,visitor_id,scores,total,at,wpms,crown,gid,times) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      args: [x.challenge_id, x.name || "Anon", x.visitor_id || null, JSON.stringify(x.scores || []), x.total || 0, Date.now(), JSON.stringify(x.wpms || []), x.crown ? 1 : 0, x.gid || null, JSON.stringify(x.times || [])] });
+    await client.execute({ sql: `INSERT INTO challenge_results (challenge_id,name,visitor_id,scores,total,at,wpms,crown,gid,times,mode) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      args: [x.challenge_id, x.name || "Anon", x.visitor_id || null, JSON.stringify(x.scores || []), x.total || 0, Date.now(), JSON.stringify(x.wpms || []), x.crown ? 1 : 0, x.gid || null, JSON.stringify(x.times || []), x.mode || "solo"] });
     return true;
   } catch (e) { console.error("📊 challenge result:", e.message); return false; }
 }

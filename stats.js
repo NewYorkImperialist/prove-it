@@ -258,14 +258,27 @@ async function sessionsList(limit = 300) {
             FROM sessions ORDER BY id DESC LIMIT ?`, [limit]);
 }
 
+// Collapse rows [{name, visitor_id, score, at, crown, ...}] into a ranked board: one entry per
+// visitor; ALL crowned rows AND any row sharing the creator's name merge into a single crowned entry.
+function collapseBoard(rows, limit = 50) {
+  const nn = (s) => String(s || "").trim().toLowerCase();
+  let creatorName = null, creatorDisplay = null;
+  for (const r of rows) if (r.crown) { creatorName = nn(r.name); creatorDisplay = r.name; break; }
+  const best = {};
+  for (const r of rows) {
+    if (!(Number(r.score) > 0)) continue;
+    const isCreator = !!r.crown || (creatorName && nn(r.name) === creatorName);
+    const key = isCreator ? "__creator__" : (r.visitor_id || ("name:" + r.name));
+    if (!best[key] || Number(r.score) > best[key].score) {
+      best[key] = { name: isCreator ? (creatorDisplay || r.name) : r.name, visitor_id: r.visitor_id, score: Number(r.score), at: Number(r.at), crown: isCreator ? 1 : 0, challenge_id: r.challenge_id };
+    }
+  }
+  return Object.values(best).sort((a, b) => b.score - a.score || a.at - b.at).slice(0, limit);
+}
 // All-time daily high scores: each player's best single-day total across every daily puzzle.
-// (Daily challenge ids are "d-YYYYMMDD"; custom ids never contain a hyphen.) SQLite returns the
-// name/at/challenge_id from the same row as MAX(total) when MAX is used with bare columns.
 async function dailyAllTime(limit = 50) {
-  return q(`SELECT name, visitor_id, MAX(total) total, at, crown, challenge_id
-            FROM challenge_results WHERE challenge_id LIKE 'd-%'
-            GROUP BY CASE WHEN crown=1 THEN '__creator__' ELSE COALESCE(visitor_id, name) END
-            ORDER BY total DESC, at ASC LIMIT ?`, [limit]);
+  const rows = await q(`SELECT name, visitor_id, total score, at, crown, challenge_id FROM challenge_results WHERE challenge_id LIKE 'd-%'`);
+  return collapseBoard(rows, limit);
 }
 
 // Per-category leaderboards (admin-only, private): every challenge round is "player named N in category C".
@@ -303,16 +316,14 @@ async function categoryLeaderboard(catName, limit = 50) {
   const roundsById = {};
   for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } }
   const results = await q(`SELECT challenge_id, name, visitor_id, scores, at, crown FROM challenge_results`);
-  const best = {};
+  const rows = [];
   for (const r of results) {
     const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
     let scores; try { scores = JSON.parse(r.scores || "[]"); } catch (e) { scores = []; }
     let sc = 0; rounds.forEach((cn, i) => { if (cn === catName) sc = Math.max(sc, Number(scores[i]) || 0); });
-    if (sc <= 0) continue;
-    const key = r.crown ? "__creator__" : (r.visitor_id || ("name:" + r.name));
-    if (!best[key] || sc > best[key].score) best[key] = { name: r.name, visitor_id: r.visitor_id, score: sc, at: Number(r.at), crown: r.crown };
+    if (sc > 0) rows.push({ name: r.name, visitor_id: r.visitor_id, score: sc, at: Number(r.at), crown: r.crown });
   }
-  return Object.values(best).sort((a, b) => b.score - a.score || a.at - b.at).slice(0, limit);
+  return collapseBoard(rows, limit);
 }
 
 // Recent leaderboard entries across all challenges (for owner moderation), each with its row id.

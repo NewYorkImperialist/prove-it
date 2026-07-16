@@ -1459,11 +1459,18 @@ async function renderLeaderboard(el, idArg) {
   const data = await getJSON(`/challenge/${lid}/results`);
   if (!data.ok) { el.innerHTML = `<p class="lb-note">Couldn't load the leaderboard.</p>`; return; }
   const rounds = data.rounds || [];
-  // best run per visitor (fallback: per name)
+  // Collapse to one entry per player. ALL crowned rows AND any row sharing the creator's name merge
+  // into a single crowned creator entry (so every "jayden" becomes one "jayden 👑"), keeping the best.
+  const nn = (s) => String(s || "").trim().toLowerCase();
+  let creatorName = null, creatorDisplay = null;
+  (data.results || []).forEach((r) => { if (r.crown && creatorName === null) { creatorName = nn(r.name); creatorDisplay = r.name; } });
   const best = new Map();
-  // the creator (crowned) always collapses to ONE entry, even across devices/names
-  // keep each player's best; on a tie prefer the latest submission so a name-rewrite shows through (results arrive total DESC, at ASC)
-  (data.results || []).forEach((r) => { const key = r.crown ? "__creator__" : (r.visitor_id || ("name:" + r.name)); const prev = best.get(key); if (!prev || r.total >= prev.total) best.set(key, r); });
+  (data.results || []).forEach((r) => {
+    const isCreator = !!r.crown || (creatorName && nn(r.name) === creatorName);
+    const key = isCreator ? "__creator__" : (r.visitor_id || ("name:" + r.name));
+    const prev = best.get(key);
+    if (!prev || r.total >= prev.total) best.set(key, isCreator ? { ...r, name: creatorDisplay || r.name, crown: 1 } : r);
+  });
   const players = [...best.values()].sort((a, b) => b.total - a.total);
   if (!players.length) { el.innerHTML = `<p class="lb-note">No one has played yet · be the first!</p>`; return; }
   const colMax = rounds.map((_, i) => Math.max(...players.map((p) => p.scores[i] || 0)));
@@ -1589,7 +1596,8 @@ function showLbTab(which) {
 }
 function buildLbCatSel() {
   if ($("lbCatSel").options.length) return;
-  const geo = CATS.filter((c) => c.group === "Geography" && !nonSprint(c)).map((c) => c.name);
+  // only the map/fill geography categories (countries, states, capitals) — the ones with a map/grid
+  const geo = CATS.filter((c) => window.GeoMap && GeoMap.supports(c.name)).map((c) => c.name);
   $("lbCatSel").innerHTML = geo.map((n) => `<option>${esc(n)}</option>`).join("");
 }
 async function openCategoryTab() {

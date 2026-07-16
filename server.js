@@ -798,7 +798,7 @@ app.get("/challenge/:id/results", async (req, res) => {
   const id = String(req.params.id).slice(0, 12);
   const c = await analytics.getChallenge(id).catch(() => null);
   if (!c) return res.json({ ok: false });
-  res.json({ ok: true, rounds: c.rounds, by: c.by_name, results: await analytics.getChallengeResults(id).catch(() => []) });
+  res.json({ ok: true, rounds: c.rounds, by: c.by_name, creator: await analytics.getCreatorName().catch(() => null), results: await analytics.getChallengeResults(id).catch(() => []) });
 });
 
 // ---------- Daily challenge ----------

@@ -1462,8 +1462,8 @@ async function renderLeaderboard(el, idArg) {
   // Collapse to one entry per player. ALL crowned rows AND any row sharing the creator's name merge
   // into a single crowned creator entry (so every "jayden" becomes one "jayden 👑"), keeping the best.
   const nn = (s) => String(s || "").trim().toLowerCase();
-  let creatorName = null, creatorDisplay = null;
-  (data.results || []).forEach((r) => { if (r.crown && creatorName === null) { creatorName = nn(r.name); creatorDisplay = r.name; } });
+  let creatorName = data.creator ? nn(data.creator) : null, creatorDisplay = data.creator || null;
+  (data.results || []).forEach((r) => { if (r.crown) { creatorName = nn(r.name); creatorDisplay = r.name; } }); // a crowned row on this board wins the display name
   const best = new Map();
   (data.results || []).forEach((r) => {
     const isCreator = !!r.crown || (creatorName && nn(r.name) === creatorName);

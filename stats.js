@@ -258,12 +258,19 @@ async function sessionsList(limit = 300) {
             FROM sessions ORDER BY id DESC LIMIT ?`, [limit]);
 }
 
+// The creator's display name (from any crowned run, anywhere) — used to merge all their same-named
+// entries into one crowned entry even on boards where they have no crowned run.
+async function getCreatorName() {
+  const r = await one(`SELECT name FROM challenge_results WHERE crown=1 ORDER BY id DESC LIMIT 1`);
+  return r ? r.name : null;
+}
 // Collapse rows [{name, visitor_id, score, at, crown, ...}] into a ranked board: one entry per
 // visitor; ALL crowned rows AND any row sharing the creator's name merge into a single crowned entry.
-function collapseBoard(rows, limit = 50) {
+function collapseBoard(rows, limit = 50, forcedName) {
   const nn = (s) => String(s || "").trim().toLowerCase();
-  let creatorName = null, creatorDisplay = null;
-  for (const r of rows) if (r.crown) { creatorName = nn(r.name); creatorDisplay = r.name; break; }
+  const crownRow = rows.find((r) => r.crown);
+  const creatorName = crownRow ? nn(crownRow.name) : (forcedName ? nn(forcedName) : null);
+  const creatorDisplay = crownRow ? crownRow.name : (forcedName || null);
   const best = {};
   for (const r of rows) {
     if (!(Number(r.score) > 0)) continue;
@@ -278,7 +285,7 @@ function collapseBoard(rows, limit = 50) {
 // All-time daily high scores: each player's best single-day total across every daily puzzle.
 async function dailyAllTime(limit = 50) {
   const rows = await q(`SELECT name, visitor_id, total score, at, crown, challenge_id FROM challenge_results WHERE challenge_id LIKE 'd-%'`);
-  return collapseBoard(rows, limit);
+  return collapseBoard(rows, limit, await getCreatorName());
 }
 
 // Per-category leaderboards (admin-only, private): every challenge round is "player named N in category C".
@@ -323,7 +330,7 @@ async function categoryLeaderboard(catName, limit = 50) {
     let sc = 0; rounds.forEach((cn, i) => { if (cn === catName) sc = Math.max(sc, Number(scores[i]) || 0); });
     if (sc > 0) rows.push({ name: r.name, visitor_id: r.visitor_id, score: sc, at: Number(r.at), crown: r.crown });
   }
-  return collapseBoard(rows, limit);
+  return collapseBoard(rows, limit, await getCreatorName());
 }
 
 // Recent leaderboard entries across all challenges (for owner moderation), each with its row id.
@@ -400,4 +407,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName };

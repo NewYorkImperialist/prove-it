@@ -738,7 +738,7 @@ app.post("/challenge", async (req, res) => {
   const type = b.type === "custom" ? "custom" : "genre";
   const rounds = (Array.isArray(b.rounds) ? b.rounds : []).filter((n) => ALL_CAT_NAMES.has(n)).slice(0, 10);
   if (rounds.length < 1) return res.json({ ok: false, error: "Pick at least one valid category." });
-  const tt = parseInt(b.timer, 10); const timer = (tt >= 5 && tt <= 1800) ? tt : 45; // any custom length, 5s–30min
+  const tt = parseInt(b.timer, 10); const timer = tt === 0 ? 0 : ((tt >= 5 && tt <= 1800) ? tt : 45); // 0 = recommended per round; else 5s–30min
   const id = newChallengeId();
   const ok = await analytics.createChallenge({ id, type, genre: String(b.genre || "").slice(0, 40), rounds, by: String(b.by || "A friend").slice(0, 24), timer });
   res.json(ok ? { ok: true, id } : { ok: false, error: "Could not save challenge." });
@@ -747,7 +747,7 @@ app.get("/challenge/:id", async (req, res) => {
   if (!analytics.enabled()) return res.json({ ok: false });
   const c = await analytics.getChallenge(String(req.params.id).slice(0, 12)).catch(() => null);
   if (!c) return res.json({ ok: false });
-  res.json({ ok: true, id: c.id, type: c.type, genre: c.genre, rounds: c.rounds, by: c.by_name, timer: c.timer || 45 });
+  res.json({ ok: true, id: c.id, type: c.type, genre: c.genre, rounds: c.rounds, by: c.by_name, timer: c.timer == null ? 45 : c.timer });
 });
 app.post("/challenge/:id/result", async (req, res) => {
   if (!analytics.enabled()) return res.json({ ok: false });

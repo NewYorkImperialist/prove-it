@@ -365,7 +365,7 @@ async function createChallenge(c) {
   if (!client) return false;
   try {
     await client.execute({ sql: `INSERT INTO challenges (id,type,genre,rounds,by_name,created_at,timer) VALUES (?,?,?,?,?,?,?)`,
-      args: [c.id, c.type, c.genre || null, JSON.stringify(c.rounds || []), c.by || null, Date.now(), c.timer || 45] });
+      args: [c.id, c.type, c.genre || null, JSON.stringify(c.rounds || []), c.by || null, Date.now(), c.timer == null ? 45 : c.timer] });
     return true;
   } catch (e) { console.error("📊 challenge create:", e.message); return false; }
 }

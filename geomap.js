@@ -23,6 +23,18 @@
     "macedonia": ["north macedonia"], "cote d'ivoire": ["ivory coast"], "eswatini": ["swaziland"],
   };
   const norm = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
+  // Microstates / tiny islands too small for a visible polygon → shown as a white dot at [lng, lat].
+  const MICRO = {
+    "andorra": [1.52, 42.5], "monaco": [7.42, 43.73], "san marino": [12.46, 43.94], "vatican city": [12.45, 41.9],
+    "liechtenstein": [9.55, 47.16], "malta": [14.45, 35.9], "singapore": [103.8, 1.35], "bahrain": [50.55, 26.1],
+    "maldives": [73.5, 3.2], "comoros": [43.3, -11.6], "mauritius": [57.55, -20.3], "seychelles": [55.5, -4.6],
+    "cabo verde": [-23.6, 16.0], "sao tome and principe": [6.6, 0.3], "antigua and barbuda": [-61.8, 17.1],
+    "barbados": [-59.5, 13.2], "dominica": [-61.37, 15.4], "grenada": [-61.7, 12.1], "saint kitts and nevis": [-62.7, 17.3],
+    "saint lucia": [-60.98, 13.9], "saint vincent and the grenadines": [-61.2, 13.25], "trinidad and tobago": [-61.25, 10.5],
+    "fiji": [178, -17.8], "solomon islands": [160, -9.6], "vanuatu": [167, -16.3], "samoa": [-172, -13.8],
+    "tonga": [-175.2, -21.2], "kiribati": [173, 1.4], "micronesia": [158, 6.9], "marshall islands": [171, 7.1],
+    "palau": [134.5, 7.5], "nauru": [166.9, -0.5], "tuvalu": [179.2, -8.5], "bahamas": [-77.4, 24.5],
+  };
 
   let libsReady = false;
   const dataCache = {};
@@ -63,17 +75,27 @@
     const g = document.createElementNS(NS, "g"); svg.appendChild(g);
     const byId = new Map();
     for (const e of entries) { const f = featByEntry.get(e.id); if (!f) continue; const p = document.createElementNS(NS, "path"); p.setAttribute("d", path(f) || ""); p.setAttribute("class", "geomap-c"); g.appendChild(p); byId.set(e.id, { t: "path", el: p }); }
+    // microstates with no polygon: white dot at their location if it lands inside the map view; else a box
+    const boxes2 = [];
+    for (const e of boxEntries) {
+      let coord = null; for (const a of e.aliases) if (MICRO[a]) { coord = MICRO[a]; break; }
+      const pt = coord ? proj(coord) : null;
+      if (pt && pt[0] >= 0 && pt[0] <= w && pt[1] >= 0 && pt[1] <= h) {
+        const c = document.createElementNS(NS, "circle"); c.setAttribute("cx", pt[0]); c.setAttribute("cy", pt[1]); c.setAttribute("r", 3.2); c.setAttribute("class", "geodot"); g.appendChild(c);
+        byId.set(e.id, { t: "dot", el: c });
+      } else boxes2.push(e);
+    }
     // pan + zoom (pinch on touch, wheel/drag on desktop) so tiny countries are reachable
     try {
       const zoom = d3.zoom().scaleExtent([1, 14]).translateExtent([[0, 0], [w, h]]).on("zoom", (ev) => g.setAttribute("transform", ev.transform.toString()));
       d3.select(svg).call(zoom).on("dblclick.zoom", () => d3.select(svg).transition().duration(250).call(zoom.transform, d3.zoomIdentity));
       svg.style.touchAction = "none"; svg.style.cursor = "grab";
     } catch (e) {}
-    if (boxEntries.length) {
+    if (boxes2.length) {
       const boxes = document.createElement("div"); boxes.className = "geomap-boxes"; container.appendChild(boxes);
-      for (const e of boxEntries) { const b = document.createElement("div"); b.className = "geobox"; boxes.appendChild(b); byId.set(e.id, { t: "box", el: b, name: e.display }); }
+      for (const e of boxes2) { const b = document.createElement("div"); b.className = "geobox"; boxes.appendChild(b); byId.set(e.id, { t: "box", el: b, name: e.display }); }
     }
-    cur = { byId };
+    cur = { byId, svg };
     return "map";
   }
 
@@ -109,6 +131,10 @@
       return r;
     },
     light(entryId) { if (cur) { const o = cur.byId.get(entryId); if (o) { o.el.classList.add("lit"); if (o.t === "box") o.el.textContent = o.name; } } },
+    // count of shapes/dots/boxes not yet named (map mode)
+    remaining() { if (!cur) return 0; let n = 0; for (const o of cur.byId.values()) if (!o.el.classList.contains("lit")) n++; return n; },
+    // toggle a highlight on everything NOT yet named, so you can spot what's left
+    toggleRemaining(on) { if (cur && cur.svg) { cur.svg.classList.toggle("showrem", on); return on; } return false; },
     tryFill(text) {
       if (!fill) return "miss";
       const c = fill.byAlias.get(norm(text));

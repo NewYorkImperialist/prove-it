@@ -1185,8 +1185,11 @@ let mode = "genre", numRounds = 5;
 let named = new Set(), count = 0, tid = null, timeLeft = 0;
 let rChars = 0, rT0 = 0, roundWpm = []; // live typing-speed tracking (chars since first keystroke)
 let roundTimes = []; // seconds to complete each round (only when you name them ALL), for speed ranking
+let recTimes = false; // custom mode: use each category's recommended time per round (for fair leaderboards)
+let curRoundSecs = 0; // this round's total time (recommended or the fixed timer)
+let remOn = false;    // "show what's left" toggle state
 // Named everything in the round → record how long it took and end the round now (faster = ranks higher).
-function finishRoundEarly() { if (roundTimes[cur] == null) roundTimes[cur] = Math.max(1, perRound - timeLeft); endRound(); }
+function finishRoundEarly() { if (roundTimes[cur] == null) roundTimes[cur] = Math.max(1, curRoundSecs - timeLeft); endRound(); }
 let runGid = "", roundGuesses = []; // per-run id + buffered exact guesses for the admin guess-log
 let modalDailyId = ""; // today's daily id, captured when the leaderboard modal opens (for rename/update)
 let mapActive = false; // geography map rounds light up shapes as you name them
@@ -1271,11 +1274,12 @@ async function createChallenge() {
   else rounds = [...$("customRounds").querySelectorAll("select")].map((s) => s.value);
   rounds = rounds.filter(Boolean);
   if (!rounds.length) { $("createErr").textContent = "Pick at least one category."; return; }
+  const timer = recTimes ? 0 : perRound; // 0 = recommended time per round
   $("advStartBtn").disabled = true; $("advStartBtn").textContent = "Creating…";
-  const res = await postJSON("/challenge", { type: mode, genre: mode === "genre" ? $("genreSel").value : "", rounds, by, timer: perRound });
+  const res = await postJSON("/challenge", { type: mode, genre: mode === "genre" ? $("genreSel").value : "", rounds, by, timer });
   $("advStartBtn").disabled = false; $("advStartBtn").textContent = "Create & play";
   if (!res.ok) { $("createErr").textContent = res.error || "Could not create challenge."; return; }
-  challengeId = res.id; def = { id: res.id, rounds, by, type: mode };
+  challengeId = res.id; def = { id: res.id, rounds, by, type: mode, timer };
   history.replaceState({}, "", "?id=" + challengeId);
   startPlaying(by);
 }
@@ -1337,8 +1341,12 @@ function startRound(i) {
       .then(() => { if (geoMode === "fill") $("count").textContent = GeoMap.filled() + " / " + GeoMap.total(); })
       .catch(() => { geoMode = null; mapActive = false; mapEl.classList.add("hidden"); mapEl.innerHTML = ""; $("chips").classList.remove("hidden", "with-map"); });
   } else if (window.GeoMap) GeoMap.teardown();
+  // sprint buttons: Give up always; "Show what's left" only on the map (dots/shapes)
+  $("remainBtn").hidden = geoMode !== "map"; $("remainBtn").classList.remove("on"); $("remainBtn").textContent = "Show what's left"; remOn = false;
   $("cinput").value = ""; $("cinput").disabled = false; $("cinput").focus();
-  timeLeft = perRound; $("sprintTimer").textContent = fmtClock(timeLeft); $("sprintTimer").classList.remove("low");
+  // per-round time: recommended-per-round (timer 0 sentinel) uses each category's recommended length
+  curRoundSecs = (def && Number(def.timer) === 0) ? recommendedTime(cat.name) : perRound;
+  timeLeft = curRoundSecs; $("sprintTimer").textContent = fmtClock(timeLeft); $("sprintTimer").classList.remove("low");
   clearInterval(tid);
   tid = setInterval(() => { timeLeft--; $("sprintTimer").textContent = fmtClock(Math.max(0, timeLeft)); showWpm(); if (timeLeft <= 10) $("sprintTimer").classList.add("low"); if (timeLeft <= 0) endRound(); }, 1000);
 }
@@ -1525,9 +1533,10 @@ async function initJoin() {
   def = null;
   const c = await getJSON(`/challenge/${challengeId}`);
   if (!c.ok) { show("create"); $("createErr").textContent = "That challenge link is invalid or expired · build a new one."; initCreate(); return; }
-  def = { id: c.id, rounds: c.rounds || [], by: c.by, type: c.type, genre: c.genre, timer: c.timer || 45 };
-  perRound = def.timer;
-  $("joinInfo").innerHTML = `<b>${esc(def.by || "A friend")}</b> challenged you to name as many as you can across <b>${def.rounds.length}</b> round${def.rounds.length > 1 ? "s" : ""}${def.genre ? ` of <b>${esc(def.genre)}</b>` : ""}, <b>${def.timer}s</b> each. Try to beat them!`;
+  def = { id: c.id, rounds: c.rounds || [], by: c.by, type: c.type, genre: c.genre, timer: c.timer == null ? 45 : c.timer }; // preserve 0 (recommended per round)
+  perRound = def.timer || 45;
+  const timeLabel = def.timer === 0 ? "recommended time" : `<b>${def.timer}s</b> each`;
+  $("joinInfo").innerHTML = `<b>${esc(def.by || "A friend")}</b> challenged you to name as many as you can across <b>${def.rounds.length}</b> round${def.rounds.length > 1 ? "s" : ""}${def.genre ? ` of <b>${esc(def.genre)}</b>` : ""}, ${timeLabel}. Try to beat them!`;
   $("joinRounds").innerHTML = def.rounds.map((n, i) => { const cat = findCat(n); const ns = cat && nonSprint(cat); return `<li><span>R${i + 1} · ${esc(n)}</span>${ns ? `<span class="badge-ns">non-sprint</span>` : ""}</li>`; }).join("");
   $("joinName").value = myName;
   $("joinName").focus(); $("joinName").select(); // reprompt the player to (re)write their name
@@ -1675,6 +1684,12 @@ $("cinput").addEventListener("keydown", (e) => { if (e.key !== "Enter") return; 
 $("cinput").addEventListener("focus", () => { if (geoMode) setTimeout(() => { try { $("cinput").scrollIntoView({ block: "end", behavior: "smooth" }); } catch (e) {} }, 260); });
 // leave a run mid-sprint → back to the main menu (lobby)
 $("sprintBack").onclick = () => { clearInterval(tid); window.PI.showHome(); };
+// give up → end this round now
+$("giveUpBtn").onclick = () => { if (!$("cinput").disabled) endRound(); };
+// show what's left → highlight the un-named shapes/dots on the map (toggle)
+$("remainBtn").onclick = () => { remOn = !remOn; if (window.GeoMap) GeoMap.toggleRemaining(remOn); $("remainBtn").classList.toggle("on", remOn); $("remainBtn").textContent = remOn ? "Hide what's left" : "Show what's left"; };
+// recommended-time-per-round toggle (custom rounds): each category uses its recommended length
+$("recTimesBtn").onclick = () => { recTimes = !recTimes; $("recTimesBtn").classList.toggle("on", recTimes); $("recTimesBtn").textContent = "⏱ Recommended time per round: " + (recTimes ? "on" : "off"); };
 document.querySelectorAll("#modeSeg button").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
 $("quickBtn").onclick = (e) => { const c = shuffle(CATS.filter((x) => !nonSprint(x)))[0] || CATS[0]; setPerRound(recommendedTime(c.name)); startSolo([c.name], e.currentTarget); };
 $("chooseBtn").onclick = (e) => { const v = $("catSel").value; if (v) { setPerRound(recommendedTime(v)); startSolo([v], e.currentTarget); } };

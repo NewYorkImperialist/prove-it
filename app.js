@@ -1203,7 +1203,7 @@ function genGid() { return "s-" + Date.now().toString(36) + Math.random().toStri
 function liveWpm() { return rT0 ? Math.round((rChars / 5) / Math.max(1 / 60, (Date.now() - rT0) / 60000)) : 0; }
 function showWpm() { $("wpm").textContent = rT0 ? liveWpm() + " wpm" : ""; }
 
-function show(sec) { ["create", "join", "ready", "sprint", "between", "done"].forEach((s) => { $(s).hidden = s !== sec; }); }
+function show(sec) { ["create", "join", "ready", "sprint", "between", "done"].forEach((s) => { $(s).hidden = s !== sec; }); if (sec !== "sprint") $("soloApp").classList.remove("mapmode"); } // full-screen map layout is sprint-only; other cards stay centered
 
 // ============ CREATE ============
 function buildGenreSelect() { const sel = $("genreSel"); sel.innerHTML = ""; GENRES.forEach((g) => { const o = document.createElement("option"); o.value = g; const em = (CATS.find((c) => c.group === g) || {}).emoji || ""; o.textContent = `${em} ${g}`; sel.appendChild(o); }); }

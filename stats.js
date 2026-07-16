@@ -54,6 +54,10 @@ async function init() {
       ["challenge_results", "gid TEXT"], ["challenge_results", "times TEXT"], ["challenge_results", "mode TEXT"], ["answers", "verdict TEXT"]]) { // gid→guesses; times[]=speed; mode=solo/daily/link (keeps solo boards separate); verdict=ok/miss/dup
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
+    // one-time backfill: tag pre-`mode` challenge_results so old solo scores stay on the geography boards.
+    // daily rows (`d-%`) → 'daily'; everything else untagged → 'solo'. Idempotent (only touches NULL).
+    try { await client.execute(`UPDATE challenge_results SET mode='daily' WHERE mode IS NULL AND challenge_id LIKE 'd-%'`); } catch (e) {}
+    try { await client.execute(`UPDATE challenge_results SET mode='solo'  WHERE mode IS NULL`); } catch (e) {}
     console.log("📊 stats: connected to Turso ✓");
   } catch (e) {
     console.error("📊 stats: schema init failed —", e.message);

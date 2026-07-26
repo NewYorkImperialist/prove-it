@@ -1622,11 +1622,13 @@ function showLbTab(which) {
   $("tabToday").classList.toggle("on", which === "today");
   $("tabAll").classList.toggle("on", which === "alltime");
   $("tabCat").classList.toggle("on", which === "cat");
+  $("tabGoat").classList.toggle("on", which === "goat");
   $("lbCatSel").hidden = which !== "cat";
   $("lbShare").hidden = !(which === "today" && playedDailyToday());
   if (which !== "today") $("lbEntry").hidden = true;
   if (which === "alltime") openAllTimeBoard();
   else if (which === "cat") openCategoryTab();
+  else if (which === "goat") openGoatBoard();
   else openTodayBoard();
 }
 function buildLbCatSel() {
@@ -1664,12 +1666,31 @@ async function openAllTimeBoard() {
   $("lbModalWrap").innerHTML = `<table class="lb"><tr><th>#</th><th>Player</th><th>Best day</th><th>Score</th></tr>${body}</table>
     <p class="lb-note">Each player's best single-day daily score, across every day.</p>`;
 }
+// GOAT board — one overall geography ranking. Points reward BOTH volume and speed, summed across
+// every geography category, so you can't top it with a single fast fluke or a slow grind.
+async function openGoatBoard() {
+  $("lbEntry").hidden = true; $("lbCatSel").hidden = true;
+  $("lbModalTitle").textContent = "Geography GOAT · every category, ranked";
+  $("lbModalWrap").innerHTML = `<p class="lb-note">Loading…</p>`;
+  const d = await getJSON("/geo-goat");
+  if (!d || !d.ok) { $("lbModalWrap").innerHTML = `<p class="lb-note">Couldn't load the GOAT board.</p>`; return; }
+  const rows = d.results || [];
+  if (!rows.length) { $("lbModalWrap").innerHTML = `<p class="lb-note">No geography runs yet — play some to crown the GOAT! 🐐</p>`; return; }
+  const body = rows.map((r, i) => {
+    const mine = r.visitor_id && r.visitor_id === VISITOR_ID;
+    const goat = i === 0 ? "🐐 " : "";
+    return `<tr class="${mine ? "me" : ""}"><td>${i + 1}</td><td class="pname">${goat}${esc(r.name || "?")}${r.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td><td>${r.cats}</td><td class="tot">${r.goat}</td></tr>`;
+  }).join("");
+  $("lbModalWrap").innerHTML = `<table class="lb"><tr><th>#</th><th>Player</th><th title="Geography categories played">Cats</th><th>GOAT pts</th></tr>${body}</table>
+    <p class="lb-note">Points across <b>every</b> geography category: each answer scores, ×a speed bonus (up to 2× fast, ½× slow) when you clear them all. Name more, across more, faster.</p>`;
+}
 $("laurel").onclick = openDailyLeaderboard;
 $("lbModalClose").onclick = closeLbModal;
 $("lbModal").onclick = (e) => { if (e.target === $("lbModal")) closeLbModal(); };
 $("tabToday").onclick = () => showLbTab("today");
 $("tabAll").onclick = () => showLbTab("alltime");
 $("tabCat").onclick = () => showLbTab("cat");
+$("tabGoat").onclick = () => showLbTab("goat");
 $("lbCatSel").onchange = () => renderCategoryLB($("lbModalWrap"), $("lbCatSel").value);
 $("lbShare").onclick = (e) => copyText(dailyInvite(storedDailyScore()), e.currentTarget, "Copied — send it to a friend!");
 // Solo start: create a (DB-backed, shareable) run from a fixed list of categories, then play.

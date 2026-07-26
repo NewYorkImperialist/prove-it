@@ -857,6 +857,12 @@ app.get("/daily/alltime", async (req, res) => {
   const rows = await analytics.dailyAllTime(50).catch(() => []);
   res.json({ ok: true, results: rows });
 });
+// GOAT board — one overall geography ranking (points blend volume + speed across every category).
+app.get("/geo-goat", async (req, res) => {
+  if (!analytics.enabled()) return res.json({ ok: false });
+  const rows = await analytics.geoGoat(50).catch(() => []);
+  res.json({ ok: true, results: rows });
+});
 
 // Dynamic social preview for a shared challenge link (?id=…). Crawlers (Discord/iMessage/
 // Reddit/Twitter) don't run JS, so we inject the challenger's name + score-to-beat into the

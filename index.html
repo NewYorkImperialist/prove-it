@@ -102,8 +102,8 @@
   #laurel svg { display:block; } /* kill the inline-baseline gap so the wreath sits dead-center */
   #laurel:hover { border-color:var(--accent); color:var(--accent); transform:translateY(-1px); }
   /* leaderboard modal tabs */
-  .lbtabs { display:flex; gap:8px; margin:2px 28px 14px 0; }
-  .lbtab { flex:1; background:var(--panel2); color:var(--muted); border:1px solid var(--line2); border-radius:9px; padding:9px; font-family:var(--ui); font-weight:700; font-size:13px; cursor:pointer; }
+  .lbtabs { display:flex; gap:6px; margin:2px 28px 14px 0; }
+  .lbtab { flex:1; background:var(--panel2); color:var(--muted); border:1px solid var(--line2); border-radius:9px; padding:9px 5px; font-family:var(--ui); font-weight:700; font-size:12px; white-space:nowrap; cursor:pointer; }
   .lbtab.on { background:var(--accent); color:var(--markfg); border-color:var(--accent); }
   /* daily button states: glowing-orange when today is unplayed, quiet + tooltip once done */
   #dailyBtn.daily-live { background:var(--accent); color:var(--markfg); border-color:var(--accent); animation:dailyGlow 1.9s ease-in-out infinite; }
@@ -497,6 +497,7 @@
         <button class="lbtab on" id="tabToday">Daily</button>
         <button class="lbtab" id="tabAll">All-time</button>
         <button class="lbtab" id="tabCat">Geography</button>
+        <button class="lbtab" id="tabGoat">🐐 GOAT</button>
       </div>
       <select id="lbCatSel" hidden style="width:100%;margin:0 0 12px"></select>
       <p class="lb-note" id="lbModalTitle" style="margin:0 0 12px"></p>

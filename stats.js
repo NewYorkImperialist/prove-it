@@ -341,6 +341,52 @@ async function categoryLeaderboard(catName, limit = 50) {
   return collapseBoard(rows, limit, await getCreatorName());
 }
 
+// GOAT board: ONE overall ranking across every geography category (solo plays only).
+// The score balances volume AND speed so neither extreme can farm the top:
+//   • each answer you name is worth 1 base point (so a lucky 1-answer run stays tiny — speed can't inflate it)
+//   • on a FULL clear we know how long it took, so those points get a speed multiplier: up to 2× fast,
+//     down to 0.5× slow, 1× at ~GEO_REF_PACE sec/answer (so a huge-but-slow run gets docked, not rewarded)
+//   • a player's points in a category = their single best play; GOAT total = the sum across all categories
+// → to top it you need to name a lot, across many categories, quickly. One fast fluke or one slow grind can't.
+const GEO_REF_PACE = 3; // seconds/answer scoring a neutral 1.0× (faster → toward 2×, slower → toward 0.5×)
+async function geoGoat(limit = 50) {
+  const CATEGORY_GROUPS = require("./categories.js");
+  const geoCats = new Map(); // geography category name → total item count
+  if (CATEGORY_GROUPS.Geography) for (const c of CATEGORY_GROUPS.Geography.cats) geoCats.set(c.name, (c.items || []).length);
+  const chs = await q(`SELECT id, rounds FROM challenges`);
+  const roundsById = {};
+  for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } }
+  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, crown FROM challenge_results WHERE mode='solo'`);
+  const creator = (await getCreatorName()) || null; // merge the creator's rows/devices like the other boards
+  const creatorNN = creator ? String(creator).trim().toLowerCase() : null;
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const players = new Map(); // key → { name, visitor_id, crown, best: Map<cat, points> }
+  for (const r of results) {
+    const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
+    let scores = [], times = []; try { scores = JSON.parse(r.scores || "[]"); } catch (e) {} try { times = JSON.parse(r.times || "[]"); } catch (e) {}
+    const isCreator = !!r.crown || (creatorNN && String(r.name || "").trim().toLowerCase() === creatorNN);
+    const key = isCreator ? "__creator__" : (r.visitor_id || ("name:" + r.name));
+    let p = players.get(key);
+    if (!p) { p = { name: isCreator ? (creator || r.name) : r.name, visitor_id: isCreator ? null : r.visitor_id, crown: isCreator ? 1 : 0, best: new Map() }; players.set(key, p); }
+    rounds.forEach((cat, i) => {
+      if (!geoCats.has(cat)) return;
+      const s = Number(scores[i]) || 0; if (s <= 0) return;
+      const t = (times[i] != null && Number(times[i]) > 0) ? Number(times[i]) : null; // seconds — set only on a full clear
+      const mult = t ? clamp(GEO_REF_PACE / (t / s), 0.5, 2.0) : 1.0;
+      const pts = s * mult;
+      if (pts > (p.best.get(cat) || 0)) p.best.set(cat, pts);
+    });
+  }
+  const rows = [];
+  for (const p of players.values()) {
+    if (!p.best.size) continue;
+    let goat = 0; for (const v of p.best.values()) goat += v;
+    rows.push({ name: p.name, visitor_id: p.visitor_id, crown: p.crown, goat: Math.round(goat), cats: p.best.size });
+  }
+  rows.sort((a, b) => b.goat - a.goat || b.cats - a.cats);
+  return rows.slice(0, limit);
+}
+
 // Recent leaderboard entries across all challenges (for owner moderation), each with its row id.
 async function recentResults(limit = 300) {
   return q(`SELECT cr.id, cr.challenge_id, cr.name, cr.visitor_id, cr.total, cr.at, c.type, c.genre
@@ -415,4 +461,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat };

@@ -1678,8 +1678,8 @@ async function openGoatBoard() {
   if (!rows.length) { $("lbModalWrap").innerHTML = `<p class="lb-note">No geography runs yet — play some to crown the GOAT! 🐐</p>`; return; }
   const body = rows.map((r, i) => {
     const mine = r.visitor_id && r.visitor_id === VISITOR_ID;
-    const goat = i === 0 ? "🐐 " : "";
-    return `<tr class="${mine ? "me" : ""}"><td>${i + 1}</td><td class="pname">${goat}${esc(r.name || "?")}${r.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td><td>${r.cats}</td><td class="tot">${r.goat}</td></tr>`;
+    const rank = i === 0 ? "🐐" : (i + 1); // #1 is the GOAT
+    return `<tr class="${mine ? "me" : ""}"><td>${rank}</td><td class="pname">${esc(r.name || "?")}${r.crown ? ' <span class="crown">👑</span>' : ""}${mine ? " (you)" : ""}</td><td>${r.cats}</td><td class="tot">${r.goat}</td></tr>`;
   }).join("");
   $("lbModalWrap").innerHTML = `<table class="lb"><tr><th>#</th><th>Player</th><th title="Geography categories played">Cats</th><th>GOAT pts</th></tr>${body}</table>
     <p class="lb-note">Points across <b>every</b> geography category: each answer scores, ×a speed bonus (up to 2× fast, ½× slow) when you clear them all. Name more, across more, faster.</p>`;

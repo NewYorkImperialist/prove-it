@@ -1473,9 +1473,10 @@ function bumpDailyStreak(date) {
   return streak;
 }
 // Public all-time leaderboard for a single category (each geography "question" has one).
-async function renderCategoryLB(el, catName) {
+async function renderCategoryLB(el, catName, nav) {
   el.innerHTML = `<p class="lb-note">Loading ${esc(catName)} leaderboard…</p>`;
   const d = await getJSON("/category-leaderboard?name=" + encodeURIComponent(catName));
+  if (nav != null && nav !== lbNav) return;          // modal tab changed while loading → abort stale render
   if (!d || !d.ok) { el.innerHTML = `<p class="lb-note">Couldn't load the leaderboard.</p>`; return; }
   const rows = d.results || [];
   if (!rows.length) { el.innerHTML = `<p class="lb-note">No scores yet — be the first!</p>`; return; }
@@ -1487,10 +1488,11 @@ async function renderCategoryLB(el, catName) {
   el.innerHTML = `<table class="lb"><tr><th>#</th><th>Player</th><th>Best</th><th>Time</th></tr>${body}</table>
     <p class="lb-note">All-time best on <b>${esc(catName)}</b> · ${rows.length} player${rows.length > 1 ? "s" : ""}. Tie at the top? Fastest full clear wins.</p>`;
 }
-async function renderLeaderboard(el, idArg) {
+async function renderLeaderboard(el, idArg, nav) {
   const lid = idArg || challengeId;
   el.innerHTML = `<p class="lb-note">Loading leaderboard…</p>`;
   const data = await getJSON(`/challenge/${lid}/results`);
+  if (nav != null && nav !== lbNav) return;          // modal tab changed while loading → abort stale render
   if (!data.ok) { el.innerHTML = `<p class="lb-note">Couldn't load the leaderboard.</p>`; return; }
   const rounds = data.rounds || [];
   // Collapse to one entry per player. ALL crowned rows AND any row sharing the creator's name merge
@@ -1618,7 +1620,9 @@ function openDailyLeaderboard() {
   showLbTab("today");
 }
 function closeLbModal() { $("lbModal").classList.add("hidden"); }
+let lbNav = 0; // bumped on every tab switch; async board renders bail if it changed mid-load (stale response race)
 function showLbTab(which) {
+  lbNav++;
   $("tabToday").classList.toggle("on", which === "today");
   $("tabAll").classList.toggle("on", which === "alltime");
   $("tabCat").classList.toggle("on", which === "cat");
@@ -1640,21 +1644,25 @@ function buildLbCatSel() {
 async function openCategoryTab() {
   buildLbCatSel();
   $("lbModalTitle").textContent = "All-time best per category";
-  renderCategoryLB($("lbModalWrap"), $("lbCatSel").value);
+  renderCategoryLB($("lbModalWrap"), $("lbCatSel").value, lbNav);
 }
 async function openTodayBoard() {
+  const nav = lbNav;
   $("lbModalTitle").textContent = ""; $("lbModalWrap").innerHTML = `<p class="lb-note">Loading…</p>`;
   const played = playedDailyToday();
   $("lbEntry").hidden = !played;                    // rewrite-your-name only once you've played today
   if (played) $("lbName").value = myName || "";
   const d = await getJSON("/daily"); // ensures today's puzzle exists + gives its id/date
-  if (d && d.ok) { modalDailyId = d.id; $("lbModalTitle").textContent = `Today's puzzle · ${d.date}`; renderLeaderboard($("lbModalWrap"), d.id); }
+  if (nav !== lbNav) return;                         // switched tabs mid-load → don't clobber the new tab
+  if (d && d.ok) { modalDailyId = d.id; $("lbModalTitle").textContent = `Today's puzzle · ${d.date}`; renderLeaderboard($("lbModalWrap"), d.id, nav); }
   else { $("lbModalWrap").innerHTML = `<p class="lb-note">Couldn't load today's leaderboard.</p>`; }
 }
 async function openAllTimeBoard() {
+  const nav = lbNav;
   $("lbEntry").hidden = true;                        // name-rewrite applies to today's board only
   $("lbModalTitle").textContent = "Highest daily score, all time"; $("lbModalWrap").innerHTML = `<p class="lb-note">Loading…</p>`;
   const d = await getJSON("/daily/alltime");
+  if (nav !== lbNav) return;
   if (!d || !d.ok) { $("lbModalWrap").innerHTML = `<p class="lb-note">Couldn't load the all-time board.</p>`; return; }
   const rows = d.results || [];
   if (!rows.length) { $("lbModalWrap").innerHTML = `<p class="lb-note">No daily scores yet — be the first!</p>`; return; }
@@ -1669,10 +1677,12 @@ async function openAllTimeBoard() {
 // GOAT board — one overall geography ranking. Points reward BOTH volume and speed, summed across
 // every geography category, so you can't top it with a single fast fluke or a slow grind.
 async function openGoatBoard() {
+  const nav = lbNav;
   $("lbEntry").hidden = true; $("lbCatSel").hidden = true;
   $("lbModalTitle").textContent = "Geography GOAT · every category, ranked";
   $("lbModalWrap").innerHTML = `<p class="lb-note">Loading…</p>`;
   const d = await getJSON("/geo-goat");
+  if (nav !== lbNav) return;
   if (!d || !d.ok) { $("lbModalWrap").innerHTML = `<p class="lb-note">Couldn't load the GOAT board.</p>`; return; }
   const rows = d.results || [];
   if (!rows.length) { $("lbModalWrap").innerHTML = `<p class="lb-note">No geography runs yet — play some to crown the GOAT! 🐐</p>`; return; }
@@ -1691,7 +1701,7 @@ $("tabToday").onclick = () => showLbTab("today");
 $("tabAll").onclick = () => showLbTab("alltime");
 $("tabCat").onclick = () => showLbTab("cat");
 $("tabGoat").onclick = () => showLbTab("goat");
-$("lbCatSel").onchange = () => renderCategoryLB($("lbModalWrap"), $("lbCatSel").value);
+$("lbCatSel").onchange = () => renderCategoryLB($("lbModalWrap"), $("lbCatSel").value, lbNav);
 $("lbShare").onclick = (e) => copyText(dailyInvite(storedDailyScore()), e.currentTarget, "Copied — send it to a friend!");
 // Solo start: create a (DB-backed, shareable) run from a fixed list of categories, then play.
 async function startSolo(rounds, btn) {

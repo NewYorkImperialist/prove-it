@@ -1424,7 +1424,29 @@ function endRound() {
   $("betweenCount").textContent = count;
   $("betweenCat").textContent = `${roundCats[cur].name} · ${roundWpm[cur]} wpm · running total ${roundScores.reduce((a, n) => a + n, 0)}`;
   $("nextBtn").textContent = last ? "See results & leaderboard →" : "Next round →";
+  renderMissed();
 }
+// After a geography round, list the answers you didn't get so you can study them for next time.
+// Capitals (fill) rounds show the country → capital pair; map/chip rounds show the missed names.
+function renderMissed() {
+  const cat = roundCats[cur];
+  const box = $("betweenMissed"), list = $("missedList"), toggle = $("missedToggle");
+  let items = [];
+  if (cat && /^Geography/.test(cat.group)) {
+    if (geoMode === "fill" && window.GeoMap) items = GeoMap.missedFill().map((m) => `<span class="miss"><b>${esc(m.q)}</b> · <span class="mc">${esc(m.a)}</span></span>`);
+    else items = cat.entries.filter((e) => !named.has(e.id)).map((e) => `<span class="miss">${esc(e.display)}</span>`);
+  }
+  if (!items.length) { box.hidden = true; list.innerHTML = ""; return; } // nailed them all (or not geography)
+  box.hidden = false;
+  list.innerHTML = items.join(""); list.hidden = false; // expanded by default so you can study them
+  toggle.dataset.n = items.length;
+  toggle.textContent = `Hide the ${items.length} you missed ▴`;
+}
+$("missedToggle").onclick = () => {
+  const list = $("missedList"), t = $("missedToggle"), n = t.dataset.n || list.children.length;
+  const open = list.hidden; list.hidden = !open;
+  t.textContent = `${open ? "Hide" : "Show"} the ${n} you missed ${open ? "▴" : "▾"}`;
+};
 $("nextBtn").onclick = () => { if (cur + 1 >= roundCats.length) finish(); else startRound(cur + 1); };
 
 // ============ FINISH + LEADERBOARD ============

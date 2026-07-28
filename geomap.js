@@ -113,7 +113,7 @@
       const ps = document.createElement("span"); ps.className = "gf-p"; ps.textContent = p;
       const as = document.createElement("span"); as.className = "gf-a"; as.textContent = "—";
       cell.appendChild(ps); cell.appendChild(as); grid.appendChild(cell);
-      const c = { el: cell, slot: as, cap: rec.c, filled: false };
+      const c = { el: cell, slot: as, prompt: p, cap: rec.c, filled: false };
       for (const a of rec.a) byAlias.set(a, c);
     }
     container.appendChild(grid);
@@ -146,6 +146,8 @@
     },
     filled() { return fill ? fill.filled : 0; },
     total() { return fill ? fill.total : 0; },
+    // fill mode (capitals): the country/state → capital pairs you didn't get, for practice
+    missedFill() { if (!fill) return []; const seen = new Set(), out = []; for (const c of fill.byAlias.values()) { if (c.filled || seen.has(c)) continue; seen.add(c); out.push({ q: c.prompt, a: c.cap }); } return out; },
     teardown() { cur = null; fill = null; },
   };
   window.GeoMap = api;

@@ -449,6 +449,14 @@
   #soloApp .geofill-cell.lit { border-color:var(--accent); background:var(--acc-dim); }
   #soloApp .geofill-cell.lit .gf-p { color:var(--text); }
   #soloApp .geofill-cell.lit .gf-a { color:var(--accent); }
+  /* "what you missed" list on the between-rounds screen (geography practice) */
+  #betweenMissed { margin:4px 0 16px; }
+  .missed-toggle { background:none; border:none; color:var(--muted); font-family:var(--ui); font-weight:700; font-size:13px; cursor:pointer; padding:6px; text-decoration:underline; }
+  .missed-toggle:hover { color:var(--accent); }
+  .missed-list { margin-top:10px; max-height:min(42vh,340px); overflow-y:auto; display:flex; flex-wrap:wrap; gap:6px; justify-content:center; text-align:left; }
+  .missed-list .miss { padding:4px 9px; border:1px solid var(--line2); border-radius:7px; font-size:12.5px; color:var(--muted); }
+  .missed-list .miss b { color:var(--text); font-weight:700; }
+  .missed-list .miss .mc { color:var(--accent); font-weight:700; }
   #soloApp #cinput.shake { animation:cshake .3s; } @keyframes cshake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }
   #soloApp #cmsg { min-height:18px; font-size:13px; color:var(--muted); margin-top:8px; }
   #soloApp .big { font-family:var(--ui); font-size:46px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--accent); margin:6px 0; }
@@ -759,6 +767,10 @@
       <p class="sub" id="betweenLabel"></p>
       <div class="big"><span id="betweenCount">0</span></div>
       <p class="sub" id="betweenCat"></p>
+      <div id="betweenMissed" hidden>
+        <button type="button" id="missedToggle" class="missed-toggle"></button>
+        <div id="missedList" class="missed-list" hidden></div>
+      </div>
       <button class="btn" id="nextBtn">Next round →</button>
     </section>
 

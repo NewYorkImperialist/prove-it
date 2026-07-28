@@ -44,6 +44,19 @@ const server = http.createServer(app);
 const io = new Server(server);
 app.use(express.json({ limit: "16kb" })); // for the single-player /track beacon
 
+// ---- egress accounting: tally bytes sent per response, for the admin cost projection ----
+// Buffered in memory and flushed to the DB every 60s (single always-on instance → safe, cheap).
+let bwBytes = 0, bwReqs = 0;
+const chunkLen = (c) => { try { return c == null || typeof c === "function" ? 0 : (Buffer.isBuffer(c) ? c.length : Buffer.byteLength(c)); } catch (e) { return 0; } };
+app.use((req, res, next) => {
+  const w = res.write, e = res.end; let n = 0;
+  res.write = function (c, ...a) { n += chunkLen(c); return w.call(this, c, ...a); };
+  res.end = function (c, ...a) { n += chunkLen(c); return e.call(this, c, ...a); };
+  res.on("finish", () => { bwBytes += n; bwReqs++; });
+  next();
+});
+{ const t = setInterval(() => { if ((bwBytes || bwReqs) && analytics.enabled()) { analytics.addBandwidth(bwBytes, bwReqs); bwBytes = 0; bwReqs = 0; } }, 60000); if (t.unref) t.unref(); }
+
 // Persist game/round events for the admin board (fire-and-forget; no-ops if Turso isn't set).
 engine.setReporter((room, type, extra) => {
   try {
@@ -146,6 +159,34 @@ async function geoLookup(ip) {
 }
 function bar(n, max) { const w = max ? Math.round((n / max) * 100) : 0; return `<span style="display:inline-block;height:9px;width:${w}%;min-width:${n ? 3 : 0}px;background:#5b8cff;border-radius:2px;vertical-align:middle"></span>`; }
 const tbl = (head, rows, cols) => `<table><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr>${rows || `<tr><td colspan=${cols}>—</td></tr>`}</table>`;
+// Fly cost projection — rough estimates; confirm against current Fly pricing.
+// Always-on shared-cpu-1x 256MB ≈ $1.94/mo (fixed); NA/EU egress ≈ $0.02/GB (the only real variable).
+const FLY_COST = { computePerMo: 1.94, egressPerGB: 0.02, threshold: 3.0 };
+function costHtml(bw, now) {
+  if (!bw) return "";
+  const gb = bw.monthBytes / 1e9;
+  const d = new Date(now);
+  const daysInMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  const elapsedDays = Math.max(0.5, (now - Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)) / 86400000);
+  const projGB = gb / elapsedDays * daysInMonth;
+  const egressProj = projGB * FLY_COST.egressPerGB;
+  const projTotal = FLY_COST.computePerMo + egressProj;            // compute is fixed for an always-on VM
+  const soFar = FLY_COST.computePerMo * (elapsedDays / daysInMonth) + gb * FLY_COST.egressPerGB;
+  const color = projTotal >= FLY_COST.threshold ? "#e5484d" : projTotal >= FLY_COST.threshold * 0.8 ? "#ffb454" : "#3ecf8e";
+  const fmtGB = (x) => x >= 1 ? x.toFixed(2) + " GB" : (x * 1000).toFixed(1) + " MB";
+  const dayMax = Math.max(1, ...bw.perDay.map((r) => Number(r.bytes) || 0));
+  const dayRows = bw.perDay.map((r) => `<tr><td>${esc(r.day)}</td><td>${bar(Number(r.bytes) || 0, dayMax)} ${fmtGB((Number(r.bytes) || 0) / 1e9)}</td><td>${Number(r.reqs) || 0}</td></tr>`).join("");
+  return `
+    <h2>💸 Cost & bandwidth <span style="font-size:12px;color:#8a92a6;font-weight:400">— projected from this cycle's egress</span></h2>
+    <div class="pills">
+      <span class="pill">📈 Projected month-end: <b style="color:${color};font-size:15px">$${projTotal.toFixed(2)}</b> <span style="color:#8a92a6">/ $${FLY_COST.threshold.toFixed(2)} line</span></span>
+      <span class="pill">🖥 Compute (always-on): <b>$${FLY_COST.computePerMo.toFixed(2)}</b>/mo fixed</span>
+      <span class="pill">🌐 Egress this cycle: <b>${fmtGB(gb)}</b> → proj <b>${fmtGB(projGB)}</b> ≈ <b>$${egressProj.toFixed(2)}</b></span>
+      <span class="pill">💵 Accrued so far: <b>$${soFar.toFixed(2)}</b> · ${bw.monthReqs} reqs</span>
+    </div>
+    <p class="stats" style="font-size:12px;color:#6b7382;margin:-6px 0 10px">Estimated rates (shared-cpu-1x 256MB ≈ $${FLY_COST.computePerMo}/mo, egress ≈ $${FLY_COST.egressPerGB}/GB — confirm current Fly pricing). Map atlases load from a CDN, so they don't count. Extra machines / volumes aren't included.</p>
+    <div class="cols"><div><h3>🌐 Egress per day (UTC)</h3>${tbl(["Day", "Bytes sent", "Reqs"], dayRows, 3)}</div></div>`;
+}
 function histHtml(h, k) {
   if (!h) return `<p class="stats" style="margin-top:22px">📦 Historical stats off — set <b>TURSO_URL</b> / <b>TURSO_TOKEN</b> to persist game history.</p>`;
   const num = (x) => Number(x || 0);
@@ -238,9 +279,11 @@ app.get("/admin", async (req, res) => {
   const list = adminData();
   if (req.query.json) {
     const hist = analytics.enabled() ? await analytics.summary().catch(() => null) : null;
-    return res.json({ now, uptimeMs: now - serverStartedAt, online, stats, history: hist, roomCount: list.length, rooms: list });
+    const bw = analytics.enabled() ? await analytics.bandwidthStats().catch(() => null) : null;
+    return res.json({ now, uptimeMs: now - serverStartedAt, online, stats, history: hist, bandwidth: bw, roomCount: list.length, rooms: list });
   }
   const hist = analytics.enabled() ? await analytics.summary().catch(() => null) : null;
+  const bw = analytics.enabled() ? await analytics.bandwidthStats().catch(() => null) : null;
   const playing = list.filter((r) => r.status === "playing").length;
   const k = encodeURIComponent(req.query.key || "");
   const card = (r) => {
@@ -290,6 +333,7 @@ app.get("/admin", async (req, res) => {
     <body><h1>🎯 Prove It! — live server</h1>
     <p class="sub">🟢 <b style="color:#3ecf8e">${online}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${easternFull(now)}</p>
     <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
+    ${costHtml(bw, now)}
     <div class="announce">
       <form action="/admin/announce" method="get">
         <span class="lbl">📢 Broadcast to all games:</span>

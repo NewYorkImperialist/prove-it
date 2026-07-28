@@ -43,6 +43,8 @@ async function init() {
         id TEXT PRIMARY KEY, type TEXT, genre TEXT, rounds TEXT, by_name TEXT, created_at INTEGER, timer INTEGER DEFAULT 45)`,
       `CREATE TABLE IF NOT EXISTS challenge_results (
         id INTEGER PRIMARY KEY AUTOINCREMENT, challenge_id TEXT, name TEXT, visitor_id TEXT, scores TEXT, total INTEGER, at INTEGER, wpms TEXT, crown INTEGER DEFAULT 0)`,
+      // egress accounting per UTC day (bytes sent + request count) → the admin cost projection
+      `CREATE TABLE IF NOT EXISTS bandwidth (day TEXT PRIMARY KEY, bytes INTEGER DEFAULT 0, reqs INTEGER DEFAULT 0)`,
     ], "write");
     // migrate existing tables: mode (mp/sp) + difficulty. ALTER fails harmlessly if the column already exists.
     for (const [t, c] of [["games", "mode TEXT DEFAULT 'mp'"], ["games", "difficulty TEXT"], ["rounds", "mode TEXT DEFAULT 'mp'"],
@@ -293,6 +295,21 @@ async function dailyAllTime(limit = 50) {
   return collapseBoard(rows, limit, await getCreatorName());
 }
 
+// ---- egress accounting (feeds the admin cost projection) ----
+const utcDay = (ts) => new Date(ts || Date.now()).toISOString().slice(0, 10); // YYYY-MM-DD (UTC)
+// Add a flushed batch of served bytes / requests to today's row (server accumulates in memory, flushes here).
+function addBandwidth(bytes, reqs) {
+  fire(`INSERT INTO bandwidth (day,bytes,reqs) VALUES (?,?,?) ON CONFLICT(day) DO UPDATE SET bytes=bytes+excluded.bytes, reqs=reqs+excluded.reqs`,
+    [utcDay(), Math.round(bytes) || 0, Math.round(reqs) || 0]);
+}
+// Per-day egress (last 35 days) + this-calendar-month totals, for the dashboard's spend forecast.
+async function bandwidthStats() {
+  const perDay = await q(`SELECT day, bytes, reqs FROM bandwidth ORDER BY day DESC LIMIT 35`);
+  const month = utcDay().slice(0, 7); // YYYY-MM
+  const m = await one(`SELECT COALESCE(SUM(bytes),0) bytes, COALESCE(SUM(reqs),0) reqs FROM bandwidth WHERE day LIKE ?`, [month + "%"]);
+  return { perDay, monthBytes: Number(m.bytes) || 0, monthReqs: Number(m.reqs) || 0 };
+}
+
 // Per-category leaderboards (admin-only, private): every challenge round is "player named N in category C".
 // Unpacks each result's parallel scores[]/rounds[] arrays in JS (small dataset), dedupes to each player's
 // best per category, and returns categories busiest-first.
@@ -461,4 +478,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats };

@@ -1302,6 +1302,7 @@ function startPlaying(playerName) {
   // Pre-game "ready" screen: copy the link to a friend, then start (with a 3-2-1 countdown).
   show("ready");
   $("readyLB").hidden = true; $("readyLBWrap").innerHTML = ""; // leaderboard preview is daily-only
+  $("readyShare").textContent = "Copy link to challenge a friend"; // solo run — not the daily (initDaily overrides this)
   $("readyTitle").textContent = `Ready, ${myName}?`;
   $("readySub").textContent = roundCats.length === 1
     ? `${roundCats[0].name}. Name as many as you can before the clock runs out.`

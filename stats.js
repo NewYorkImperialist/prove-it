@@ -45,6 +45,8 @@ async function init() {
         id INTEGER PRIMARY KEY AUTOINCREMENT, challenge_id TEXT, name TEXT, visitor_id TEXT, scores TEXT, total INTEGER, at INTEGER, wpms TEXT, crown INTEGER DEFAULT 0)`,
       // egress accounting per UTC day (bytes sent + request count) → the admin cost projection
       `CREATE TABLE IF NOT EXISTS bandwidth (day TEXT PRIMARY KEY, bytes INTEGER DEFAULT 0, reqs INTEGER DEFAULT 0)`,
+      // tiny key/value store (used by the cost guard to remember a per-cycle budget override across restarts)
+      `CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)`,
     ], "write");
     // migrate existing tables: mode (mp/sp) + difficulty. ALTER fails harmlessly if the column already exists.
     for (const [t, c] of [["games", "mode TEXT DEFAULT 'mp'"], ["games", "difficulty TEXT"], ["rounds", "mode TEXT DEFAULT 'mp'"],
@@ -309,6 +311,9 @@ async function bandwidthStats() {
   const m = await one(`SELECT COALESCE(SUM(bytes),0) bytes, COALESCE(SUM(reqs),0) reqs FROM bandwidth WHERE day LIKE ?`, [month + "%"]);
   return { perDay, monthBytes: Number(m.bytes) || 0, monthReqs: Number(m.reqs) || 0 };
 }
+// ---- tiny key/value store ----
+async function kvGet(k) { const r = await one(`SELECT v FROM kv WHERE k=?`, [k]); return r ? r.v : null; }
+function kvSet(k, v) { fire(`INSERT INTO kv (k,v) VALUES (?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v`, [k, v == null ? null : String(v)]); }
 
 // Per-category leaderboards (admin-only, private): every challenge round is "player named N in category C".
 // Unpacks each result's parallel scores[]/rounds[] arrays in JS (small dataset), dedupes to each player's
@@ -478,4 +483,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats };
+module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet };

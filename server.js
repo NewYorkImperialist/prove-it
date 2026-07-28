@@ -57,6 +57,44 @@ app.use((req, res, next) => {
 });
 { const t = setInterval(() => { if ((bwBytes || bwReqs) && analytics.enabled()) { analytics.addBandwidth(bwBytes, bwReqs); bwBytes = 0; bwReqs = 0; } }, 60000); if (t.unref) t.unref(); }
 
+// ---- automatic cost cap ----
+// If projected month-end spend crosses FLY_COST.threshold, `costTripped` flips on and the app serves a
+// tiny "paused" page instead of the heavy bundle (see the static interceptor), capping egress. It's fully
+// automatic and self-healing: re-checked every 60s and it clears itself when the next billing month begins.
+let costTripped = false, costOverrideMonth = null; // month (YYYY-MM) the owner chose to accept the overage
+if (analytics.enabled()) analytics.kvGet("cost_override_month").then((m) => { costOverrideMonth = m || null; }).catch(() => {});
+async function evalCostGuard() {
+  if (!analytics.enabled()) return;
+  const bw = await analytics.bandwidthStats().catch(() => null);
+  if (!bw) return;
+  const p = projectCost(bw, Date.now());
+  if (p.month === costOverrideMonth) { costTripped = false; return; }               // owner accepted the cost this cycle
+  const trip = p.projTotal >= FLY_COST.threshold && p.elapsedDays >= FLY_COST.minDays; // ignore noisy early-cycle spikes
+  if (trip !== costTripped) { costTripped = trip; console.log(`💸 cost guard ${trip ? "TRIPPED — heavy traffic paused (proj $" + p.projTotal.toFixed(2) + ")" : "cleared"}`); }
+}
+{ const t = setInterval(evalCostGuard, 60000); if (t.unref) t.unref(); }
+setTimeout(evalCostGuard, 8000); // first pass shortly after boot
+
+// When the cost cap is tripped, serve a tiny "paused for the month" page for the heavy HTML/JS bundle
+// instead of the full app — this caps egress (the only cost that can run away). Small API responses and
+// the /admin dashboard keep working. 200 (not 503) so it can't trip any health check into a restart loop.
+const BUDGET_PAGE = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prove It! — paused</title><body style="margin:0;background:#0e1016;color:#e8ecf4;font:16px/1.6 system-ui,-apple-system,sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center;padding:24px"><div style="max-width:440px"><div style="font-size:44px">🎯💤</div><h1 style="font-size:22px;margin:8px 0">Prove It! is resting</h1><p style="color:#8a92a6">We hit this month's budget, so the game is paused to keep costs in check. It comes back automatically at the start of next month — thanks for playing!</p></div></body>`;
+app.use((req, res, next) => {
+  if (!costTripped) return next();
+  if (req.method === "GET" && /(^\/$|\.html$|\.js$)/.test(req.path) && !req.path.startsWith("/admin")) {
+    return res.set("content-type", "text/html").send(BUDGET_PAGE);
+  }
+  next();
+});
+// Owner override: keep the game live for the rest of THIS billing cycle even past the cap (?on=1), or re-arm it (?on=0).
+app.get("/admin/cost-override", (req, res) => {
+  if (!ownerOk(req)) return res.status(404).send("Not found");
+  const month = new Date().toISOString().slice(0, 7);
+  if (String(req.query.on) === "1") { costOverrideMonth = month; costTripped = false; analytics.kvSet("cost_override_month", month); }
+  else { costOverrideMonth = null; analytics.kvSet("cost_override_month", ""); evalCostGuard(); }
+  res.redirect(`/admin?key=${encodeURIComponent(req.query.key || "")}`);
+});
+
 // Persist game/round events for the admin board (fire-and-forget; no-ops if Turso isn't set).
 engine.setReporter((room, type, extra) => {
   try {
@@ -161,10 +199,11 @@ function bar(n, max) { const w = max ? Math.round((n / max) * 100) : 0; return `
 const tbl = (head, rows, cols) => `<table><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr>${rows || `<tr><td colspan=${cols}>—</td></tr>`}</table>`;
 // Fly cost projection — rough estimates; confirm against current Fly pricing.
 // Always-on shared-cpu-1x 256MB ≈ $1.94/mo (fixed); NA/EU egress ≈ $0.02/GB (the only real variable).
-const FLY_COST = { computePerMo: 1.94, egressPerGB: 0.02, threshold: 3.0 };
-function costHtml(bw, now) {
-  if (!bw) return "";
-  const gb = bw.monthBytes / 1e9;
+// threshold = the $ line the auto cost-guard trips at (pauses heavy traffic to cap the bill).
+const FLY_COST = { computePerMo: 1.94, egressPerGB: 0.02, threshold: 4.0, minDays: 2 };
+// Extrapolate this cycle's egress to a projected month-end bill. Compute is fixed (always-on VM).
+function projectCost(bw, now) {
+  const gb = (bw.monthBytes || 0) / 1e9;
   const d = new Date(now);
   const daysInMonth = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
   const elapsedDays = Math.max(0.5, (now - Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1)) / 86400000);
@@ -172,17 +211,29 @@ function costHtml(bw, now) {
   const egressProj = projGB * FLY_COST.egressPerGB;
   const projTotal = FLY_COST.computePerMo + egressProj;            // compute is fixed for an always-on VM
   const soFar = FLY_COST.computePerMo * (elapsedDays / daysInMonth) + gb * FLY_COST.egressPerGB;
-  const color = projTotal >= FLY_COST.threshold ? "#e5484d" : projTotal >= FLY_COST.threshold * 0.8 ? "#ffb454" : "#3ecf8e";
+  return { gb, projGB, egressProj, projTotal, soFar, elapsedDays, daysInMonth, month: new Date(now).toISOString().slice(0, 7) };
+}
+function costHtml(bw, now, k) {
+  if (!bw) return "";
+  const p = projectCost(bw, now);
+  const color = p.projTotal >= FLY_COST.threshold ? "#e5484d" : p.projTotal >= FLY_COST.threshold * 0.8 ? "#ffb454" : "#3ecf8e";
   const fmtGB = (x) => x >= 1 ? x.toFixed(2) + " GB" : (x * 1000).toFixed(1) + " MB";
   const dayMax = Math.max(1, ...bw.perDay.map((r) => Number(r.bytes) || 0));
   const dayRows = bw.perDay.map((r) => `<tr><td>${esc(r.day)}</td><td>${bar(Number(r.bytes) || 0, dayMax)} ${fmtGB((Number(r.bytes) || 0) / 1e9)}</td><td>${Number(r.reqs) || 0}</td></tr>`).join("");
+  const overridden = costOverrideMonth === p.month;
+  const guard = costTripped
+    ? `<div class="announce" style="border-color:#e5484d;background:#2a1618"><b style="color:#e5484d">● AUTO COST-CAP TRIPPED</b> — projected $${p.projTotal.toFixed(2)} ≥ $${FLY_COST.threshold.toFixed(2)}. Heavy traffic is paused (visitors see a "paused for the month" page) to cap the bill. Clears next cycle. <a class="preset" style="background:#1d3a26;color:#8ef0b4" href="/admin/cost-override?key=${k}&on=1" onclick="return confirm('Keep the game LIVE for the rest of this billing cycle and accept going over \\$${FLY_COST.threshold}? The auto cap won\\'t fire again until next month.')">▶ Override — keep live this cycle</a></div>`
+    : overridden
+    ? `<div class="announce" style="border-color:#ffb454"><b style="color:#ffb454">⚠ Auto cost-cap OVERRIDDEN for ${esc(p.month)}</b> — it won't pause the game this cycle even if it crosses $${FLY_COST.threshold.toFixed(2)}. <a class="preset" href="/admin/cost-override?key=${k}&on=0">Re-arm the cap</a></div>`
+    : `<div class="announce" style="border-color:#2e7d52"><b style="color:#8ef0b4">● Auto cost-cap armed</b> — if projected spend hits $${FLY_COST.threshold.toFixed(2)}, the game auto-pauses heavy traffic until next cycle. No action needed from you.</div>`;
   return `
     <h2>💸 Cost & bandwidth <span style="font-size:12px;color:#8a92a6;font-weight:400">— projected from this cycle's egress</span></h2>
+    ${guard}
     <div class="pills">
-      <span class="pill">📈 Projected month-end: <b style="color:${color};font-size:15px">$${projTotal.toFixed(2)}</b> <span style="color:#8a92a6">/ $${FLY_COST.threshold.toFixed(2)} line</span></span>
+      <span class="pill">📈 Projected month-end: <b style="color:${color};font-size:15px">$${p.projTotal.toFixed(2)}</b> <span style="color:#8a92a6">/ $${FLY_COST.threshold.toFixed(2)} cap</span></span>
       <span class="pill">🖥 Compute (always-on): <b>$${FLY_COST.computePerMo.toFixed(2)}</b>/mo fixed</span>
-      <span class="pill">🌐 Egress this cycle: <b>${fmtGB(gb)}</b> → proj <b>${fmtGB(projGB)}</b> ≈ <b>$${egressProj.toFixed(2)}</b></span>
-      <span class="pill">💵 Accrued so far: <b>$${soFar.toFixed(2)}</b> · ${bw.monthReqs} reqs</span>
+      <span class="pill">🌐 Egress this cycle: <b>${fmtGB(p.gb)}</b> → proj <b>${fmtGB(p.projGB)}</b> ≈ <b>$${p.egressProj.toFixed(2)}</b></span>
+      <span class="pill">💵 Accrued so far: <b>$${p.soFar.toFixed(2)}</b> · ${bw.monthReqs} reqs</span>
     </div>
     <p class="stats" style="font-size:12px;color:#6b7382;margin:-6px 0 10px">Estimated rates (shared-cpu-1x 256MB ≈ $${FLY_COST.computePerMo}/mo, egress ≈ $${FLY_COST.egressPerGB}/GB — confirm current Fly pricing). Map atlases load from a CDN, so they don't count. Extra machines / volumes aren't included.</p>
     <div class="cols"><div><h3>🌐 Egress per day (UTC)</h3>${tbl(["Day", "Bytes sent", "Reqs"], dayRows, 3)}</div></div>`;
@@ -333,7 +384,7 @@ app.get("/admin", async (req, res) => {
     <body><h1>🎯 Prove It! — live server</h1>
     <p class="sub">🟢 <b style="color:#3ecf8e">${online}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${easternFull(now)}</p>
     <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
-    ${costHtml(bw, now)}
+    ${costHtml(bw, now, k)}
     <div class="announce">
       <form action="/admin/announce" method="get">
         <span class="lbl">📢 Broadcast to all games:</span>

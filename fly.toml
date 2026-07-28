@@ -9,6 +9,9 @@ primary_region = "ewr"
   force_https = true
   # always-on (no cold start) — the machine stays up so the admin board & first player don't wait on a boot.
   # to go back to scale-to-zero (~free, ~1-3s cold start), set auto_stop_machines = "stop" and min_machines_running = 0.
+  # NOTE: the server's automatic cost guard (server.js) flips these two settings itself at runtime via the
+  # Fly Machines API once projected spend crosses $4/mo — see FLY_COST in server.js. Requires the FLY_API_TOKEN
+  # secret (fly secrets set FLY_API_TOKEN=$(fly tokens create deploy)); the values below are just the deploy-time default.
   auto_stop_machines = "off"
   auto_start_machines = true
   min_machines_running = 1

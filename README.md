@@ -7,15 +7,19 @@ A fast, free browser **bluffing word game**. You get a category — *Football Pl
 **No install, no sign-up.** Click the link and you're playing.
 
 ## How to play
+**Multiplayer** is a bluffing duel:
 1. You're shown a category.
 2. Declare a number — *"I can name 6."*
 3. Trade raises back and forth with your opponent.
 4. Someone calls **🗣️ Prove it!** — the claimant must name that many before the timer runs out.
 5. Back it up → you take the round. Choke → they do. First to the target score wins.
 
+**Solo** and **Daily Challenge** drop the bluffing — it's just you against the clock, naming as many as you can per category before time runs out.
+
 ## Modes
 - 👥 **Multiplayer** — create a room, share the link, and play head-to-head in real time. Friends can also **spectate** live.
-- 🤖 **Single-player** — play the bot any time (**Easy / Medium / Hard**), no opponent needed. The bot scales its skill to each category and actually reads your bluffs.
+- 🕹️ **Solo** — pick a category, or build a custom multi-round run, and race the clock alone. No opponent needed.
+- 📅 **Daily Challenge** — the same puzzle for everyone each day, with a shared leaderboard. Share your score and challenge friends to beat it.
 
 ## Share it
 This is built to be passed around — drop the link in your group chat, Discord, or subreddit and anyone can click and play instantly:

@@ -7,6 +7,7 @@ const express = require("express");
 const { Server } = require("socket.io");
 const engine = require("./game-engine");
 const analytics = require("./stats"); // persistent game history (Turso); separate from the in-memory `stats` counters
+const SITE = require("./site-config"); // single source of truth for titles/meta tags/credit link — see that file
 const CATEGORY_GROUPS = require("./categories.js");
 const ALL_GROUPS = Object.keys(CATEGORY_GROUPS);
 const DEFAULT_GROUPS = ALL_GROUPS.filter((k) => !CATEGORY_GROUPS[k].defaultOff); // Secret starts off
@@ -42,7 +43,7 @@ const TARGETS = [3, 5, 10]; // plus null = endless
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
-app.use(express.json({ limit: "16kb" })); // for the single-player /track beacon
+app.use(express.json({ limit: "16kb" })); // for /challenge and cost-override JSON bodies
 
 // ---- egress accounting: tally bytes sent per response, for the admin cost projection ----
 // Buffered in memory and flushed to the DB every 60s (single always-on instance → safe, cheap).
@@ -57,41 +58,112 @@ app.use((req, res, next) => {
 });
 { const t = setInterval(() => { if ((bwBytes || bwReqs) && analytics.enabled()) { analytics.addBandwidth(bwBytes, bwReqs); bwBytes = 0; bwReqs = 0; } }, 60000); if (t.unref) t.unref(); }
 
-// ---- automatic cost cap ----
-// If projected month-end spend crosses FLY_COST.threshold, `costTripped` flips on and the app serves a
-// tiny "paused" page instead of the heavy bundle (see the static interceptor), capping egress. It's fully
-// automatic and self-healing: re-checked every 60s and it clears itself when the next billing month begins.
-let costTripped = false, costOverrideMonth = null; // month (YYYY-MM) the owner chose to accept the overage
+// ---- automatic cost cap (two tiers) ----
+// Tier 1 ($4, coldThreshold): revert the Fly machine from always-on to scale-to-zero — cuts the fixed
+// compute cost, at the price of a cold start (~1-3s) on the next visit after idle. Requires FLY_API_TOKEN.
+// Tier 2 ($4.50, stopThreshold): serve a tiny "paused" page instead of the heavy bundle (see the static
+// interceptor below), capping egress — no Fly API needed, so this tier always works even without a token.
+// Both are re-checked every 60s and self-heal when the next billing month begins.
+let coldTripped = false, hardTripped = false, coldError = null, costOverrideMonth = null; // month (YYYY-MM) the owner chose to accept the overage
 if (analytics.enabled()) analytics.kvGet("cost_override_month").then((m) => { costOverrideMonth = m || null; }).catch(() => {});
+
+// ---- Fly Machines API: flip the app between always-on and scale-to-zero at runtime ----
+// Mirrors the two modes documented in fly.toml's [http_service] block. Note: POSTing a machine's config
+// triggers a stop/start cycle (not a hot reload) — so applying either tier briefly restarts the machine
+// and drops any live game connections (same as a normal deploy; Socket.IO clients reconnect).
+const FLY_API = "https://api.machines.dev/v1";
+const FLY_APP = process.env.FLY_APP_NAME;
+async function flyFetch(path, opts) {
+  const token = process.env.FLY_API_TOKEN;
+  if (!token) throw new Error("FLY_API_TOKEN not set");
+  const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const r = await fetch(`${FLY_API}${path}`, { ...opts, signal: ctrl.signal,
+      headers: { authorization: `Bearer ${token}`, "content-type": "application/json", ...(opts && opts.headers) } });
+    if (!r.ok) throw new Error(`Fly API ${r.status}: ${(await r.text().catch(() => "")).slice(0, 200)}`);
+    return r.status === 204 ? null : r.json();
+  } finally { clearTimeout(t); }
+}
+async function setColdStart(cold) {
+  if (!FLY_APP) throw new Error("FLY_APP_NAME not set");
+  const machines = await flyFetch(`/apps/${FLY_APP}/machines`);
+  for (const m of machines) {
+    if (m.state === "destroyed") continue;
+    const full = await flyFetch(`/apps/${FLY_APP}/machines/${m.id}`);
+    const cfg = full.config;
+    for (const svc of cfg.services || []) {
+      if (!(svc.ports || []).some((p) => (p.handlers || []).includes("http") || (p.handlers || []).includes("tls"))) continue;
+      svc.autostop = cold ? "stop" : "off";
+      svc.autostart = true;
+      svc.min_machines_running = cold ? 0 : 1;
+    }
+    await flyFetch(`/apps/${FLY_APP}/machines/${m.id}`, { method: "POST", body: JSON.stringify({ config: cfg }) });
+  }
+}
+let coldApplying = false;
+async function applyColdStart(cold) {
+  if (coldApplying) return; coldApplying = true;
+  try { await setColdStart(cold); coldError = null; console.log(`💸 cost guard: machine set to ${cold ? "scale-to-zero (cold starts)" : "always-on"}`); }
+  catch (e) { coldError = e.message; console.error(`💸 cost guard: failed to set ${cold ? "cold-start" : "always-on"} mode:`, e.message); }
+  finally { coldApplying = false; }
+}
+
 async function evalCostGuard() {
   if (!analytics.enabled()) return;
   const bw = await analytics.bandwidthStats().catch(() => null);
   if (!bw) return;
   const p = projectCost(bw, Date.now());
-  if (p.month === costOverrideMonth) { costTripped = false; return; }               // owner accepted the cost this cycle
-  const trip = p.projTotal >= FLY_COST.threshold && p.elapsedDays >= FLY_COST.minDays; // ignore noisy early-cycle spikes
-  if (trip !== costTripped) { costTripped = trip; console.log(`💸 cost guard ${trip ? "TRIPPED — heavy traffic paused (proj $" + p.projTotal.toFixed(2) + ")" : "cleared"}`); }
+  if (p.month === costOverrideMonth) {                                              // owner accepted the cost this cycle
+    if (coldTripped) applyColdStart(false);
+    coldTripped = false; hardTripped = false;
+    return;
+  }
+  const hardTrip = p.projTotal >= FLY_COST.stopThreshold && p.elapsedDays >= FLY_COST.minDays; // ignore noisy early-cycle spikes
+  const coldTrip = p.projTotal >= FLY_COST.coldThreshold && p.elapsedDays >= FLY_COST.minDays;
+  if (hardTrip !== hardTripped) { hardTripped = hardTrip; console.log(`💸 cost guard ${hardTrip ? "TRIPPED — heavy traffic paused (proj $" + p.projTotal.toFixed(2) + ")" : "cleared"}`); }
+  if (coldTrip !== coldTripped) { coldTripped = coldTrip; applyColdStart(coldTrip); }
 }
 { const t = setInterval(evalCostGuard, 60000); if (t.unref) t.unref(); }
 setTimeout(evalCostGuard, 8000); // first pass shortly after boot
 
+// Fill {{TOKEN}} placeholders in an HTML template from a flat vars object (see site-config.js
+// for the values). Shared by index.html and challenge.html so meta tags/titles/credit link
+// live in exactly one place.
+function render(html, vars) {
+  return html.replace(/\{\{(\w+)\}\}/g, (m, key) => (key in vars ? String(vars[key]) : m));
+}
+const siteVars = { // fields shared across every templated page
+  OG_SITE_NAME: SITE.siteName,
+  OG_URL: SITE.url,
+  OG_IMAGE: `${SITE.ogImage.url}?v=${SITE.ogImage.v}`,
+  OG_IMAGE_WIDTH: SITE.ogImage.width,
+  OG_IMAGE_HEIGHT: SITE.ogImage.height,
+  THEME_COLOR: SITE.themeColor,
+  CREDIT_NAME: SITE.credit.name,
+  CREDIT_URL: SITE.credit.url,
+};
+
 // When the cost cap is tripped, serve a tiny "paused for the month" page for the heavy HTML/JS bundle
 // instead of the full app — this caps egress (the only cost that can run away). Small API responses and
 // the /admin dashboard keep working. 200 (not 503) so it can't trip any health check into a restart loop.
-const BUDGET_PAGE = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prove It! — paused</title><body style="margin:0;background:#0e1016;color:#e8ecf4;font:16px/1.6 system-ui,-apple-system,sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center;padding:24px"><div style="max-width:440px"><div style="font-size:44px">🎯💤</div><h1 style="font-size:22px;margin:8px 0">Prove It! is resting</h1><p style="color:#8a92a6">We hit this month's budget, so the game is paused to keep costs in check. It comes back automatically at the start of next month — thanks for playing!</p></div></body>`;
+const BUDGET_PAGE = `<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${SITE.paused.title}</title><body style="margin:0;background:#0e1016;color:#e8ecf4;font:16px/1.6 system-ui,-apple-system,sans-serif;display:grid;place-items:center;min-height:100vh;text-align:center;padding:24px"><div style="max-width:440px"><div style="font-size:44px">${SITE.paused.emoji}</div><h1 style="font-size:22px;margin:8px 0">${SITE.paused.heading}</h1><p style="color:#8a92a6">${SITE.paused.body}</p></div></body>`;
 app.use((req, res, next) => {
-  if (!costTripped) return next();
+  if (!hardTripped) return next();
   if (req.method === "GET" && /(^\/$|\.html$|\.js$)/.test(req.path) && !req.path.startsWith("/admin")) {
     return res.set("content-type", "text/html").send(BUDGET_PAGE);
   }
   next();
 });
-// Owner override: keep the game live for the rest of THIS billing cycle even past the cap (?on=1), or re-arm it (?on=0).
+// Owner override: keep the game live for the rest of THIS billing cycle even past the caps (?on=1), or re-arm it (?on=0).
 app.get("/admin/cost-override", (req, res) => {
   if (!ownerOk(req)) return res.status(404).send("Not found");
   const month = new Date().toISOString().slice(0, 7);
-  if (String(req.query.on) === "1") { costOverrideMonth = month; costTripped = false; analytics.kvSet("cost_override_month", month); }
-  else { costOverrideMonth = null; analytics.kvSet("cost_override_month", ""); evalCostGuard(); }
+  if (String(req.query.on) === "1") {
+    costOverrideMonth = month; hardTripped = false;
+    if (coldTripped) applyColdStart(false);
+    coldTripped = false;
+    analytics.kvSet("cost_override_month", month);
+  } else { costOverrideMonth = null; analytics.kvSet("cost_override_month", ""); evalCostGuard(); }
   res.redirect(`/admin?key=${encodeURIComponent(req.query.key || "")}`);
 });
 
@@ -120,8 +192,17 @@ engine.setReporter((room, type, extra) => {
   } catch (e) { console.error("reporter:", e.message); }
 });
 
-// Single-page app: multiplayer + solo share one document (index.html).
-app.get("/", (req, res) => res.sendFile(path.join(__dirname, "index.html")));
+// Single-page app: multiplayer + solo share one document (index.html). Templated (not sendFile)
+// so its title/meta tags/credit link render from site-config.js instead of being hardcoded here.
+let indexTemplate = null;
+app.get("/", (req, res) => {
+  try {
+    if (!indexTemplate || process.env.NODE_ENV !== "production") indexTemplate = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+    const html = render(indexTemplate, { ...siteVars, TITLE: SITE.home.title, DESCRIPTION: SITE.home.description,
+      OG_TITLE: SITE.home.ogTitle, OG_DESCRIPTION: SITE.home.ogDescription, TWITTER_DESCRIPTION: SITE.home.twitterDescription });
+    res.set("content-type", "text/html").send(html);
+  } catch (e) { res.sendFile(path.join(__dirname, "index.html")); }
+});
 
 // ---------- owner-only live dashboard (gated by the OWNER_KEY secret) ----------
 // Reads server state directly — an INVISIBLE peek (doesn't join as a spectator).
@@ -199,8 +280,9 @@ function bar(n, max) { const w = max ? Math.round((n / max) * 100) : 0; return `
 const tbl = (head, rows, cols) => `<table><tr>${head.map((h) => `<th>${h}</th>`).join("")}</tr>${rows || `<tr><td colspan=${cols}>—</td></tr>`}</table>`;
 // Fly cost projection — rough estimates; confirm against current Fly pricing.
 // Always-on shared-cpu-1x 256MB ≈ $1.94/mo (fixed); NA/EU egress ≈ $0.02/GB (the only real variable).
-// threshold = the $ line the auto cost-guard trips at (pauses heavy traffic to cap the bill).
-const FLY_COST = { computePerMo: 1.94, egressPerGB: 0.02, threshold: 4.0, minDays: 2 };
+// coldThreshold = $ line where the guard reverts the machine to scale-to-zero (cuts the fixed compute cost).
+// stopThreshold = $ line where the guard also pauses heavy traffic (caps egress, the only variable cost).
+const FLY_COST = { computePerMo: 1.94, egressPerGB: 0.02, coldThreshold: 4.0, stopThreshold: 4.5, minDays: 2 };
 // Extrapolate this cycle's egress to a projected month-end bill. Compute is fixed (always-on VM).
 function projectCost(bw, now) {
   const gb = (bw.monthBytes || 0) / 1e9;
@@ -216,26 +298,30 @@ function projectCost(bw, now) {
 function costHtml(bw, now, k) {
   if (!bw) return "";
   const p = projectCost(bw, now);
-  const color = p.projTotal >= FLY_COST.threshold ? "#e5484d" : p.projTotal >= FLY_COST.threshold * 0.8 ? "#ffb454" : "#3ecf8e";
+  const color = p.projTotal >= FLY_COST.stopThreshold ? "#e5484d" : p.projTotal >= FLY_COST.coldThreshold ? "#ffb454" : "#3ecf8e";
   const fmtGB = (x) => x >= 1 ? x.toFixed(2) + " GB" : (x * 1000).toFixed(1) + " MB";
   const dayMax = Math.max(1, ...bw.perDay.map((r) => Number(r.bytes) || 0));
   const dayRows = bw.perDay.map((r) => `<tr><td>${esc(r.day)}</td><td>${bar(Number(r.bytes) || 0, dayMax)} ${fmtGB((Number(r.bytes) || 0) / 1e9)}</td><td>${Number(r.reqs) || 0}</td></tr>`).join("");
   const overridden = costOverrideMonth === p.month;
-  const guard = costTripped
-    ? `<div class="announce" style="border-color:#e5484d;background:#2a1618"><b style="color:#e5484d">● AUTO COST-CAP TRIPPED</b> — projected $${p.projTotal.toFixed(2)} ≥ $${FLY_COST.threshold.toFixed(2)}. Heavy traffic is paused (visitors see a "paused for the month" page) to cap the bill. Clears next cycle. <a class="preset" style="background:#1d3a26;color:#8ef0b4" href="/admin/cost-override?key=${k}&on=1" onclick="return confirm('Keep the game LIVE for the rest of this billing cycle and accept going over \\$${FLY_COST.threshold}? The auto cap won\\'t fire again until next month.')">▶ Override — keep live this cycle</a></div>`
+  const overrideLink = `<a class="preset" style="background:#1d3a26;color:#8ef0b4" href="/admin/cost-override?key=${k}&on=1" onclick="return confirm('Keep the game fully LIVE (always-on, no traffic pause) for the rest of this billing cycle and accept going over \\$${FLY_COST.stopThreshold}? The auto caps won\\'t fire again until next month.')">▶ Override — keep live this cycle</a>`;
+  const coldErrHtml = coldError ? `<br><span style="color:#e5484d;font-size:12px">⚠ couldn't apply: ${esc(coldError)} — check FLY_API_TOKEN / FLY_APP_NAME</span>` : "";
+  const guard = hardTripped
+    ? `<div class="announce" style="border-color:#e5484d;background:#2a1618"><b style="color:#e5484d">● AUTO COST-CAP TRIPPED</b> — projected $${p.projTotal.toFixed(2)} ≥ $${FLY_COST.stopThreshold.toFixed(2)}. Heavy traffic is paused (visitors see a "resting for the month" page) to cap egress. Clears next cycle. ${overrideLink}</div>`
     : overridden
-    ? `<div class="announce" style="border-color:#ffb454"><b style="color:#ffb454">⚠ Auto cost-cap OVERRIDDEN for ${esc(p.month)}</b> — it won't pause the game this cycle even if it crosses $${FLY_COST.threshold.toFixed(2)}. <a class="preset" href="/admin/cost-override?key=${k}&on=0">Re-arm the cap</a></div>`
-    : `<div class="announce" style="border-color:#2e7d52"><b style="color:#8ef0b4">● Auto cost-cap armed</b> — if projected spend hits $${FLY_COST.threshold.toFixed(2)}, the game auto-pauses heavy traffic until next cycle. No action needed from you.</div>`;
+    ? `<div class="announce" style="border-color:#ffb454"><b style="color:#ffb454">⚠ Auto cost-cap OVERRIDDEN for ${esc(p.month)}</b> — it won't revert to cold starts or pause the game this cycle even past $${FLY_COST.stopThreshold.toFixed(2)}. <a class="preset" href="/admin/cost-override?key=${k}&on=0">Re-arm the cap</a></div>`
+    : coldTripped
+    ? `<div class="announce" style="border-color:#ffb454"><b style="color:#ffb454">● COLD-START MODE</b> — projected $${p.projTotal.toFixed(2)} ≥ $${FLY_COST.coldThreshold.toFixed(2)}. The machine reverted to scale-to-zero to cut compute cost (visitors may see a ~1-3s cold start on the next request after idle). Game stays fully live. Escalates to a full pause at $${FLY_COST.stopThreshold.toFixed(2)}.${coldErrHtml} ${overrideLink}</div>`
+    : `<div class="announce" style="border-color:#2e7d52"><b style="color:#8ef0b4">● Auto cost-cap armed</b> — at $${FLY_COST.coldThreshold.toFixed(2)} projected, the machine reverts to scale-to-zero (cold starts); at $${FLY_COST.stopThreshold.toFixed(2)} it also pauses heavy traffic. Both clear automatically next cycle. No action needed from you.</div>`;
   return `
     <h2>💸 Cost & bandwidth <span style="font-size:12px;color:#8a92a6;font-weight:400">— projected from this cycle's egress</span></h2>
     ${guard}
     <div class="pills">
-      <span class="pill">📈 Projected month-end: <b style="color:${color};font-size:15px">$${p.projTotal.toFixed(2)}</b> <span style="color:#8a92a6">/ $${FLY_COST.threshold.toFixed(2)} cap</span></span>
+      <span class="pill">📈 Projected month-end: <b style="color:${color};font-size:15px">$${p.projTotal.toFixed(2)}</b> <span style="color:#8a92a6">/ $${FLY_COST.coldThreshold.toFixed(2)} cold · $${FLY_COST.stopThreshold.toFixed(2)} stop</span></span>
       <span class="pill">🖥 Compute (always-on): <b>$${FLY_COST.computePerMo.toFixed(2)}</b>/mo fixed</span>
       <span class="pill">🌐 Egress this cycle: <b>${fmtGB(p.gb)}</b> → proj <b>${fmtGB(p.projGB)}</b> ≈ <b>$${p.egressProj.toFixed(2)}</b></span>
       <span class="pill">💵 Accrued so far: <b>$${p.soFar.toFixed(2)}</b> · ${bw.monthReqs} reqs</span>
     </div>
-    <p class="stats" style="font-size:12px;color:#6b7382;margin:-6px 0 10px">Estimated rates (shared-cpu-1x 256MB ≈ $${FLY_COST.computePerMo}/mo, egress ≈ $${FLY_COST.egressPerGB}/GB — confirm current Fly pricing). Map atlases load from a CDN, so they don't count. Extra machines / volumes aren't included.</p>
+    <p class="stats" style="font-size:12px;color:#6b7382;margin:-6px 0 10px">Estimated rates (shared-cpu-1x 256MB ≈ $${FLY_COST.computePerMo}/mo, egress ≈ $${FLY_COST.egressPerGB}/GB — confirm current Fly pricing). Compute assumes always-on; once in cold-start mode actual compute cost is likely lower than shown. Map atlases load from a CDN, so they don't count. Extra machines / volumes aren't included.</p>
     <div class="cols"><div><h3>🌐 Egress per day (UTC)</h3>${tbl(["Day", "Bytes sent", "Reqs"], dayRows, 3)}</div></div>`;
 }
 function histHtml(h, k) {
@@ -360,7 +446,7 @@ app.get("/admin", async (req, res) => {
   };
   res.set("content-type", "text/html").send(`<!doctype html><html><head><meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15">
-    <title>Prove It! — server</title><style>
+    <title>${SITE.adminDashboard.title}</title><style>
     body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
     h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;margin:0 0 6px;font-size:13px}
     .stats{color:#c6ccda;margin:0 0 18px;font-size:13px} .stats b{color:#ffd34d}
@@ -381,7 +467,7 @@ app.get("/admin", async (req, res) => {
     .announce form{display:flex;gap:8px;flex-wrap:wrap;align-items:center} .announce input{flex:1;min-width:180px;background:#0e1016;border:1px solid #2a3040;border-radius:8px;color:#fff;padding:8px 10px;font-size:13px}
     .announce button,.announce a.preset{background:#2a3040;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none}
     .announce a.preset{background:#3a2030;color:#ffb4b4} .announce .lbl{font-size:12px;color:#8a92a6;margin-right:4px}</style></head>
-    <body><h1>🎯 Prove It! — live server</h1>
+    <body><h1>${SITE.adminDashboard.heading}</h1>
     <p class="sub">🟢 <b style="color:#3ecf8e">${online}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${easternFull(now)}</p>
     <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
     ${costHtml(bw, now, k)}
@@ -785,42 +871,6 @@ app.get("/admin/announce", (req, res) => {
   res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));
 });
 
-// Single-player phones home here (no socket). Public, fire-and-forget, validated + size-capped.
-app.post("/track", async (req, res) => {
-  res.json({ ok: true });
-  if (!analytics.enabled()) return;
-  const e = req.body || {};
-  const str = (v, n = 60) => (typeof v === "string" ? v.slice(0, n) : null);
-  const int = (v) => { const n = parseInt(v, 10); return Number.isFinite(n) ? n : null; };
-  const device = /Mobile|Android|iPhone|iPad|iPod/i.test(req.get("user-agent") || "") ? "mobile" : "desktop";
-  const now = Date.now();
-  try {
-    const gid = str(e.gid, 40);
-    if (e.type === "spRound") {
-      analytics.recordRound({ code: "SP", category: str(e.category), grp: str(e.grp), winner_id: e.won ? "you" : "bot",
-        winner_name: e.won ? "You" : "Bot", claim: int(e.claim), proven: int(e.proven), at: now, mode: "sp", difficulty: str(e.difficulty, 10), gid });
-      if (Array.isArray(e.answers)) e.answers.slice(0, 50).forEach((d) =>
-        analytics.recordAnswer({ code: "SP", category: str(e.category), grp: str(e.grp), display: str(d), offList: false, at: now, mode: "sp", gid, player: "You" }));
-    } else if (e.type === "challenge") {
-      analytics.recordEvent("challenge", "CH", `${str(e.category, 40)} · named ${int(e.score)}${e.received ? ` (vs ${int(e.target)})` : ""} · ${int(e.timer)}s`, "ch");
-    } else if (e.type === "spSkip") {
-      analytics.recordEvent("categorySkipped", "SP", str(e.category), "sp", gid);
-    } else if (e.type === "spGame") {
-      const result = str(e.result, 8); // "win" | "loss" | "tie"
-      analytics.recordGame({ code: "SP", p1_id: "you", p1_name: "You", p1_score: int(e.scoreMe), p2_id: "bot", p2_name: "Bot", p2_score: int(e.scoreBot),
-        winner_id: result === "win" ? "you" : result === "loss" ? "bot" : null, winner_name: result === "win" ? "You" : result === "loss" ? "Bot" : null,
-        groups: str(e.groups, 200), timer: int(e.timer), target: str(e.target, 10), rounds: int(e.rounds), reason: result,
-        started_at: int(e.startedAt), ended_at: now, duration_ms: int(e.durationMs), mode: "sp", difficulty: str(e.difficulty, 10), gid });
-    } else if (e.type === "spSession") {
-      const dur = int(e.durationMs) || 0;
-      const ip = clientIp(req.headers, req.socket && req.socket.remoteAddress);
-      const geo = await geoLookup(ip);
-      analytics.recordSession({ connected_at: now - dur, disconnected_at: now, duration_ms: dur, device, played: !!e.played, joined: false, spectated: false, name: "SP", reason: "sp", mode: "sp",
-        ip, geo, visitor_id: str(e.visitorId, 40), tz: str(e.tz, 40), locale: str(e.lang, 20) });
-    }
-  } catch (err) { /* ignore bad payloads */ }
-});
-
 // ---------- async challenges (multi-round + shared leaderboard) ----------
 const ALL_CAT_NAMES = new Set();
 for (const v of Object.values(CATEGORY_GROUPS)) for (const c of v.cats) ALL_CAT_NAMES.add(c.name);
@@ -959,37 +1009,39 @@ app.get("/geo-goat", async (req, res) => {
   res.json({ ok: true, results: rows });
 });
 
-// Dynamic social preview for a shared challenge link (?id=…). Crawlers (Discord/iMessage/
-// Reddit/Twitter) don't run JS, so we inject the challenger's name + score-to-beat into the
-// OG meta tags server-side. No id → fall through to the static challenge.html.
+// Share-link stub, templated from site-config.js's `challenge` defaults. When a valid ?id=
+// is given, crawlers (Discord/iMessage/Reddit/Twitter) don't run JS, so we override the
+// title/OG description with the challenger's name + score-to-beat, computed server-side.
 app.get("/challenge.html", async (req, res, next) => {
-  const id = String(req.query.id || "").slice(0, 12);
-  if (!id || !analytics.enabled()) return next();
-  const c = await analytics.getChallenge(id).catch(() => null);
-  if (!c) return next();
-  const results = await analytics.getChallengeResults(id).catch(() => []);
-  const by = c.by_name || "A friend";
-  const rounds = c.rounds || [];
-  const nRounds = rounds.length;
-  const what = c.type === "genre" && c.genre ? `${nRounds} rounds of ${c.genre}` : `${nRounds} rounds`;
-  // Pick the challenger's best single-round score + that round's category ("17 Countries in Europe").
-  // Prefer the creator's own runs; fall back to everyone's if their name isn't on the board yet.
-  const mine = results.filter((r) => (r.name || "").trim().toLowerCase() === by.trim().toLowerCase());
-  const pool = mine.length ? mine : results;
-  let best = null; // { score, idx }
-  for (const r of pool) (r.scores || []).forEach((s, i) => { s = Number(s) || 0; if (s > 0 && (!best || s > best.score)) best = { score: s, idx: i }; });
-  const title = (best && rounds[best.idx])
-    ? `⚡ ${by} says you can't name more than ${best.score} ${rounds[best.idx]}`
-    : `⚡ ${by} challenged you on Prove It!`;
-  const desc = `${what}. Name as many as you can before the clock runs out, then try to beat the leaderboard. No sign-up, just click and play.`;
-  let html;
-  try { html = fs.readFileSync(path.join(__dirname, "challenge.html"), "utf8"); } catch (e) { return next(); }
   const a = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
-  html = html
-    .replace(/<meta property="og:title"[^>]*>/, `<meta property="og:title" content="${a(title)}">`)
-    .replace(/<meta property="og:description"[^>]*>/, `<meta property="og:description" content="${a(desc)}">`)
-    .replace(/<title>[^<]*<\/title>/, `<title>${a(title)}</title>`);
-  res.set("content-type", "text/html").set("cache-control", "no-cache").send(html);
+  const vars = { ...siteVars, TITLE: SITE.challenge.title, DESCRIPTION: SITE.challenge.description,
+    OG_TITLE: SITE.challenge.ogTitle, OG_DESCRIPTION: SITE.challenge.ogDescription };
+  const id = String(req.query.id || "").slice(0, 12);
+  if (id && analytics.enabled()) {
+    const c = await analytics.getChallenge(id).catch(() => null);
+    if (c) {
+      const results = await analytics.getChallengeResults(id).catch(() => []);
+      const by = c.by_name || "A friend";
+      const rounds = c.rounds || [];
+      const nRounds = rounds.length;
+      const what = c.type === "genre" && c.genre ? `${nRounds} rounds of ${c.genre}` : `${nRounds} rounds`;
+      // Pick the challenger's best single-round score + that round's category ("17 Countries in Europe").
+      // Prefer the creator's own runs; fall back to everyone's if their name isn't on the board yet.
+      const mine = results.filter((r) => (r.name || "").trim().toLowerCase() === by.trim().toLowerCase());
+      const pool = mine.length ? mine : results;
+      let best = null; // { score, idx }
+      for (const r of pool) (r.scores || []).forEach((s, i) => { s = Number(s) || 0; if (s > 0 && (!best || s > best.score)) best = { score: s, idx: i }; });
+      const title = (best && rounds[best.idx])
+        ? `⚡ ${by} says you can't name more than ${best.score} ${rounds[best.idx]}`
+        : `⚡ ${by} challenged you on Prove It!`;
+      const desc = `${what}. Name as many as you can before the clock runs out, then try to beat the leaderboard. No sign-up, just click and play.`;
+      vars.TITLE = vars.OG_TITLE = a(title);
+      vars.DESCRIPTION = vars.OG_DESCRIPTION = a(desc);
+    }
+  }
+  let template;
+  try { template = fs.readFileSync(path.join(__dirname, "challenge.html"), "utf8"); } catch (e) { return next(); }
+  res.set("content-type", "text/html").set("cache-control", "no-cache").send(render(template, vars));
 });
 
 // Always revalidate HTML/JS so the inlined CSS + game logic are never served stale
@@ -1096,7 +1148,7 @@ io.on("connection", (socket) => {
   console.log(`✅ connected: ${socket.id}`);
   online++; broadcastPresence();
   socket.on("latencyPing", (ack) => { if (typeof ack === "function") ack(); }); // RTT probe for the client's "X ms" indicator
-  socket.on("enterSingleplayer", () => { if (socket.data.session) socket.data.session.singleplayer = true; }); // they left the lobby to play the bot
+  socket.on("enterSingleplayer", () => { if (socket.data.session) socket.data.session.singleplayer = true; }); // they left the lobby for Solo/Daily
   const ip = clientIp(socket.handshake.headers, socket.handshake.address);
   socket.data.session = { connectedAt: Date.now(), device: deviceOf(socket), joined: false, spectated: false, played: false, name: null, ip, visitor_id: null, tz: null, locale: null, geo: null };
   geoLookup(ip).then((g) => { if (socket.data.session) socket.data.session.geo = g; }); // async; resolved well before disconnect

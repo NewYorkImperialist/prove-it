@@ -3,23 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Prove It!</title>
+<!-- All values below are placeholders filled in by server.js from site-config.js
+     (the single source of truth) at request time — edit site-config.js, not here. -->
+<title>{{TITLE}}</title>
 <link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='8' y='8' width='84' height='84' rx='20' fill='%23f5a623'/><text x='50' y='50' font-size='64' text-anchor='middle' dominant-baseline='central' fill='%23241500'>◎</text></svg>">
 <!-- Social preview (so the link shows a rich card in Discord / Reddit / iMessage / Twitter) -->
-<meta name="description" content="A fast, free browser bluffing word game · name as many as you can, or call your opponent's bluff. No sign-up; just click and play.">
+<meta name="description" content="{{DESCRIPTION}}">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Prove It!">
-<meta property="og:title" content="Prove It! · the bluffing word game">
-<meta property="og:description" content="Brag how many you can name, then back it up against the clock. Play free in your browser · solo vs a bot, or head-to-head with friends.">
-<meta property="og:url" content="https://proveit.fly.dev/">
-<meta property="og:image" content="https://proveit.fly.dev/og-card.png?v=4">
-<meta property="og:image:width" content="1200">
-<meta property="og:image:height" content="630">
-<meta name="twitter:image" content="https://proveit.fly.dev/og-card.png?v=4">
+<meta property="og:site_name" content="{{OG_SITE_NAME}}">
+<meta property="og:title" content="{{OG_TITLE}}">
+<meta property="og:description" content="{{OG_DESCRIPTION}}">
+<meta property="og:url" content="{{OG_URL}}">
+<meta property="og:image" content="{{OG_IMAGE}}">
+<meta property="og:image:width" content="{{OG_IMAGE_WIDTH}}">
+<meta property="og:image:height" content="{{OG_IMAGE_HEIGHT}}">
+<meta name="twitter:image" content="{{OG_IMAGE}}">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="Prove It! · the bluffing word game">
-<meta name="twitter:description" content="Brag how many you can name, then back it up against the clock. Free, no sign-up.">
-<meta name="theme-color" content="#0c0a07">
+<meta name="twitter:title" content="{{OG_TITLE}}">
+<meta name="twitter:description" content="{{TWITTER_DESCRIPTION}}">
+<meta name="theme-color" content="{{THEME_COLOR}}">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -534,7 +536,7 @@
     <button class="primary" id="soloBtn" style="margin-top:0">Play Solo</button>
     <button class="secondary" id="dailyBtn" style="width:100%;margin-top:10px;padding:13px">Daily Challenge</button>
     <button class="secondary" id="mpBtn" style="width:100%;margin-top:10px;padding:13px">Live Multiplayer</button>
-    <p class="credit">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></p>
+    <p class="credit">Created by <a href="{{CREDIT_URL}}" target="_blank" rel="noopener">{{CREDIT_NAME}}</a></p>
   </div>
 
   <!-- Multiplayer setup (its own card, like solo) -->
@@ -648,7 +650,7 @@
       <div id="sidePlayers"></div>
       <div class="side-foot">
         <div class="conn-side" id="connSide">connecting…</div>
-        <div class="note">Created by <a href="https://github.com/NewYorkImperialist" target="_blank" rel="noopener">NewYorkImperialist</a></div>
+        <div class="note">Created by <a href="{{CREDIT_URL}}" target="_blank" rel="noopener">{{CREDIT_NAME}}</a></div>
       </div>
     </div>
     <!-- big category reveal at the start of each round (fades after 3s) -->

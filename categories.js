@@ -579,7 +579,7 @@ const CATEGORY_GROUPS = {
       ["Kate Middleton","kate middleton","kate","catherine","princess of wales","duchess of cambridge"], ["Prince Harry","prince harry","harry","duke of sussex"],
       ["Meghan Markle","meghan markle","meghan","duchess of sussex"], ["Prince George","prince george","george"], ["Princess Charlotte","princess charlotte","charlotte"],
       ["Prince Louis","prince louis","louis"], ["Prince Andrew","prince andrew","andrew","duke of york"], ["Sarah Ferguson","sarah ferguson","fergie"],
-      ["Princess Beatrice","princess beatrice","beatrice"], ["Princess Eugenie","princess eugenie","eugenie"], ["Prince Edward","prince edward","edward","duke of edinburgh"],
+      ["Princess Beatrice","princess beatrice","beatrice"], ["Princess Eugenie","princess eugenie","eugenie"], ["Prince Edward","prince edward","edward"],
       ["Sophie","sophie","duchess of edinburgh","countess of wessex"], ["Princess Anne","princess anne","anne","princess royal"], ["Prince Archie","prince archie","archie"],
       ["Princess Lilibet","princess lilibet","lilibet","lili"], ["The Queen Mother","the queen mother","queen mother"], ["Princess Margaret","princess margaret","margaret"],
       ["Zara Tindall","zara tindall","zara"], ["Peter Phillips","peter phillips"], ["Mike Tindall","mike tindall"],

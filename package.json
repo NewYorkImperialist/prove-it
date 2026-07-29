@@ -4,7 +4,8 @@
   "description": "Prove It! — multiplayer server (serves the static game + Socket.IO realtime layer)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test"
   },
   "license": "MIT",
   "dependencies": {

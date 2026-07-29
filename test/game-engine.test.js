@@ -215,6 +215,7 @@ describe("handleAnswer", () => {
     engine.handleAnswer(io, room, sock("p1"), "mystery answer", () => {});
     room.game.lastAnswerAt = 0; // bypass the anti-spam cooldown; that's covered by its own test
     let ack; engine.handleAnswer(io, room, sock("p1"), "mystery answer", (r) => (ack = r));
+    assert.equal(ack.ok, true);
     assert.equal(room.game.pending.size, 1);
     assert.match(io.lastLog().text, /already counted\/awaiting/);
   });

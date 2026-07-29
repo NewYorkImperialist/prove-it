@@ -1,0 +1,90 @@
+"use strict";
+const { test, describe } = require("node:test");
+const assert = require("node:assert/strict");
+const express = require("express");
+const request = require("supertest");
+const { createAdminRouter } = require("../routes/admin.js");
+
+process.env.OWNER_KEY = "test-owner-key";
+
+// analytics.enabled() is false throughout (no TURSO_URL in the test environment) — these tests
+// cover routing + owner-key auth gating, not the Turso-backed report content.
+function buildApp({ lockdown = false } = {}) {
+  let lockdownFlag = lockdown;
+  const rooms = new Map();
+  const deps = {
+    io: { sockets: { sockets: new Map() }, emit: () => {} },
+    costGuard: { getState: () => ({ coldTripped: false, hardTripped: false, coldError: null, costOverrideMonth: null }) },
+    rooms,
+    stats: { roomsCreated: 0, gamesStarted: 0, peakRooms: 0 },
+    serverStartedAt: Date.now(),
+    getOnline: () => 0,
+    isLockdown: () => lockdownFlag,
+    setLockdown: (v) => { lockdownFlag = v; },
+    closeRoom: () => false,
+    closeAllRooms: () => 0,
+  };
+  const app = express();
+  app.use(createAdminRouter(deps));
+  return { app, rooms };
+}
+
+describe("routes/admin.js — owner-key auth gate", () => {
+  test("every /admin* route 404s with no key", async () => {
+    const { app } = buildApp();
+    for (const path of ["/admin", "/admin/health", "/admin/games", "/admin/chat", "/admin/visitors",
+      "/admin/sessions", "/admin/leaderboards", "/admin/category-leaderboards", "/admin/runs"]) {
+      const res = await request(app).get(path);
+      assert.equal(res.status, 404, path);
+    }
+  });
+
+  test("every /admin* route 404s with the wrong key", async () => {
+    const { app } = buildApp();
+    const res = await request(app).get("/admin?key=nope");
+    assert.equal(res.status, 404);
+  });
+
+  test("the dashboard renders for the correct key", async () => {
+    const { app } = buildApp();
+    const res = await request(app).get("/admin?key=test-owner-key");
+    assert.equal(res.status, 200);
+    assert.match(res.headers["content-type"], /text\/html/);
+  });
+
+  test("?json=1 returns machine-readable state instead of HTML", async () => {
+    const { app } = buildApp();
+    const res = await request(app).get("/admin?key=test-owner-key&json=1");
+    assert.equal(res.status, 200);
+    assert.equal(res.body.online, 0);
+    assert.equal(res.body.roomCount, 0);
+  });
+});
+
+describe("routes/admin.js — server controls", () => {
+  test("lockdown toggles and is reflected on the dashboard", async () => {
+    const { app } = buildApp();
+    const on = await request(app).get("/admin/lockdown?key=test-owner-key&on=1");
+    assert.equal(on.status, 302);
+    const dash = await request(app).get("/admin?key=test-owner-key");
+    assert.match(dash.text, /MAINTENANCE MODE/);
+  });
+
+  test("killall and announce redirect back to the dashboard", async () => {
+    const { app } = buildApp();
+    const killall = await request(app).get("/admin/killall?key=test-owner-key");
+    assert.equal(killall.status, 302);
+    assert.match(killall.headers.location, /^\/admin\?key=/);
+    const announce = await request(app).get("/admin/announce?key=test-owner-key&msg=hello");
+    assert.equal(announce.status, 302);
+  });
+});
+
+describe("routes/admin.js — category health", () => {
+  test("lists categories with no persistence configured", async () => {
+    const { app } = buildApp();
+    const res = await request(app).get("/admin/health?key=test-owner-key");
+    assert.equal(res.status, 200);
+    assert.match(res.text, /Persistence not configured/);
+  });
+});

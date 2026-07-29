@@ -52,6 +52,7 @@ function setTimer(room, ms, fn, { deadline = true } = {}) {
   g.timerFn = fn; g.timerMs = ms; g.timerDeadline = deadline; // remembered so a paused timer can resume
   g.deadline = deadline ? Date.now() + ms : null;
   g.timeout = setTimeout(() => { g.timeout = null; fn(); }, ms);
+  if (g.timeout.unref) g.timeout.unref(); // don't keep the process alive just for a round timer
 }
 
 // Freeze the clock when a player drops; resume re-arms it with the time that was left.

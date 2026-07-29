@@ -372,7 +372,7 @@ async function categoryLeaderboard(catName, limit = 50) {
 // → to top it you need to name a lot, across many categories, quickly. One fast fluke or one slow grind can't.
 const GEO_REF_PACE = 3; // seconds/answer scoring a neutral 1.0× (faster → toward 2×, slower → toward 0.5×)
 async function geoGoat(limit = 50) {
-  const CATEGORY_GROUPS = require("./categories.js");
+  const CATEGORY_GROUPS = require("./public/categories.js");
   const geoCats = new Map(); // geography category name → total item count
   if (CATEGORY_GROUPS.Geography) for (const c of CATEGORY_GROUPS.Geography.cats) geoCats.set(c.name, (c.items || []).length);
   const chs = await q(`SELECT id, rounds FROM challenges`);

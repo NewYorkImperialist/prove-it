@@ -5,7 +5,7 @@ const assert = require("node:assert/strict");
 // capitals.js is browser-only (it assigns straight to `window.*`); stub `window` before
 // requiring so it runs unmodified under Node, then read the data back off the stub.
 global.window = {};
-require("../capitals.js");
+require("../public/capitals.js");
 const { CAPITALS, US_CAPITALS } = global.window;
 delete global.window;
 

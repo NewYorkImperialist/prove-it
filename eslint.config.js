@@ -2,8 +2,9 @@
 const js = require("@eslint/js");
 const globals = require("globals");
 
-// server.js and friends run under Node (CommonJS); app.js/geomap.js/capitals.js/categories.js
-// are loaded straight into the browser via <script> tags (no bundler, no modules) — see index.html.
+// server.js and friends run under Node (CommonJS); public/app.js, public/geomap.js,
+// public/capitals.js, public/categories.js are loaded straight into the browser via <script>
+// tags (no bundler, no modules) — see public/index.html.
 module.exports = [
   js.configs.recommended,
   {
@@ -20,7 +21,7 @@ module.exports = [
     // Plain (non-module) <script>-loaded browser files — index.html loads
     // categories.js/capitals.js/geomap.js/app.js in that order, so top-level
     // bindings from one are visible as globals in the next.
-    files: ["app.js", "geomap.js", "capitals.js", "categories.js"],
+    files: ["public/app.js", "public/geomap.js", "public/capitals.js", "public/categories.js"],
     languageOptions: {
       sourceType: "script",
       globals: globals.browser,
@@ -29,11 +30,11 @@ module.exports = [
   {
     // categories.js is dual-mode: also `require()`d by game-engine.js under
     // Node — see its trailing module.exports guard.
-    files: ["categories.js"],
+    files: ["public/categories.js"],
     languageOptions: { globals: { module: "readonly" } },
   },
   {
-    files: ["app.js"],
+    files: ["public/app.js"],
     languageOptions: {
       globals: {
         io: "readonly", // socket.io.js (loaded from /socket.io/socket.io.js)

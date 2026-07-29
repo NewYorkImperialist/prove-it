@@ -31,7 +31,7 @@ To play a friend specifically: open the site, hit **Create a room**, and share t
 ## Content
 Thousands of verified answers across dozens of categories — Sports, Geography, History, Entertainment, Food, Animals, Music, Brands, Computer Science, Math, Science, Art, and Pop Culture (yes, including memes and Italian brainrot).
 
-Want to add your own? Edit **`categories.js`** — each entry is `"Name"` or `["Canonical","alias", …]` (aliases all match but count once). The header comment in that file explains the format; no code changes needed.
+Want to add your own? Edit **`public/categories.js`** — each entry is `"Name"` or `["Canonical","alias", …]` (aliases all match but count once). The header comment in that file explains the format; no code changes needed.
 
 ## Tech
 Vanilla HTML/CSS/JS on the front end. **Node + Express + Socket.IO** for realtime multiplayer, deployed on **Fly.io**, with persistent game analytics via **Turso (libSQL)**.

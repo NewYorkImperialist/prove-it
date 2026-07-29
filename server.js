@@ -63,11 +63,11 @@ engine.setReporter((room, type, extra) => {
 let indexTemplate = null;
 app.get("/", (req, res) => {
   try {
-    if (!indexTemplate || process.env.NODE_ENV !== "production") indexTemplate = fs.readFileSync(path.join(__dirname, "index.html"), "utf8");
+    if (!indexTemplate || process.env.NODE_ENV !== "production") indexTemplate = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf8");
     const html = render(indexTemplate, { ...siteVars, TITLE: SITE.home.title, DESCRIPTION: SITE.home.description,
       OG_TITLE: SITE.home.ogTitle, OG_DESCRIPTION: SITE.home.ogDescription, TWITTER_DESCRIPTION: SITE.home.twitterDescription });
     res.set("content-type", "text/html").send(html);
-  } catch (e) { res.sendFile(path.join(__dirname, "index.html")); }
+  } catch (e) { res.sendFile(path.join(__dirname, "public", "index.html")); }
 });
 
 // Owner-only live dashboard (gated by the OWNER_KEY secret) — see routes/admin.js.
@@ -78,7 +78,7 @@ app.use(createChallengeRouter({ isLockdown }));
 
 // Always revalidate HTML/JS so the inlined CSS + game logic are never served stale
 // (matters because we push UI tweaks frequently and the link is shared publicly).
-app.use(express.static(path.join(__dirname), {
+app.use(express.static(path.join(__dirname, "public"), {
   setHeaders(res, filePath) {
     if (/\.(html|js)$/.test(filePath)) res.setHeader("Cache-Control", "no-cache");
   },

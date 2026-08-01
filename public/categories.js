@@ -114,6 +114,9 @@ const CATEGORY_GROUPS = {
       "Marta", ["Mia Hamm","mia hamm"], ["Megan Rapinoe","megan rapinoe","rapinoe"], ["Alex Morgan","alex morgan"],
       ["Abby Wambach","abby wambach","wambach"], ["Sam Kerr","sam kerr"], ["Alexia Putellas","alexia putellas","putellas"],
       ["Aitana Bonmatí","aitana bonmati","bonmati"],
+      ["Lamine Yamal","lamine yamal","yamal"], ["Pau Cubarsí","pau cubarsi","cubarsi"], ["Johan Manzambi","manzambi"],
+      ["Ayyoub Bouaddi","bouaddi"], ["Yan Diomande","diomande"], ["Alex Freeman","alex freeman"],
+      ["Gustavo Puerta","gustavo puerta","puerta"], ["Nathan Saliba","saliba"], ["Nestory Irankunda","irankunda"],
     ]},
     { name: "NBA Players", items: [
       ["LeBron James","lebron","king james","the king"], ["Stephen Curry","curry","steph","chef curry"],
@@ -274,7 +277,7 @@ const CATEGORY_GROUPS = {
       "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Haiti",
       "Honduras", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy",
       ["Ivory Coast","ivory coast","cote d'ivoire","cote divoire"], "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati",
-      "Kosovo", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", "Liechtenstein", "Lithuania",
+      "Kosovo", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", ["Liechtenstein","liechtenstein","listhenstein","listenshtein","lictenshtein"], "Lithuania",
       "Luxembourg", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania", "Mauritius",
       "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", ["Myanmar","myanmar","burma"],
       "Namibia", "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", ["North Korea","north korea","dprk"],
@@ -288,7 +291,7 @@ const CATEGORY_GROUPS = {
       "Sweden", "Switzerland", "Syria", "Taiwan", "Tajikistan", "Tanzania", "Thailand", ["Timor-Leste","timor-leste","east timor"],
       "Togo", "Tonga", ["Trinidad and Tobago","trinidad and tobago","trinidad"], "Tunisia", ["Turkey","turkey","turkiye"], "Turkmenistan",
       "Tuvalu", "Uganda", "Ukraine", ["United Arab Emirates","united arab emirates","uae"],
-      ["United Kingdom","united kingdom","uk","britain","great britain"], ["United States","united states","usa","us","america","united states of america"],
+      ["United Kingdom","united kingdom","uk","britain","great britain","england","scotland","wales"], ["United States","united states","usa","us","america","united states of america"],
       "Uruguay", "Uzbekistan", "Vanuatu", ["Vatican City","vatican city","vatican","holy see"], "Venezuela", "Vietnam", "Yemen", "Zambia", "Zimbabwe",
     ]},
     { name: "Major American Cities", items: [
@@ -316,7 +319,7 @@ const CATEGORY_GROUPS = {
       "Greece","Turkey","Russia","Ukraine","Belarus", ["Czechia","czechia","czech republic"], "Slovakia","Hungary",
       "Romania","Bulgaria","Croatia","Serbia","Slovenia", ["Bosnia and Herzegovina","bosnia and herzegovina","bosnia"],
       "Montenegro", ["North Macedonia","north macedonia","macedonia"], "Kosovo","Albania","Estonia","Latvia","Lithuania",
-      "Luxembourg","Malta","Cyprus","Moldova","Andorra","Liechtenstein","Monaco","San Marino",
+      "Luxembourg","Malta","Cyprus","Moldova","Andorra", ["Liechtenstein","liechtenstein","listhenstein","listenshtein","lictenshtein"], "Monaco","San Marino",
       ["Vatican City","vatican city","vatican"],
     ]},
     { name: "US State Capitals", exact: true, items: [
@@ -369,7 +372,7 @@ const CATEGORY_GROUPS = {
       ["Vatican City","vatican city","vatican"], "Caracas", "Hanoi", ["Sanaa","sanaa","sana'a"], "Lusaka", "Harare",
     ]},
     { name: "Countries in Asia", items: [
-      "China","India","Japan","South Korea","North Korea","Vietnam","Thailand","Cambodia","Laos","Myanmar","Malaysia",
+      "China","India","Japan","South Korea","North Korea","Vietnam","Thailand","Cambodia","Laos",["Myanmar","myanmar","burma"],"Malaysia",
       "Singapore","Indonesia","Philippines","Mongolia","Kazakhstan","Uzbekistan","Turkmenistan","Kyrgyzstan","Tajikistan",
       "Afghanistan","Pakistan","Bangladesh","Sri Lanka","Nepal","Bhutan","Iran","Iraq","Saudi Arabia","Yemen","Oman",
       ["United Arab Emirates","uae","united arab emirates"], "Qatar","Bahrain","Kuwait","Jordan","Israel","Lebanon",
@@ -380,7 +383,7 @@ const CATEGORY_GROUPS = {
       "Algeria","Angola","Benin","Botswana","Burkina Faso","Burundi", ["Cabo Verde","cabo verde","cape verde"],
       "Cameroon", ["Central African Republic","central african republic","car"], "Chad","Comoros",
       ["Republic of the Congo","republic of the congo","congo-brazzaville","congo brazzaville"],
-      ["DR Congo","dr congo","democratic republic of the congo","drc","congo-kinshasa","congo kinshasa"],
+      ["DR Congo","dr congo","democratic republic of the congo","democratic republic of congo","drc","rdc","congo-kinshasa","congo kinshasa"],
       ["Côte d'Ivoire","cote d'ivoire","cote divoire","ivory coast"], "Djibouti","Egypt","Equatorial Guinea","Eritrea",
       ["Eswatini","eswatini","swaziland"], "Ethiopia","Gabon", ["The Gambia","the gambia","gambia"], "Ghana","Guinea",
       ["Guinea-Bissau","guinea-bissau","guinea bissau"], "Kenya","Lesotho","Liberia","Libya","Madagascar","Malawi","Mali",
@@ -429,6 +432,7 @@ const CATEGORY_GROUPS = {
       ["Yellow Sea","yellow sea"], ["Sea of Japan","sea of japan"], ["Bering Sea","bering sea"], ["Coral Sea","coral sea"],
       ["Tasman Sea","tasman sea"], ["Sea of Okhotsk","sea of okhotsk"], ["Andaman Sea","andaman sea"],
       ["Adriatic Sea","adriatic sea","adriatic"], ["Aegean Sea","aegean sea","aegean"], ["Sargasso Sea","sargasso sea"], ["Strait of Hormuz","strait of hormuz","hormuz"],
+      ["Dead Sea","dead sea"], ["Barents Sea","barents sea","barents"],
     ]},
     { name: "Countries in Oceania", exact: true, items: [
       "Australia","New Zealand","Papua New Guinea","Fiji","Solomon Islands","Vanuatu","Samoa","Tonga","Kiribati",

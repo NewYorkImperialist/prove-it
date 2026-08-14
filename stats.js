@@ -105,6 +105,15 @@ function recordSession(s) {
 async function q(sql, args) { if (!client) return []; try { return (await client.execute(args ? { sql, args } : sql)).rows; } catch (e) { console.error("📊 stats read:", e.message); return []; } }
 const one = async (sql, args) => (await q(sql, args))[0] || null;
 
+// Live DB health check for the admin dashboard — a real round-trip query (not just "is the client
+// object configured"), so a Turso outage shows up even though everything else fails silently/no-ops.
+async function ping() {
+  if (!client) return { configured: false, ok: false };
+  const start = Date.now();
+  try { await client.execute("SELECT 1"); return { configured: true, ok: true, ms: Date.now() - start }; }
+  catch (e) { return { configured: true, ok: false, error: e.message, ms: Date.now() - start }; }
+}
+
 async function summary() {
   if (!client) return null;
   // "All-time history" totals are MULTIPLAYER duels; single-player gets its own block. Content metrics (categories/answers/skips) pool both.
@@ -483,4 +492,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet };
+module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet };

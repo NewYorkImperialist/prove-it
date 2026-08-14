@@ -59,6 +59,29 @@ describe("routes/admin.js — owner-key auth gate", () => {
     assert.equal(res.body.online, 0);
     assert.equal(res.body.roomCount, 0);
   });
+
+  test("?json=1 reports DB and cost-guard health even with persistence off", async () => {
+    const { app } = buildApp();
+    const res = await request(app).get("/admin?key=test-owner-key&json=1");
+    assert.equal(res.body.db.configured, false);
+    assert.equal(res.body.db.ok, false);
+    assert.equal(res.body.costGuard.hardTripped, false);
+    assert.equal(res.body.lockdown, false);
+  });
+
+  test("the HTML dashboard's site-health panel reflects a cost-cap pause", async () => {
+    const rooms = new Map();
+    const deps = {
+      io: { sockets: { sockets: new Map() }, emit: () => {} },
+      costGuard: { getState: () => ({ coldTripped: false, hardTripped: true, coldError: null, costOverrideMonth: null }) },
+      rooms, stats: { roomsCreated: 0, gamesStarted: 0, peakRooms: 0 }, serverStartedAt: Date.now(),
+      getOnline: () => 0, isLockdown: () => false, setLockdown: () => {}, closeRoom: () => false, closeAllRooms: () => 0,
+    };
+    const app = express();
+    app.use(createAdminRouter(deps));
+    const res = await request(app).get("/admin?key=test-owner-key");
+    assert.match(res.text, /PAUSED \(cost cap\)/);
+  });
 });
 
 describe("routes/admin.js — server controls", () => {

@@ -59,6 +59,33 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       game: gamePeek(room),
     }));
   }
+  // Top-of-page at-a-glance health check — meant to answer "is it the server, the DB, or my own
+  // network?" in one look, without digging into the cost/bandwidth section further down.
+  function siteHealthHtml(dbPing, now) {
+    const { coldTripped, hardTripped } = costGuard.getState();
+    const site = isLockdown()
+      ? { dot: "🔴", label: "MAINTENANCE MODE", detail: "you turned this on — players are blocked until you turn it back off" }
+      : hardTripped
+      ? { dot: "🔴", label: "PAUSED (cost cap)", detail: "players are getting the \"resting for the month\" page, not the real site — this is why the site can look \"down\" while /admin still works" }
+      : coldTripped
+      ? { dot: "🟡", label: "COLD-START MODE", detail: "machine scales to zero when idle — first visitor after a quiet spell waits ~1-3s" }
+      : { dot: "🟢", label: "Serving normally", detail: "no maintenance mode, no cost-cap pause" };
+    const db = !dbPing.configured
+      ? { dot: "⚪", label: "Not configured", detail: "TURSO_URL/TURSO_TOKEN not set — history/leaderboards are off, but the game itself is unaffected" }
+      : dbPing.ok
+      ? { dot: "🟢", label: `Connected (${dbPing.ms}ms)`, detail: "" }
+      : { dot: "🔴", label: "UNREACHABLE", detail: esc(dbPing.error || "query failed") };
+    const upMs = now - serverStartedAt;
+    const freshRestart = upMs < 5 * 60000; // booted in the last 5 minutes — worth flagging as a possible clue
+    return `
+      <div class="pills" style="margin-bottom:14px">
+        <span class="pill">🌐 Website: ${site.dot} <b>${site.label}</b></span>
+        <span class="pill">🗄️ Database: ${db.dot} <b>${db.label}</b></span>
+        <span class="pill">🖥️ Server up: <b>${fmtDur(upMs)}</b>${freshRestart ? " ⚠️ restarted recently" : ""}</span>
+        <span class="pill">🔌 Live connections: <b>${getOnline()}</b></span>
+      </div>
+      ${site.detail || db.detail ? `<p class="sub" style="margin:-8px 0 14px">${site.detail ? `🌐 ${site.detail}` : ""}${site.detail && db.detail ? " · " : ""}${db.detail ? `🗄️ ${db.detail}` : ""}</p>` : ""}`;
+  }
   function costHtml(bw, now, k) {
     if (!bw) return "";
     const { coldTripped, hardTripped, coldError, costOverrideMonth } = costGuard.getState();
@@ -182,10 +209,12 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     if (req.query.json) {
       const hist = analytics.enabled() ? await analytics.summary().catch(() => null) : null;
       const bw = analytics.enabled() ? await analytics.bandwidthStats().catch(() => null) : null;
-      return res.json({ now, uptimeMs: now - serverStartedAt, online: getOnline(), stats, history: hist, bandwidth: bw, roomCount: list.length, rooms: list });
+      const dbPing = await analytics.ping().catch(() => ({ configured: false, ok: false }));
+      return res.json({ now, uptimeMs: now - serverStartedAt, online: getOnline(), stats, history: hist, bandwidth: bw, roomCount: list.length, rooms: list, db: dbPing, costGuard: costGuard.getState(), lockdown: isLockdown() });
     }
     const hist = analytics.enabled() ? await analytics.summary().catch(() => null) : null;
     const bw = analytics.enabled() ? await analytics.bandwidthStats().catch(() => null) : null;
+    const dbPing = await analytics.ping().catch(() => ({ configured: false, ok: false }));
     const playing = list.filter((r) => r.status === "playing").length;
     const k = encodeURIComponent(req.query.key || "");
     const card = (r) => {
@@ -210,7 +239,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       </div>`;
     };
     res.set("content-type", "text/html").send(`<!doctype html><html><head><meta charset="utf-8">
-      <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="15">
+      <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60">
       <title>${SITE.adminDashboard.title}</title><style>
       body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
       h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;margin:0 0 6px;font-size:13px}
@@ -233,7 +262,8 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       .announce button,.announce a.preset{background:#2a3040;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none}
       .announce a.preset{background:#3a2030;color:#ffb4b4} .announce .lbl{font-size:12px;color:#8a92a6;margin-right:4px}</style></head>
       <body><h1>${SITE.adminDashboard.heading}</h1>
-      <p class="sub">🟢 <b style="color:#3ecf8e">${getOnline()}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 4s · ${easternFull(now)}</p>
+      <p class="sub">🟢 <b style="color:#3ecf8e">${getOnline()}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 60s · ${easternFull(now)}</p>
+      ${siteHealthHtml(dbPing, now)}
       <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
       ${costHtml(bw, now, k)}
       <div class="announce">

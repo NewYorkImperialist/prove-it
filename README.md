@@ -2,9 +2,11 @@
 
 ### ▶ Play now → **https://proveit.fly.dev**
 
-A fast, free browser **bluffing word game**. You get a category — *Football Players, Programming Languages, Famous Mathematicians, Minecraft Mobs, Countries* — and you brag about how many you can name. You and your opponent trade raises ("I can name 7"… "make it 8") until someone calls **"Prove it!"** — and the bluffer has to back it up against the clock.
+**The bluffing game Scattergories wishes it was.** You get a category — *Football Players, Programming Languages, Famous Mathematicians, Minecraft Mobs, Countries* — and instead of just listing answers, you **brag about how many you can name.** Your opponent doesn't know if you're bluffing. Neither do you, really, until the clock is running and you're sweating out #7.
 
-**No install, no sign-up.** Click the link and you're playing.
+You trade raises ("I can name 7"… "make it 8") until someone calls **"Prove it!"** — and the bluffer has to back it up before time runs out. Nail it and you take the round. Choke and they do.
+
+**No install, no sign-up, no ads.** Click the link, you're in a round in seconds.
 
 ## How to play
 **Multiplayer** is a bluffing duel:
@@ -21,6 +23,12 @@ A fast, free browser **bluffing word game**. You get a category — *Football Pl
 - 🕹️ **Solo** — pick a category, or build a custom multi-round run, and race the clock alone. No opponent needed.
 - 📅 **Daily Challenge** — the same puzzle for everyone each day, with a shared leaderboard. Share your score and challenge friends to beat it.
 
+## Why it hits different
+- **The bluff is the game.** Most naming games end when you run out of answers. Here, the tension is deciding *when to stop raising* — pure "chicken" energy, not trivia recall.
+- **250+ categories, ~11,000 verified answers** — deep enough that regulars still get surprised, wide enough that non-nerds can hang.
+- **Real-time, not turn-based.** Raises and calls happen live over Socket.IO — no refreshing, no waiting on someone's turn.
+- **A few secrets** hidden in the category list that we're not going to spoil here.
+
 ## Share it
 This is built to be passed around — drop the link in your group chat, Discord, or subreddit and anyone can click and play instantly:
 
@@ -29,7 +37,7 @@ This is built to be passed around — drop the link in your group chat, Discord,
 To play a friend specifically: open the site, hit **Create a room**, and share the room link/code — or copy a `?room=CODE` invite link straight from the lobby.
 
 ## Content
-Thousands of verified answers across dozens of categories — Sports, Geography, History, Entertainment, Food, Animals, Music, Brands, Computer Science, Math, Science, Art, and Pop Culture (yes, including memes and Italian brainrot).
+**250+ categories, ~11,000 verified answers**, spanning Sports, Geography, History, Entertainment, Food, Animals, Music, Brands, Computer Science, Math, Science, Art, Mythology, Games & Puzzles, and Pop Culture (yes, including memes and Italian brainrot).
 
 Want to add your own? Edit **`public/categories.js`** — each entry is `"Name"` or `["Canonical","alias", …]` (aliases all match but count once). The header comment in that file explains the format; no code changes needed.
 

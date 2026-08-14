@@ -12,6 +12,7 @@
   "dependencies": {
     "@libsql/client": "^0.17.4",
     "express": "^5.2.1",
+    "obscenity": "^0.4.6",
     "socket.io": "^4.8.3"
   },
   "devDependencies": {

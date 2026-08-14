@@ -1,0 +1,45 @@
+"use strict";
+const { test, describe } = require("node:test");
+const assert = require("node:assert/strict");
+const { cleanName } = require("../lib/name-filter.js");
+
+describe("cleanName", () => {
+  test("leaves ordinary names untouched", () => {
+    assert.equal(cleanName("Jayden"), "Jayden");
+    assert.equal(cleanName("mark"), "mark");
+    assert.equal(cleanName("sigma"), "sigma");
+  });
+
+  test("blocks a straightforward slur", () => {
+    assert.equal(cleanName("Nigga"), "Anon");
+  });
+
+  test("blocks leetspeak evasion", () => {
+    assert.equal(cleanName("n1gg4"), "Anon");
+  });
+
+  test("blocks spaced/punctuated evasion", () => {
+    assert.equal(cleanName("n i g g a"), "Anon");
+    assert.equal(cleanName("n.i.g.g.e.r"), "Anon");
+  });
+
+  test("blocks ordinary profanity too", () => {
+    assert.equal(cleanName("fuck you"), "Anon");
+  });
+
+  test("does not false-positive on words that merely contain a blocked substring", () => {
+    assert.equal(cleanName("Scunthorpe"), "Scunthorpe");
+    assert.equal(cleanName("class"), "class");
+    assert.equal(cleanName("Cockburn"), "Cockburn");
+  });
+
+  test("blank input falls back to Anon", () => {
+    assert.equal(cleanName(""), "Anon");
+    assert.equal(cleanName(null), "Anon");
+    assert.equal(cleanName(undefined), "Anon");
+  });
+
+  test("trims whitespace", () => {
+    assert.equal(cleanName("  Jayden  "), "Jayden");
+  });
+});

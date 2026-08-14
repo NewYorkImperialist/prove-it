@@ -9,6 +9,7 @@ const SITE = require("../site-config");
 const { render, siteVars } = require("../lib/render.js");
 const { easternDay } = require("../lib/html.js");
 const { CATEGORY_GROUPS, CAT_SIZES, ALL_CAT_NAMES } = require("../lib/category-data.js");
+const { cleanName } = require("../lib/name-filter.js");
 
 const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char url-safe id
 
@@ -48,7 +49,7 @@ function createChallengeRouter({ isLockdown }) {
     if (rounds.length < 1) return res.json({ ok: false, error: "Pick at least one valid category." });
     const tt = parseInt(b.timer, 10); const timer = tt === 0 ? 0 : ((tt >= 5 && tt <= 1800) ? tt : 45); // 0 = recommended per round; else 5s–30min
     const id = newChallengeId();
-    const ok = await analytics.createChallenge({ id, type, genre: String(b.genre || "").slice(0, 40), rounds, by: String(b.by || "A friend").slice(0, 24), timer });
+    const ok = await analytics.createChallenge({ id, type, genre: String(b.genre || "").slice(0, 40), rounds, by: cleanName(String(b.by || "A friend").slice(0, 24)), timer });
     res.json(ok ? { ok: true, id } : { ok: false, error: "Could not save challenge." });
   });
   router.get("/challenge/:id", async (req, res) => {
@@ -72,7 +73,7 @@ function createChallengeRouter({ isLockdown }) {
     const gid = String(b.gid || "").slice(0, 40); // links this run to its captured guesses
     // play origin — keeps the solo-map geography boards separate from daily/shared-link plays.
     const mode = id.startsWith("d-") ? "daily" : (["solo", "link"].includes(b.mode) ? b.mode : "solo");
-    await analytics.addChallengeResult({ challenge_id: id, name: String(b.name || "Anon").slice(0, 24), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, times, crown, gid, mode });
+    await analytics.addChallengeResult({ challenge_id: id, name: cleanName(String(b.name || "Anon").slice(0, 24)), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, times, crown, gid, mode });
     res.json({ ok: true });
   });
   // Rename a player's leaderboard entries everywhere (all challenges/days). Owner key → also renames
@@ -80,8 +81,9 @@ function createChallengeRouter({ isLockdown }) {
   router.post("/challenge/rename", async (req, res) => {
     if (!analytics.enabled()) return res.json({ ok: false });
     const b = req.body || {};
-    const name = String(b.name || "").slice(0, 24).trim();
-    if (!name) return res.json({ ok: false });
+    const rawName = String(b.name || "").slice(0, 24).trim();
+    if (!rawName) return res.json({ ok: false });
+    const name = cleanName(rawName);
     const visitorId = String(b.visitorId || "").slice(0, 40) || null;
     const crownAll = !!(process.env.OWNER_KEY && b.ownerKey === process.env.OWNER_KEY);
     if (!visitorId && !crownAll) return res.json({ ok: false });
@@ -102,7 +104,7 @@ function createChallengeRouter({ isLockdown }) {
       verdict: ["ok", "miss", "dup"].includes(g.verdict) ? g.verdict : null,
       at: Math.max(0, parseInt(g.at, 10) || Date.now()),
     }));
-    analytics.recordSoloGuesses({ gid, challengeId: id, category: String(b.category || "").slice(0, 80), name: String(b.name || "").slice(0, 24), mode: id.startsWith("d-") ? "daily" : "solo", guesses });
+    analytics.recordSoloGuesses({ gid, challengeId: id, category: String(b.category || "").slice(0, 80), name: cleanName(String(b.name || "").slice(0, 24)), mode: id.startsWith("d-") ? "daily" : "solo", guesses });
     res.json({ ok: true });
   });
   router.get("/challenge/:id/results", async (req, res) => {

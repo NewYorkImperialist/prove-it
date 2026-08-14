@@ -1,7 +1,7 @@
 "use strict";
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
-const { cleanName } = require("../lib/name-filter.js");
+const { cleanName, isBlocked } = require("../lib/name-filter.js");
 
 describe("cleanName", () => {
   test("leaves ordinary names untouched", () => {
@@ -41,5 +41,21 @@ describe("cleanName", () => {
 
   test("trims whitespace", () => {
     assert.equal(cleanName("  Jayden  "), "Jayden");
+  });
+});
+
+describe("isBlocked", () => {
+  test("flags profanity/slurs and their evasions", () => {
+    assert.equal(isBlocked("Nigga"), true);
+    assert.equal(isBlocked("n1gg4"), true);
+    assert.equal(isBlocked("fuck you"), true);
+  });
+  test("passes clean names and whitelisted lookalikes", () => {
+    assert.equal(isBlocked("Jayden"), false);
+    assert.equal(isBlocked("Scunthorpe"), false);
+  });
+  test("blank input is not considered blocked", () => {
+    assert.equal(isBlocked(""), false);
+    assert.equal(isBlocked(null), false);
   });
 });

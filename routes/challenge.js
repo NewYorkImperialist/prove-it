@@ -9,7 +9,7 @@ const SITE = require("../site-config");
 const { render, siteVars } = require("../lib/render.js");
 const { easternDay } = require("../lib/html.js");
 const { CATEGORY_GROUPS, CAT_SIZES, ALL_CAT_NAMES } = require("../lib/category-data.js");
-const { cleanName } = require("../lib/name-filter.js");
+const { cleanName, isBlocked } = require("../lib/name-filter.js");
 
 const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char url-safe id
 
@@ -39,6 +39,12 @@ const dailyId = (date) => "d-" + date.replace(/-/g, ""); // e.g. d-20260624 (10 
 // isLockdown: the owner maintenance kill-switch, from rooms.js's createRooms() instance.
 function createChallengeRouter({ isLockdown }) {
   const router = express.Router();
+
+  // Client-side pre-check so the UI can reject a bad name before submitting it, instead of
+  // silently swapping it for "Anon" server-side (that swap still happens as a backstop below).
+  router.get("/name-check", (req, res) => {
+    res.json({ ok: !isBlocked(req.query.name) });
+  });
 
   router.post("/challenge", async (req, res) => {
     const b = req.body || {};

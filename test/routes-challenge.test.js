@@ -30,6 +30,14 @@ describe("routes/challenge.js", () => {
     assert.match(res.body.error, /persistence/);
   });
 
+  test("GET /name-check flags a blocked name and passes a clean one, without needing persistence", async () => {
+    const app = buildApp(() => false);
+    const bad = await request(app).get("/name-check").query({ name: "n1gg4" });
+    assert.equal(bad.body.ok, false);
+    const good = await request(app).get("/name-check").query({ name: "Jayden" });
+    assert.equal(good.body.ok, true);
+  });
+
   test("GET /daily reports missing persistence", async () => {
     const app = buildApp(() => false);
     const res = await request(app).get("/daily");

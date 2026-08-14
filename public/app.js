@@ -1780,12 +1780,31 @@ $("shareBtn").onclick = (e) => {
 };
 $("refreshLB").onclick = () => renderLeaderboard($("lbWrap"));
 $("newChallenge").onclick = () => { if (isDaily) window.PI.showHome(); else backToStart(); };
+function shakeEl(el) {
+  el.classList.remove("shake");
+  void el.offsetWidth; // restart animation
+  el.classList.add("shake");
+  el.addEventListener("animationend", () => el.classList.remove("shake"), { once: true });
+}
+// Ask the server whether a name is profanity/slur-blocked. Fails open (not blocked) on a network
+// hiccup — the server still refuses to persist a bad name as a last-resort backstop either way.
+async function isNameBlocked(name) {
+  try { const r = await fetch(`/name-check?name=${encodeURIComponent(name)}`); const d = await r.json(); return d && d.ok === false; }
+  catch (e) { return false; }
+}
 // Daily: opt-in arcade leaderboard submit/update (resubmittable — keeps your best total, newest name).
 // Uses the in-memory run if you just played, else the run persisted in localStorage (so the laurel
 // modal can rename your entry later today after a reload).
-async function submitDailyResult(name, btn) {
-  const n = String(name || "").trim().slice(0, 20);
-  if (!n) return false;
+async function submitDailyResult(inputEl, btn, errEl) {
+  const n = String(inputEl.value || "").trim().slice(0, 20);
+  if (errEl) errEl.textContent = "";
+  if (!n) { inputEl.focus(); return false; }
+  if (await isNameBlocked(n)) {
+    shakeEl(inputEl);
+    if (errEl) errEl.textContent = "That name isn't allowed — try a different one.";
+    inputEl.focus();
+    return false;
+  }
   rememberName(n);
   let scores = (isDaily && roundScores.length) ? roundScores : null, wpms = (isDaily && roundWpm.length) ? roundWpm : null, times = (isDaily && roundScores.length) ? roundTimes : null, gid = runGid;
   if (!scores) { let run = null; try { run = JSON.parse(localStorage.getItem("daily_run") || "null"); } catch (e) {} if (run && run.date === todayEastern()) { scores = run.scores || []; wpms = run.wpms || []; times = run.times || []; gid = run.gid || ""; } }
@@ -1797,8 +1816,8 @@ async function submitDailyResult(name, btn) {
   if (btn) { btn.disabled = false; btn.textContent = "Update my entry"; }
   return true;
 }
-$("dailySubmit").onclick = async () => { if (await submitDailyResult($("dailyName").value, $("dailySubmit"))) renderLeaderboard($("lbWrap")); else $("dailyName").focus(); };
-$("lbUpdate").onclick = async () => { if (await submitDailyResult($("lbName").value, $("lbUpdate"))) openTodayBoard(); else $("lbName").focus(); };
+$("dailySubmit").onclick = async () => { if (await submitDailyResult($("dailyName"), $("dailySubmit"), $("dailyNameErr"))) renderLeaderboard($("lbWrap")); };
+$("lbUpdate").onclick = async () => { if (await submitDailyResult($("lbName"), $("lbUpdate"), $("lbNameErr"))) openTodayBoard(); };
 
 // top-of-page → back to the beginning (fresh build screen), no page reload
 function backToStart() {

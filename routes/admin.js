@@ -61,7 +61,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
   }
   // Top-of-page at-a-glance health check — meant to answer "is it the server, the DB, or my own
   // network?" in one look, without digging into the cost/bandwidth section further down.
-  function siteHealthHtml(dbPing, now) {
+  function siteHealthHtml(dbPing, now, k) {
     const { coldTripped, hardTripped } = costGuard.getState();
     const site = isLockdown()
       ? { dot: "🔴", label: "MAINTENANCE MODE", detail: "you turned this on — players are blocked until you turn it back off" }
@@ -79,12 +79,35 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const freshRestart = upMs < 5 * 60000; // booted in the last 5 minutes — worth flagging as a possible clue
     return `
       <div class="pills" style="margin-bottom:14px">
+        <span class="pill">🧑‍💻 Your connection: <span id="myConn">checking…</span></span>
         <span class="pill">🌐 Website: ${site.dot} <b>${site.label}</b></span>
         <span class="pill">🗄️ Database: ${db.dot} <b>${db.label}</b></span>
         <span class="pill">🖥️ Server up: <b>${fmtDur(upMs)}</b>${freshRestart ? " ⚠️ restarted recently" : ""}</span>
         <span class="pill">🔌 Live connections: <b>${getOnline()}</b></span>
       </div>
-      ${site.detail || db.detail ? `<p class="sub" style="margin:-8px 0 14px">${site.detail ? `🌐 ${site.detail}` : ""}${site.detail && db.detail ? " · " : ""}${db.detail ? `🗄️ ${db.detail}` : ""}</p>` : ""}`;
+      ${site.detail || db.detail ? `<p class="sub" style="margin:-8px 0 14px">${site.detail ? `🌐 ${site.detail}` : ""}${site.detail && db.detail ? " · " : ""}${db.detail ? `🗄️ ${db.detail}` : ""}</p>` : ""}
+      <script>
+        // Client-side check, independent of this page's own 60s reload — so a dropped connection
+        // shows up immediately instead of waiting for the next full refresh (or looking identical
+        // to "the server is down" when it's actually just this device's network).
+        (function () {
+          var el = document.getElementById("myConn");
+          function paint(html) { el.innerHTML = html; }
+          function check() {
+            if (!navigator.onLine) { paint("🔴 <b>Offline</b> — your browser reports no network"); return; }
+            var start = performance.now();
+            fetch("/admin/ping?key=${k}", { cache: "no-store" }).then(function (r) {
+              if (!r.ok) throw new Error("bad status");
+              var ms = Math.round(performance.now() - start);
+              paint(ms > 800 ? "🟡 <b>Slow</b> (" + ms + "ms to reach the server)" : "🟢 <b>Connected</b> (" + ms + "ms)");
+            }).catch(function () { paint("🔴 <b>Can't reach the server</b> from this browser right now"); });
+          }
+          check();
+          setInterval(check, 10000);
+          window.addEventListener("online", check);
+          window.addEventListener("offline", check);
+        })();
+      </script>`;
   }
   function costHtml(bw, now, k) {
     if (!bw) return "";
@@ -202,6 +225,13 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       <p class="stats" style="opacity:.6">Historical only (the bot mode was retired). <b>${sp.games || 0}</b> games · <b>${sp.rounds || 0}</b> rounds.</p>`;
   }
 
+  // Trivial round-trip target for the dashboard's "Your connection" client-side check — no DB, no
+  // room data, as cheap as a request can be so it's a clean measure of the browser↔server hop alone.
+  router.get("/admin/ping", (req, res) => {
+    if (!ownerOk(req)) return res.status(404).send("Not found");
+    res.json({ ok: true, now: Date.now() });
+  });
+
   router.get("/admin", async (req, res) => {
     if (!ownerOk(req)) return res.status(404).send("Not found");
     const now = Date.now();
@@ -263,7 +293,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       .announce a.preset{background:#3a2030;color:#ffb4b4} .announce .lbl{font-size:12px;color:#8a92a6;margin-right:4px}</style></head>
       <body><h1>${SITE.adminDashboard.heading}</h1>
       <p class="sub">🟢 <b style="color:#3ecf8e">${getOnline()}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 60s · ${easternFull(now)}</p>
-      ${siteHealthHtml(dbPing, now)}
+      ${siteHealthHtml(dbPing, now, k)}
       <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
       ${costHtml(bw, now, k)}
       <div class="announce">

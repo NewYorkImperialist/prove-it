@@ -32,7 +32,7 @@ function buildApp({ lockdown = false } = {}) {
 describe("routes/admin.js — owner-key auth gate", () => {
   test("every /admin* route 404s with no key", async () => {
     const { app } = buildApp();
-    for (const path of ["/admin", "/admin/health", "/admin/games", "/admin/chat", "/admin/visitors",
+    for (const path of ["/admin", "/admin/ping", "/admin/health", "/admin/games", "/admin/chat", "/admin/visitors",
       "/admin/sessions", "/admin/leaderboards", "/admin/category-leaderboards", "/admin/runs"]) {
       const res = await request(app).get(path);
       assert.equal(res.status, 404, path);
@@ -58,6 +58,14 @@ describe("routes/admin.js — owner-key auth gate", () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.online, 0);
     assert.equal(res.body.roomCount, 0);
+  });
+
+  test("GET /admin/ping is a cheap, owner-gated round-trip target for the client-side connection check", async () => {
+    const { app } = buildApp();
+    const res = await request(app).get("/admin/ping?key=test-owner-key");
+    assert.equal(res.status, 200);
+    assert.equal(res.body.ok, true);
+    assert.equal(typeof res.body.now, "number");
   });
 
   test("?json=1 reports DB and cost-guard health even with persistence off", async () => {

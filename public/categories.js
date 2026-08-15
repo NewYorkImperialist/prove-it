@@ -3552,6 +3552,22 @@ const CATEGORY_GROUPS = {
       ["Barbary Wars","barbary wars","barbary war"], ["American Indian Wars","american indian wars","indian wars"],
       ["Quasi-War","quasi-war","quasi war"],
     ]},
+    { name: "Classic American Foods", items: [
+      "Hamburger", ["Hot Dog","hot dog","hotdog"], ["Apple Pie","apple pie"], ["Buffalo Wings","buffalo wings","chicken wings"],
+      ["Mac and Cheese","mac and cheese","mac n cheese","macaroni and cheese"], ["Fried Chicken","fried chicken"],
+      ["Philly Cheesesteak","philly cheesesteak","cheesesteak"], ["Reuben Sandwich","reuben sandwich","reuben"],
+      ["Cobb Salad","cobb salad"], ["Chicago Deep-Dish Pizza","chicago deep-dish pizza","chicago deep dish pizza","deep dish pizza"],
+      ["Tex-Mex","tex-mex","tex mex"], "Jambalaya", ["Po' Boy","po' boy","po boy","poor boy sandwich"],
+      ["Chili con Carne","chili con carne","chili"], ["Peanut Butter and Jelly Sandwich","peanut butter and jelly sandwich","pb&j","pbj"],
+      ["Lobster Roll","lobster roll"], "Cronut", "Twinkies", "Meatloaf", ["Chicken and Waffles","chicken and waffles"],
+      ["Shrimp and Grits","shrimp and grits"], ["Baked Beans","baked beans"], ["Pumpkin Pie","pumpkin pie"], "Turducken",
+    ]},
+    { name: "Cocktails Invented in America", items: [
+      ["Old Fashioned","old fashioned"], ["Mint Julep","mint julep"], ["Whiskey Sour","whiskey sour"], "Manhattan",
+      "Sazerac", ["Tom Collins","tom collins"], ["Long Island Iced Tea","long island iced tea","long island"],
+      "Cosmopolitan", ["Bloody Mary","bloody mary"], ["Mai Tai","mai tai"], ["Moscow Mule","moscow mule"],
+      "Aviation", "Zombie", "Hurricane", ["Gin Rickey","gin rickey"], ["Ramos Gin Fizz","ramos gin fizz"],
+    ]},
   ]},
   // 🤫 Personal category — OFF by default (defaultOff). Friends guess facts about you.
   // Replace the placeholders below with real answers. Each item is one accepted answer;

@@ -3568,6 +3568,22 @@ const CATEGORY_GROUPS = {
       "Cosmopolitan", ["Bloody Mary","bloody mary"], ["Mai Tai","mai tai"], ["Moscow Mule","moscow mule"],
       "Aviation", "Zombie", "Hurricane", ["Gin Rickey","gin rickey"], ["Ramos Gin Fizz","ramos gin fizz"],
     ]},
+    { name: "Legendary American Musicians", items: [
+      ["Elvis Presley","elvis presley","elvis","the king"], ["Bob Dylan","bob dylan","dylan"],
+      ["Bruce Springsteen","bruce springsteen","the boss","springsteen"], ["Chuck Berry","chuck berry"],
+      ["Little Richard","little richard"], ["Aretha Franklin","aretha franklin","aretha","queen of soul"],
+      ["B.B. King","b.b. king","bb king"], ["Ray Charles","ray charles"], ["Frank Sinatra","frank sinatra","sinatra","ol' blue eyes"],
+      ["James Brown","james brown","godfather of soul"], ["Buddy Holly","buddy holly"], ["Fats Domino","fats domino"],
+      ["Otis Redding","otis redding"], ["Marvin Gaye","marvin gaye"], ["Smokey Robinson","smokey robinson"],
+      ["Sam Cooke","sam cooke"], ["Etta James","etta james"], ["Chubby Checker","chubby checker"],
+      ["Bo Diddley","bo diddley"], ["Patti LaBelle","patti labelle"], ["Gladys Knight","gladys knight"],
+      ["Roy Orbison","roy orbison"], ["Jimi Hendrix","jimi hendrix","hendrix"], ["Janis Joplin","janis joplin"],
+    ]},
+    { name: "Music Genres Born in America", items: [
+      "Blues", "Jazz", "Ragtime", ["Rock and Roll","rock and roll","rock n roll","rock 'n' roll"],
+      ["Hip Hop","hip hop","hip-hop"], "Country", "Bluegrass", "Motown", ["Doo-Wop","doo-wop","doo wop"],
+      "Gospel", "Funk", "Disco", "House", "Techno", "Trap", "Bebop", "Zydeco", "Crunk",
+    ]},
   ]},
   // 🤫 Personal category — OFF by default (defaultOff). Friends guess facts about you.
   // Replace the placeholders below with real answers. Each item is one accepted answer;

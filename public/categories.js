@@ -3611,6 +3611,19 @@ const CATEGORY_GROUPS = {
       ["American Graffiti","american graffiti"], ["Rebel Without a Cause","rebel without a cause"],
       ["To Kill a Mockingbird","to kill a mockingbird"],
     ]},
+    { name: "Iconic American TV Shows", items: [
+      ["Breaking Bad","breaking bad"], ["The Sopranos","the sopranos","sopranos"], ["The Wire","the wire"],
+      ["Mad Men","mad men"], ["Stranger Things","stranger things"], ["The Walking Dead","the walking dead"],
+      ["Grey's Anatomy","grey's anatomy","greys anatomy"], ["Law & Order","law & order","law and order"],
+      ["CSI: Crime Scene Investigation","csi","csi crime scene investigation"], "Dexter", ["The X-Files","the x-files","x-files"],
+      "Lost", "24", "House", "ER", "NCIS", ["Criminal Minds","criminal minds"], ["The Simpsons","the simpsons"],
+      ["South Park","south park"], ["Family Guy","family guy"], ["Rick and Morty","rick and morty"],
+      ["American Dad!","american dad","american dad!"], ["Bob's Burgers","bob's burgers","bobs burgers"],
+      ["King of the Hill","king of the hill"], ["Saturday Night Live","saturday night live","snl"],
+      ["The Twilight Zone","the twilight zone","twilight zone"], ["Star Trek","star trek"], "Scrubs", "Smallville",
+      "Supernatural", ["Boardwalk Empire","boardwalk empire"], ["Better Call Saul","better call saul"], "Ozark",
+      ["This Is Us","this is us"],
+    ]},
   ]},
   // 🤫 Personal category — OFF by default (defaultOff). Friends guess facts about you.
   // Replace the placeholders below with real answers. Each item is one accepted answer;

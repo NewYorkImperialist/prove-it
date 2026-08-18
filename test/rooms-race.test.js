@@ -66,7 +66,6 @@ describe("rooms.js — race mode lifecycle", () => {
     assert.equal(joinedC.ok, true);
 
     const raceState = trackEvent(a, "raceState");
-    const raceReveal = trackEvent(a, "raceReveal");
     const startedEvent = waitFor(a, "raceGameStarted"); // register BEFORE triggering it — see test/rooms.test.js's own note on this race
     const startedAck = await emit(a, "startMatch", {});
     assert.equal(startedAck.ok, true);

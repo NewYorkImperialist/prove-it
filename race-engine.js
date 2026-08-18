@@ -64,6 +64,7 @@ function snapshot(room) {
     paused: !!g.paused,
     endVotes: g.endVotes ? g.endVotes.size : 0,
     groups: g.groups || [],
+    spectators: room.spectators ? room.spectators.size : 0,
   };
 }
 function emit(io, room) { io.to(room.code).emit("raceState", snapshot(room)); }
@@ -102,7 +103,7 @@ function beginRound(io, room, opts = {}) {
   if (!avail.length) { g.usedNames = []; avail = g.pool.filter((c) => c.name !== g.lastCatName); if (!avail.length) avail = g.pool; }
   const c = avail[Math.floor(Math.random() * avail.length)];
   g.usedNames.push(c.name); g.lastCatName = c.name; g.current = c;
-  g.answers = {}; g.liveScores = {};
+  g.answers = {}; g.liveScores = {}; g.endVotes = new Set(); // votes are a per-round intent check, not sticky across rounds
   for (const id of g.activeIds) { g.answers[id] = new Map(); g.liveScores[id] = 0; }
   g.phase = "countdown";
   log(io, room, "system", null, g.isTiebreaker ? `Sudden death! Round ${g.round} · ${c.group}: ${c.name}` : `Round ${g.round} · ${c.group}: ${c.name}`);
@@ -185,11 +186,11 @@ function handleAnswer(io, room, socket, text, ack) {
   const entry = resolve(g.current, text);
   if (!entry) return ack?.({ ok: true, accepted: false }); // not on the list — a silent miss, same UX as solo mode
   const mine = g.answers[pid] || (g.answers[pid] = new Map());
-  if (mine.has(entry.id)) return ack?.({ ok: true, accepted: false, alreadyHad: true });
+  if (mine.has(entry.id)) return ack?.({ ok: true, accepted: false, alreadyHad: true, display: entry.display });
   mine.set(entry.id, { display: entry.display, at: Date.now() });
   g.liveScores[pid] = (g.liveScores[pid] || 0) + 1;
   report(room, "answer", { category: g.current.name, grp: g.current.group, display: entry.display, offList: false, player: g.names[pid] });
-  ack?.({ ok: true, accepted: true });
+  ack?.({ ok: true, accepted: true, display: entry.display });
   emit(io, room); // score-only broadcast — the matched item's name never leaves the server here
 }
 

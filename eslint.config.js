@@ -11,7 +11,7 @@ module.exports = [
     ignores: ["archive/**", "node_modules/**"],
   },
   {
-    files: ["server.js", "game-engine.js", "stats.js", "site-config.js", "eslint.config.js", "rooms.js", "lib/**/*.js", "routes/**/*.js"],
+    files: ["server.js", "game-engine.js", "race-engine.js", "matchmaking.js", "stats.js", "site-config.js", "eslint.config.js", "rooms.js", "lib/**/*.js", "routes/**/*.js"],
     languageOptions: {
       sourceType: "commonjs",
       globals: globals.node,

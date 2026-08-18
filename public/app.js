@@ -5,7 +5,7 @@
 // against the solo overlay (#soloApp).
 window.PI = (function () {
   const byId = (id) => document.getElementById(id);
-  const MP_VIEWS = ["home", "mpsetup", "room", "game"];
+  const MP_VIEWS = ["home", "mpsetup", "racesetup", "room", "game"];
   // Fly/fade an element out, then run cb (instant if it's already hidden).
   function flyAway(el, cb) {
     if (!el || el.classList.contains("hidden")) { if (cb) cb(); return; }
@@ -46,6 +46,9 @@ window.PI = (function () {
 // Prove It! · multiplayer client (Phase 2: rooms + live duel)
 const $ = (id) => document.getElementById(id);
 const socket = io();
+// Used only where race-mode UI builds HTML strings (the reveal card) instead of textContent —
+// player display names are user-supplied, so they need escaping wherever they land in innerHTML.
+function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 
 // Keep the in-game layout sized to the *visible* viewport so the mobile keyboard
 // (opened for chat/answers) shrinks the feed instead of hiding the header & input bar.
@@ -68,7 +71,9 @@ window.addEventListener("orientationchange", setAppHeight);
 setAppHeight();
 
 let iAmHost = false;
-let gs = null; // latest game state snapshot
+let gs = null; // latest duel game state snapshot
+let raceGs = null; // latest Challenge Race state snapshot (mutually exclusive with gs — a room is one mode or the other)
+let currentMode = "duel"; // "duel" | "race" — set from the room's roomState.mode
 let lastSendAt = 0; // client-side answer cooldown
 
 // Identity survives a REFRESH (so we reconnect), but a fresh/duplicated tab gets a
@@ -92,7 +97,7 @@ function setSpectator(on) { isSpectator = on; on ? sessionStorage.setItem("spect
 
 // Remember the player's name across visits, and accept ?room=CODE invite links.
 const savedName = localStorage.getItem("pi_name");
-if (savedName) $("name").value = savedName;
+if (savedName) { $("name").value = savedName; $("raceNameInput").value = savedName; }
 function rememberName(n) { if (n) localStorage.setItem("pi_name", n); }
 const inviteCode = (new URLSearchParams(location.search).get("room") || "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
 if (inviteCode) $("joinCode").value = inviteCode;
@@ -293,7 +298,7 @@ function updateOnline() {
 
 // ---------- screens ----------
 function show(which) {
-  for (const id of ["home", "mpsetup", "room", "game"]) $(id).classList.toggle("hidden", id !== which);
+  for (const id of ["home", "mpsetup", "racesetup", "room", "game"]) $(id).classList.toggle("hidden", id !== which);
   $("conn").style.display = which === "game" ? "none" : ""; // sidebar shows it during the game
   if (which !== "game") { $("mpCatMenu").style.display = "none"; $("mpSettingsMenu").style.display = "none"; }
   if (which !== "game") window.PI.flyIn($(which)); // cards fly/fade in (the full-screen game just cuts in)
@@ -344,6 +349,66 @@ $("name").addEventListener("keydown", (e) => { if (e.key === "Enter") $("createB
 $("name").addEventListener("change", () => rememberName(nameValue()));
 $("joinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("joinBtn").click(); });
 
+// ---------- Challenge Race setup (live head-to-head/small-group version of solo challenge) ----------
+const raceNameValue = () => $("raceNameInput").value.trim();
+$("raceBtn").onclick = () => {
+  $("raceErr").textContent = "";
+  window.PI.flyAway($("home"), () => { show("racesetup"); $("raceNameInput").focus(); });
+};
+$("raceBack").onclick = () => { leaveQuickMatchQueue(); window.PI.flyAway($("racesetup"), () => show("home")); };
+$("raceCreateBtn").onclick = () => {
+  $("raceErr").textContent = "";
+  socket.emit("createRoom", { name: raceNameValue(), playerId, mode: "race" }, (res) => {
+    if (!res?.ok) return ($("raceErr").textContent = res?.error || "Could not create room.");
+    myId = res.you; setRoom(res.code); rememberName(raceNameValue()); show("room"); applyCrown();
+  });
+};
+$("raceJoinBtn").onclick = () => {
+  const code = $("raceJoinCode").value.trim().toUpperCase();
+  $("raceErr").textContent = "";
+  if (code.length < 4) return ($("raceErr").textContent = "Enter the 4-letter room code.");
+  socket.emit("joinRoom", { code, name: raceNameValue(), playerId }, (res) => {
+    if (!res?.ok) return ($("raceErr").textContent = (res?.error || "Could not join room.") + " (not sure of the code?)");
+    myId = res.you; setRoom(res.code); rememberName(raceNameValue()); show("room"); applyCrown();
+  });
+};
+$("raceNameInput").addEventListener("keydown", (e) => { if (e.key === "Enter") $("raceCreateBtn").click(); });
+$("raceNameInput").addEventListener("change", () => rememberName(raceNameValue()));
+$("raceJoinCode").addEventListener("keydown", (e) => { if (e.key === "Enter") $("raceJoinBtn").click(); });
+
+let inQuickMatch = false;
+function leaveQuickMatchQueue() {
+  if (!inQuickMatch) return;
+  socket.emit("quickMatchLeave");
+  inQuickMatch = false;
+  $("quickMatchBtn").textContent = "⚡ Quick Match";
+  $("quickMatchStatus").classList.add("hidden");
+}
+$("quickMatchBtn").onclick = () => {
+  if (inQuickMatch) return leaveQuickMatchQueue();
+  $("raceErr").textContent = "";
+  socket.emit("quickMatchJoin", { name: raceNameValue(), playerId }, (res) => {
+    if (!res?.ok) return ($("raceErr").textContent = res?.error || "Could not queue for quick match.");
+    inQuickMatch = true;
+    rememberName(raceNameValue());
+    $("quickMatchBtn").textContent = "Cancel Quick Match";
+    $("quickMatchStatus").classList.remove("hidden");
+    $("quickMatchStatus").textContent = "Waiting for other players…";
+  });
+};
+socket.on("quickMatchStatus", ({ waiting, startsInMs }) => {
+  if (!inQuickMatch) return;
+  $("quickMatchStatus").textContent = startsInMs != null
+    ? `${waiting} waiting · starting in ${Math.ceil(startsInMs / 1000)}s…`
+    : `${waiting} waiting for at least one more player…`;
+});
+socket.on("quickMatchFound", ({ code, you }) => {
+  inQuickMatch = false;
+  $("quickMatchBtn").textContent = "⚡ Quick Match";
+  $("quickMatchStatus").classList.add("hidden");
+  myId = you || myId; setRoom(code); show("room"); applyCrown();
+});
+
 // ---------- copy code / invite link ----------
 function copyText(str) {
   if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(str).catch(() => fallbackCopy(str));
@@ -382,8 +447,9 @@ $("lobbyName").addEventListener("keydown", (e) => { if (e.key === "Enter") $("lo
 $("startBtn").onclick = () => socket.emit("startMatch", {}, (r) => { if (!r?.ok) $("roomStatus").textContent = r?.error || "Could not start."; });
 $("leaveBtn").onclick = () => { socket.emit("leaveRoom"); setRoom(null); show("home"); };
 
-const AV = ["var(--accent)", "#8a9aa0"];
+const AV = ["var(--accent)", "#8a9aa0", "#5b8cff", "#e5484d", "#3ecf8e", "#b06bff", "#ff8c42", "#ffd34d"];
 socket.on("roomState", (room) => {
+  currentMode = room.mode === "race" ? "race" : "duel";
   // chime when someone new joins (baseline silently on the first state so you don't hear your own arrival)
   if (prevPlayers !== null && room.players.length > prevPlayers) sfx.join();
   prevPlayers = room.players.length;
@@ -405,7 +471,7 @@ socket.on("roomState", (room) => {
   if (room.players.length < 2) {
     const div = document.createElement("div");
     div.className = "player empty";
-    div.innerHTML = `<div class="avatar" style="background:#2a2f3e">?</div><div class="name">waiting for opponent…</div>`;
+    div.innerHTML = `<div class="avatar" style="background:#2a2f3e">?</div><div class="name">${currentMode === "race" ? "waiting for more racers…" : "waiting for opponent…"}</div>`;
     list.appendChild(div);
   }
   const specs = room.spectators || [];
@@ -416,10 +482,13 @@ socket.on("roomState", (room) => {
   $("startBtn").classList.toggle("hidden", !iAmHost);
   $("startBtn").disabled = !canStart;
   $("roomStatus").textContent = isSpectator ? "You're spectating · waiting for the host to start…"
-    : iAmHost ? (canStart ? "" : "Waiting for a second player…") : "Waiting for the host to start…";
+    : iAmHost ? (canStart ? "" : (currentMode === "race" ? "Waiting for at least one more racer…" : "Waiting for a second player…"))
+    : "Waiting for the host to start…";
 
-  buildLobbySettings();
-  syncSettings(room.settings);
+  $("settings").classList.toggle("hidden", currentMode === "race");
+  $("raceSettings").classList.toggle("hidden", currentMode !== "race");
+  if (currentMode === "race") { buildRaceLobbySettings(); syncRaceSettings(room.settings); }
+  else { buildLobbySettings(); syncSettings(room.settings); }
 });
 
 // ---------- room settings (host configures before starting) ----------
@@ -479,10 +548,68 @@ function syncSettings(s) {
   $("lockNote").classList.toggle("hidden", iAmHost);
 }
 
+// ---------- Challenge Race lobby settings (categories/timer shared in spirit with duel's, but
+// format/sudden-death are race-only and posted via raceSetSettings instead of setSettings) ----------
+let builtRaceSettings = false;
+let curRaceSettings = null;
+
+function buildRaceLobbySettings() {
+  if (builtRaceSettings) return;
+  builtRaceSettings = true;
+  const checks = $("raceCatChecks");
+  Object.entries(CATEGORY_GROUPS).forEach(([key, g]) => {
+    const label = document.createElement("label");
+    label.className = "check";
+    label.innerHTML = `<input type="checkbox" value="${key}"><span class="emoji">${g.emoji}</span><span>${key}</span>`;
+    label.querySelector("input").addEventListener("change", onRaceCatChange);
+    checks.appendChild(label);
+  });
+  TIMERS.forEach((s) => {
+    const b = document.createElement("button");
+    b.textContent = s + "s"; b.dataset.timer = s;
+    b.onclick = () => iAmHost && socket.emit("raceSetSettings", { timer: s });
+    $("raceTimerSeg").appendChild(b);
+  });
+  $("formatSeg").querySelectorAll("button").forEach((b) => {
+    b.onclick = () => iAmHost && socket.emit("raceSetSettings", { format: b.dataset.format === "endless" ? null : +b.dataset.format });
+  });
+  $("suddenDeathInput").addEventListener("change", () => {
+    if (iAmHost) socket.emit("raceSetSettings", { suddenDeath: $("suddenDeathInput").checked });
+  });
+}
+
+function onRaceCatChange() {
+  if (!iAmHost) return;
+  const checked = [...$("raceCatChecks").querySelectorAll("input:checked")].map((i) => i.value);
+  if (!checked.length) return syncRaceSettings(curRaceSettings); // never allow zero → revert
+  socket.emit("raceSetSettings", { groups: checked });
+}
+
+function syncRaceSettings(s) {
+  if (!s) return;
+  curRaceSettings = s;
+  $("raceCatChecks").querySelectorAll("input").forEach((i) => {
+    i.checked = s.groups.includes(i.value);
+    i.parentElement.classList.toggle("on", i.checked);
+  });
+  $("raceTimerSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.timer === s.timer));
+  $("formatSeg").querySelectorAll("button").forEach((b) => {
+    const val = b.dataset.format === "endless" ? null : +b.dataset.format;
+    b.classList.toggle("on", val === s.format);
+  });
+  $("suddenDeathInput").checked = !!s.suddenDeath;
+  $("suddenDeathCheck").classList.toggle("on", !!s.suddenDeath);
+  $("raceSettings").classList.toggle("locked", !iAmHost);
+  $("raceLockNote").classList.toggle("hidden", iAmHost);
+}
+
 // ---------- game ----------
 socket.on("gameStarted", () => { $("feed").innerHTML = ""; show("game"); });
+socket.on("raceGameStarted", () => { $("feed").innerHTML = ""; show("game"); });
 
-socket.on("log", ({ by, name, text, kind }) => {
+// Shared by the duel's "log" event and Challenge Race's "raceLog" event — both use the exact
+// same { by, name, text, kind } shape (see game-engine.js's/race-engine.js's log() helper).
+function handleLog({ by, name, text, kind }) {
   if (kind === "ok") sfx.ding(); else if (kind === "bad") sfx.buzz(); else if (kind === "pending") sfx.pop();
   const feed = $("feed");
   const side = by === "system" ? "system" : by === myId ? "me" : "them";
@@ -497,6 +624,38 @@ socket.on("log", ({ by, name, text, kind }) => {
   m.textContent = text;
   feed.appendChild(m);
   feed.scrollTop = feed.scrollHeight;
+}
+socket.on("log", handleLog);
+socket.on("raceLog", handleLog);
+
+// Round-end reveal (Challenge Race only) — everyone's full answer list, shown once per round
+// as a rich feed card (never sent while the round is still live — see race-engine.js's snapshot()).
+socket.on("raceReveal", (r) => {
+  const feed = $("feed");
+  const box = document.createElement("div");
+  box.className = "msg reveal";
+  const winnerNames = r.roundWinnerIds.map((id) => (r.perPlayer.find((p) => p.id === id) || {}).name).filter(Boolean).join(", ");
+  const title = r.tie
+    ? (r.suddenDeathTriggered ? "🔥 Tied — sudden death! One more round to break it." : "🤝 Round tied — no one scores this one.")
+    : `🏆 ${winnerNames} won the round!`;
+  const rows = r.perPlayer.slice().sort((a, b) => b.score - a.score)
+    .map((p) => `<div class="rp"><b>${esc(p.name)}</b> — ${p.score} correct${p.got.length ? `: <span class="got">${p.got.map(esc).join(", ")}</span>` : ""}</div>`)
+    .join("");
+  box.innerHTML = `<div style="font-weight:800;margin-bottom:4px">${title}</div>
+    <div style="color:var(--muted);font-size:12px;margin-bottom:6px">${r.category.emoji} ${esc(r.category.name)}</div>${rows}`;
+  feed.appendChild(box);
+  feed.scrollTop = feed.scrollHeight;
+  sfx[r.roundWinnerIds.includes(myId) ? "roundWin" : (r.tie ? "pop" : "roundLose")]();
+});
+
+socket.on("raceMatchOver", (payload) => {
+  sfx.fanfare();
+  const ranked = payload.roundWins.slice().sort((a, b) => b.wins - a.wins);
+  const line = ranked.map((p) => `${esc(p.name)} ${p.wins}`).join(" · ");
+  const summary = payload.winnerId
+    ? `${esc((ranked.find((p) => p.id === payload.winnerId) || {}).name)} wins the match! (${line})`
+    : `Match over — it's a tie! (${line})`;
+  handleLog({ by: "system", name: null, text: summary, kind: null });
 });
 
 socket.on("chat", ({ id, name, text, spectator }) => {
@@ -518,7 +677,7 @@ socket.on("opponentLeft", ({ name }) => {
 });
 
 socket.on("roomClosed", () => {
-  gs = null; setRoom(null);
+  gs = null; raceGs = null; setRoom(null);
   show("home");
   $("homeErr").textContent = "This room was closed.";
 });
@@ -537,6 +696,10 @@ socket.on("gameState", (state) => {
   if (turnMine && !prevTurnMine) sfx.pop(); // a soft cue when it becomes your turn
   prevTurnMine = turnMine;
 });
+
+// Score-only broadcast for Challenge Race (see race-engine.js's snapshot()) — never carries
+// anyone's actual answers, just running counts; renderRace() reads it the same way render() reads gs.
+socket.on("raceState", (state) => { raceGs = state; renderRace(); });
 
 // 🎯 Easter egg: someone answered "Prove It!" in the Video Games round → +5 + a party for everyone.
 function partyCrowns() { document.querySelectorAll(".crown").forEach((el) => { el.classList.remove("party"); void el.offsetWidth; el.classList.add("party"); }); }
@@ -761,6 +924,94 @@ function render() {
 let wasMyOpen = false;
 let prevActKey = null;
 
+// Challenge Race's version of render() — same #game shell (topbar/banner/feed/sidebar/inputbar),
+// but N players instead of exactly 2, and phases named for a live listing race instead of a bid.
+function renderRace() {
+  if (!raceGs) return;
+  const stick = feedNearBottom();
+  show("game");
+  const g = raceGs;
+  const nameOf = (id) => (g.liveScores.find((p) => p.id === id) || {}).name || "?";
+  const me = g.liveScores.find((p) => p.id === myId);
+  const others = g.liveScores.filter((p) => p.id !== myId).sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
+  const roster = [me, ...others].filter(Boolean);
+
+  $("gRoom").textContent = (myRoom ? "Room " + myRoom : "") + (g.spectators ? "  ·  " + g.spectators + " watching" : "");
+  $("specBadge").classList.toggle("hidden", !isSpectator);
+  if (isSpectator) $("specBadge").textContent = isGhost ? "Ghost" : "Spectating";
+
+  // sidebar: you first, then everyone else ranked by their current live score
+  const sidePlayers = $("sidePlayers");
+  sidePlayers.innerHTML = "";
+  roster.forEach((p, i) => {
+    const wins = (g.roundWins.find((r) => r.id === p.id) || {}).wins || 0;
+    const d = document.createElement("div");
+    d.className = "player" + (!p.active ? " empty" : "");
+    d.innerHTML = `<div class="avatar" style="background:${AV[i % AV.length]};color:var(--markfg)">${p.name[0].toUpperCase()}</div>
+      <div class="name">${p.name}${p.id === myId ? " (you)" : ""}${!p.active ? " · left" : ""}</div>
+      <div class="pts">${p.active ? (p.score ?? 0) : "—"}<span style="color:var(--muted);font-size:11px"> · ${wins}🏆</span></div>`;
+    sidePlayers.appendChild(d);
+  });
+  $("topScore").innerHTML = roster.map((p) =>
+    `<span class="tsp"><span class="tsn">${p.name}</span><span class="tspt">${p.active ? (p.score ?? 0) : "—"}</span></span>`
+  ).join('<span class="tsdash">·</span>');
+
+  // banner
+  if (g.category) { $("catLabel").textContent = `${g.category.emoji} ${g.category.group}`; $("catName").textContent = g.category.name; }
+  const fmtLabel = g.winsNeeded == null ? "Endless" : `Best of ${g.format}`;
+  $("claimLine").textContent = `Round ${g.round} · ${fmtLabel}${g.suddenDeath ? " · 🔥 sudden death on ties" : ""}${g.isTiebreaker ? " · TIEBREAKER!" : ""}`;
+
+  const promptKey = g.round + "|" + (g.category ? g.category.name : "");
+  if (g.phase === "countdown" && g.category && promptKey !== lastPromptKey) { lastPromptKey = promptKey; showPrompt(g.category); }
+
+  $("mpCatBtn").style.display = "none"; // v1: categories/timer are locked in once a race starts
+  if ($("mpSettingsMenu").style.display !== "none") syncSettingsMenu();
+
+  const input = $("input"), sendBtn = $("send"), actions = $("actions"), status = $("gstatus");
+  actions.innerHTML = "";
+  status.className = "";
+  let enable = false, placeholder = "Type / to chat…", statusText = "";
+
+  if (g.phase === "starting" || g.phase === "countdown") {
+    statusText = g.isTiebreaker ? "Sudden death! Get ready…" : "Get ready…";
+  } else if (g.phase === "live") {
+    const canPlay = !isSpectator && me && me.active;
+    if (canPlay) { enable = true; placeholder = g.category ? `Name a ${g.category.name}…` : "…"; }
+    statusText = `Racing! You have ${me ? (me.score ?? 0) : 0} so far.`;
+  } else if (g.phase === "roundover") {
+    statusText = "See the reveal above · next round starting…";
+    if (g.winsNeeded == null) addBtn(actions, g.endVotes ? `End game (${g.endVotes}/${roster.filter((p) => p.active).length})` : "End game", "danger", () => socket.emit("raceVoteEnd"));
+  } else if (g.phase === "matchover") {
+    statusText = g.matchWinnerId ? `${nameOf(g.matchWinnerId)} wins the match!` : "Match over.";
+    if (iAmHost) addBtn(actions, "Play again", "again", () => socket.emit("rematch", {}, ackErr));
+    addBtn(actions, "Leave", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
+  }
+
+  if (isSpectator) {
+    actions.innerHTML = "";
+    enable = false;
+    placeholder = isGhost ? "Ghost mode · you're invisible (can't chat)" : "Say something… (you're spectating)";
+    if (g.phase === "matchover") addBtn(actions, "Stop watching", "danger", () => { socket.emit("leaveRoom"); setRoom(null); show("home"); });
+  }
+
+  if (g.paused) {
+    actions.innerHTML = "";
+    input.disabled = false; sendBtn.disabled = false; // chat still works while frozen
+    if (!chatMode) input.placeholder = "Paused · type / to chat…";
+    status.textContent = "A player disconnected · waiting up to 30s for them to reconnect…";
+    if (stick) scrollFeed();
+    return;
+  }
+
+  input.disabled = false;
+  sendBtn.disabled = false;
+  if (isGhost) { input.disabled = true; sendBtn.disabled = true; }
+  if (!chatMode) { input.placeholder = placeholder; if (enable && !isGhost) input.focus(); }
+  $("inputbar").classList.toggle("answer-mode", enable && !chatMode);
+  status.textContent = statusText;
+  if (stick) scrollFeed();
+}
+
 function addBtn(parent, label, cls, onClick) {
   const b = document.createElement("button");
   b.textContent = label; b.className = cls; b.onclick = onClick;
@@ -848,6 +1099,7 @@ const EMOJI = {
 function emojify(s) { return s.replace(/:([a-z0-9_+-]+):/gi, (m, c) => EMOJI[c.toLowerCase()] || m); }
 
 function gameSend() {
+  if (currentMode === "race") return raceGameSend();
   if (isGhost) { $("input").value = ""; return; } // ghosts are silent · no chat, no actions
   if (isSpectator) { // spectators can only chat
     const msg = $("input").value.trim();
@@ -907,6 +1159,35 @@ function gameSend() {
   socket.emit("chat", { text: emojify(raw) });
 }
 
+// Challenge Race's version of gameSend() — no bidding/turns, just "type an answer while it's live,
+// otherwise it's chat." The server is the sole judge of correctness (see race-engine.js's handleAnswer).
+function raceGameSend() {
+  if (isGhost) { $("input").value = ""; return; }
+  if (isSpectator || chatMode) {
+    const msg = $("input").value.trim();
+    $("input").value = "";
+    if (chatMode) exitChat();
+    if (msg) socket.emit("chat", { text: emojify(msg) });
+    return;
+  }
+  const raw = $("input").value.trim();
+  if (!raw) return;
+  if (raw[0] === "/") {
+    const msg = raw.slice(1).trim();
+    $("input").value = "";
+    if (msg) socket.emit("chat", { text: emojify(msg) });
+    return;
+  }
+  const canAnswer = raceGs && raceGs.phase === "live" && !isSpectator;
+  if (!canAnswer) { $("input").value = ""; socket.emit("chat", { text: emojify(raw) }); return; }
+  $("input").value = "";
+  socket.emit("raceAnswer", { text: raw }, (res) => {
+    if (res && res.accepted) { sfx.ding(); handleLog({ by: myId, name: null, text: `${res.display} ✓`, kind: "ok" }); }
+    else if (res && res.alreadyHad) { handleLog({ by: myId, name: null, text: `already got ${res.display}`, kind: "bad" }); }
+    // a plain miss (not on the list) is silent — same quiet-miss UX as solo mode.
+  });
+}
+
 function shakeInput() {
   const i = $("input");
   i.classList.remove("shake");
@@ -946,7 +1227,7 @@ function exitChat(silent) {
   stopTyping();
   $("inputbar").classList.remove("chat-mode");
   $("input").value = "";
-  if (!silent && gs) render(); // restore the normal game placeholder/state
+  if (!silent) { if (gs) render(); else if (raceGs) renderRace(); } // restore the normal game placeholder/state
 }
 // Enter chat mode without grabbing focus (so auto-switching the opponent into chat
 // during the opponent's guessing turn doesn't pop their keyboard unprompted).
@@ -1010,7 +1291,12 @@ $("mpLeave").onclick = () => { socket.emit("leaveRoom"); setRoom(null); show("ho
 $("skipCatBtn").onclick = () => { socket.emit("voteSkip"); $("mpSettingsMenu").style.display = "none"; };
 
 // Logo (top-left) → confirm before leaving a game.
-$("mpLogo").onclick = () => $("confirmOverlay").classList.remove("hidden");
+$("mpLogo").onclick = () => {
+  $("confirmForfeitMsg").textContent = currentMode === "race"
+    ? "The race continues without you — you won't be able to rejoin this match."
+    : "If you forfeit, your opponent wins this match.";
+  $("confirmOverlay").classList.remove("hidden");
+};
 $("cfReturn").onclick = () => $("confirmOverlay").classList.add("hidden");
 $("cfForfeit").onclick = () => {
   $("confirmOverlay").classList.add("hidden");
@@ -1073,15 +1359,19 @@ function buildSettingsMenu() {
   });
 }
 function syncSettingsMenu() {
-  if (!gs) return;
-  $("gHostSettings").style.display = iAmHost ? "" : "none";
-  $("gTimerSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.timer === gs.timer));
-  $("gWinSeg").querySelectorAll("button").forEach((b) =>
-    b.classList.toggle("on", b.dataset.win === "∞" ? gs.target == null : +b.dataset.win === gs.target));
-  $("gAdvanceSeg").querySelectorAll("button").forEach((b) =>
-    b.classList.toggle("on", (b.dataset.auto === "1") === (gs.autoAdvance !== false)));
-  if (document.activeElement !== $("gName")) {
-    const me = gs.players.find((p) => p.id === myId);
+  // "Timer/win/next round" mid-game controls are duel-only — v1 locks a race's format/timer/
+  // categories in once it starts, so there's nothing equivalent to show for a race room.
+  $("gHostSettings").style.display = (gs && iAmHost) ? "" : "none";
+  if (gs) {
+    $("gTimerSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.timer === gs.timer));
+    $("gWinSeg").querySelectorAll("button").forEach((b) =>
+      b.classList.toggle("on", b.dataset.win === "∞" ? gs.target == null : +b.dataset.win === gs.target));
+    $("gAdvanceSeg").querySelectorAll("button").forEach((b) =>
+      b.classList.toggle("on", (b.dataset.auto === "1") === (gs.autoAdvance !== false)));
+  }
+  const roster = gs ? gs.players : (raceGs ? raceGs.liveScores : null);
+  if (roster && document.activeElement !== $("gName")) {
+    const me = roster.find((p) => p.id === myId);
     if (me) $("gName").value = me.name;
   }
 }
@@ -1103,12 +1393,14 @@ document.addEventListener("click", (e) => {
 });
 
 // ---------- server-driven timer (render the countdown from the deadline) ----------
+// Shared by both modes — duel's gs and race's raceGs both carry a server-authoritative `deadline`.
 setInterval(() => {
   const t = $("timer");
-  if (!gs || !gs.deadline || gs.paused) { t.textContent = ""; t.classList.remove("danger"); return; }
-  const left = Math.max(0, Math.ceil((gs.deadline - Date.now()) / 1000));
+  const state = currentMode === "race" ? raceGs : gs;
+  if (!state || !state.deadline || state.paused) { t.textContent = ""; t.classList.remove("danger"); return; }
+  const left = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
   t.textContent = left + "s";
-  const danger = gs.phase === "proving" ? left <= 10 : left <= 3;
+  const danger = currentMode === "race" ? left <= 5 : (state.phase === "proving" ? left <= 10 : left <= 3);
   t.classList.toggle("danger", danger);
   // audio: tick the final 5 seconds (hotter in the last 3)
   if (left <= 5 && left >= 1 && left !== lastTickSec) { lastTickSec = left; (left <= 3 ? sfx.tickHot : sfx.tick)(); }

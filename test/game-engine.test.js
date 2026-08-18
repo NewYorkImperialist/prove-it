@@ -317,6 +317,60 @@ describe("handleJudge / handleRejectAll", () => {
   });
 });
 
+describe("handleRevokeGrant", () => {
+  function grantedRoom(overrides = {}) {
+    const pending = new Map([[1, { id: 1, text: "Alfa", q: "alfa" }]]); // a misspelling of "Alpha", not in its alias list
+    return makeRoom({
+      phase: "proving", claim: 5, holderId: "p1", turnId: "p1", challengerId: "p2",
+      proven: [], granted: [], grantSeq: 0, pending, answerSeq: 1, judgeQueue: [], judgeActive: null,
+      ...overrides,
+    });
+  }
+
+  test("accepting an off-list answer assigns it a revocable id", () => {
+    const io = makeIO(); const room = grantedRoom();
+    engine.handleJudge(io, room, sock("p2"), { answerId: 1, accept: true });
+    assert.equal(room.game.granted.length, 1);
+    assert.equal(room.game.granted[0].text, "Alfa");
+    assert.equal(typeof room.game.granted[0].id, "number");
+  });
+
+  test("the challenger can revoke their own granted item — un-counts it from the total", () => {
+    const io = makeIO(); const room = grantedRoom();
+    engine.handleJudge(io, room, sock("p2"), { answerId: 1, accept: true }); // grant "Alfa" (meant "Alpha")
+    const grantId = room.game.granted[0].id;
+    engine.handleAnswer(io, room, sock("p1"), "Alpha", () => {}); // later typed correctly, matches the real list entry
+    assert.equal(io.lastState().proven, 2); // both "Alfa" (granted) and "Alpha" (on-list) counted — the double count
+    engine.handleRevokeGrant(io, room, sock("p2"), grantId);
+    assert.equal(room.game.granted.length, 0);
+    assert.equal(io.lastState().proven, 1); // back down to just the on-list "Alpha"
+  });
+
+  test("only the challenger can revoke — the prover can't un-approve their own credit", () => {
+    const io = makeIO(); const room = grantedRoom();
+    engine.handleJudge(io, room, sock("p2"), { answerId: 1, accept: true });
+    const grantId = room.game.granted[0].id;
+    engine.handleRevokeGrant(io, room, sock("p1"), grantId);
+    assert.equal(room.game.granted.length, 1); // untouched
+  });
+
+  test("revoking is a no-op once the round is over", () => {
+    const io = makeIO(); const room = grantedRoom();
+    engine.handleJudge(io, room, sock("p2"), { answerId: 1, accept: true });
+    const grantId = room.game.granted[0].id;
+    room.game.phase = "roundover";
+    engine.handleRevokeGrant(io, room, sock("p2"), grantId);
+    assert.equal(room.game.granted.length, 1);
+  });
+
+  test("an unknown grant id is ignored", () => {
+    const io = makeIO(); const room = grantedRoom();
+    engine.handleJudge(io, room, sock("p2"), { answerId: 1, accept: true });
+    engine.handleRevokeGrant(io, room, sock("p2"), 9999);
+    assert.equal(room.game.granted.length, 1);
+  });
+});
+
 describe("handleGiveUp", () => {
   test("gives the point to the challenger and ends the round", () => {
     const io = makeIO();

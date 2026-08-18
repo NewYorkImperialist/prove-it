@@ -87,7 +87,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     const now = Date.now();
     const room = { code, hostId, status: "waiting", mode: isRace ? "race" : "duel",
       settings: settings || (isRace
-        ? { groups: [...DEFAULT_GROUPS], timer: 30, format: 3, suddenDeath: false, maxPlayers: MAX_RACE_PLAYERS }
+        ? { groups: [...DEFAULT_GROUPS], timer: 45, format: 5, suddenDeath: false, maxPlayers: MAX_RACE_PLAYERS }
         : { groups: [...DEFAULT_GROUPS], timer: 30, target: 5, autoAdvance: true }),
       players: new Map(), spectators: new Map(), graceTimeout: null, createdAt: now, lastActivityAt: now };
     room.players.set(hostId, { id: hostId, name: cleanName(hostName), socketId, connected: true });
@@ -187,8 +187,8 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       const isRace = mode === "race";
       const settings = isRace ? {
         groups: (raceSettings?.groups?.length ? raceSettings.groups.filter((k) => CATEGORY_GROUPS[k]) : null) || [...DEFAULT_GROUPS],
-        timer: TIMERS.includes(raceSettings?.timer) ? raceSettings.timer : 30,
-        format: FORMATS.includes(raceSettings?.format) ? raceSettings.format : 3,
+        timer: TIMERS.includes(raceSettings?.timer) ? raceSettings.timer : 45,
+        format: FORMATS.includes(raceSettings?.format) ? raceSettings.format : 5,
         suddenDeath: !!raceSettings?.suddenDeath,
         maxPlayers: Number.isInteger(raceSettings?.maxPlayers) ? Math.min(MAX_RACE_PLAYERS, Math.max(MIN_RACE_PLAYERS, raceSettings.maxPlayers)) : MAX_RACE_PLAYERS,
       } : undefined;
@@ -366,12 +366,14 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     socket.on("answer", withDuelGame((room, { text } = {}, ack) => engine.handleAnswer(io, room, socket, text, ack)));
     socket.on("judge", withDuelGame((room, { answerId, accept } = {}) => engine.handleJudge(io, room, socket, { answerId, accept })));
     socket.on("rejectAll", withDuelGame((room) => engine.handleRejectAll(io, room, socket)));
+    socket.on("revokeGrant", withDuelGame((room, { grantId } = {}) => engine.handleRevokeGrant(io, room, socket, grantId)));
     socket.on("giveUp", withDuelGame((room) => engine.handleGiveUp(io, room, socket)));
     socket.on("pauseRound", withDuelGame((room) => engine.handlePauseRound(io, room, socket)));
     socket.on("nextRound", withDuelGame((room) => engine.handleNextRound(io, room, socket)));
     socket.on("voteSkip", withDuelGame((room) => engine.handleVoteSkip(io, room, socket)));
     socket.on("voteEnd", withDuelGame((room) => engine.handleVoteEnd(io, room, socket)));
     socket.on("raceAnswer", withRaceGame((room, { text } = {}, ack) => raceEngine.handleAnswer(io, room, socket, text, ack)));
+    socket.on("raceApproveMiss", withRaceGame((room, { targetId, missId } = {}) => raceEngine.handleApproveMiss(io, room, socket, targetId, missId)));
     socket.on("raceVoteEnd", withRaceGame((room) => raceEngine.handleVoteEnd(io, room, socket)));
 
     // Chat — works any time you're in a room (lightly rate-limited; rendered separately from game messages).

@@ -39,7 +39,7 @@ function createMatchmaking({ newRoom, attach, broadcast, DEFAULT_GROUPS, graceMs
     const host = batch[0];
     const room = newRoom({
       mode: "race", hostId: host.playerId, hostName: host.name, socketId: host.socket.id,
-      settings: { groups: [...DEFAULT_GROUPS], timer: 30, format: 3, suddenDeath: false, maxPlayers: MAX_TO_START },
+      settings: { groups: [...DEFAULT_GROUPS], timer: 45, format: 5, suddenDeath: false, maxPlayers: MAX_TO_START },
     });
     attach(room, host.socket, host.playerId);
     for (const e of batch.slice(1)) {

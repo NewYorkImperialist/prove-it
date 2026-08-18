@@ -125,6 +125,9 @@ function snapshot(room) {
     proven: g.proven ? total(g) : 0,
     wpm: g.wpm || 0, // live typing speed of whoever's proving (chars/5 over time since first answer)
     pending: g.pending ? [...g.pending.values()].map((p) => ({ id: p.id, text: p.text })) : [],
+    // off-list answers already accepted this round · the challenger can revoke one (see handleRevokeGrant)
+    // if it turns out to double-count something the prover later also got on-list.
+    granted: g.granted ? g.granted.map((gr) => ({ id: gr.id, text: gr.text })) : [],
     judgeActive: g.judgeActive ? { id: g.judgeActive.id, text: g.judgeActive.text } : null,
     judgeRemaining: g.judgeQueue ? g.judgeQueue.length : 0,
     scores: g.scores, target: g.target === Infinity ? null : g.target, timer: g.timer,
@@ -225,7 +228,7 @@ function startProving(io, room, challengerId) {
   const g = room.game;
   const proverId = g.holderId;
   g.phase = "proving"; g.turnId = proverId; g.challengerId = challengerId;
-  g.proven = []; g.granted = []; g.pending = new Map(); g.answerSeq = 0; g.lastAnswerAt = 0;
+  g.proven = []; g.granted = []; g.grantSeq = 0; g.pending = new Map(); g.answerSeq = 0; g.lastAnswerAt = 0;
   g.judgeQueue = []; g.judgeActive = null; g.offListCount = 0; g.bonus = 0;
   g.wpmChars = 0; g.wpmStart = 0; g.wpm = 0; // typing-speed tracking for the prover
   log(io, room, challengerId, g.names[challengerId], `Prove it! ${g.names[proverId]}, name ${g.claim}.`);
@@ -317,7 +320,7 @@ function handleAnswer(io, room, socket, text, ack) {
 
   // ----- off-list answer → opponent rules (with spam caps) -----
   const q = norm(text);
-  if (g.granted.includes(q) || [...g.pending.values()].some((p) => p.q === q)) {
+  if (g.granted.some((gr) => gr.q === q) || [...g.pending.values()].some((p) => p.q === q)) {
     log(io, room, socket.data.playerId, me, `${text} · already counted/awaiting`, "bad");
     ack?.({ ok: true });
     return emit(io, room);
@@ -383,13 +386,29 @@ function applyRuling(io, room, p, accept) {
   const g = room.game;
   g.pending.delete(p.id);
   if (accept) {
-    g.granted.push(p.q);
+    const grantId = ++g.grantSeq;
+    g.granted.push({ id: grantId, text: p.text, q: p.q });
     log(io, room, g.challengerId, g.names[g.challengerId], `accepted "${p.text}" ✓ (${total(g)}/${g.claim})`, "ok");
     report(room, "answer", { category: g.current.name, grp: g.current.group, display: p.text, offList: true, player: g.names[g.holderId] });
   } else {
     log(io, room, g.challengerId, g.names[g.challengerId], `rejected "${p.text}"`, "bad");
     report(room, "event", { type: "rejected", detail: `${p.text} (by ${g.names[g.challengerId]})` });
   }
+}
+
+// The challenger can undo one of their own off-list approvals — e.g. they accepted a
+// misspelling ("Nowray") and the prover later also typed the correctly-spelled version
+// ("Norway"), which matched the real list entry and would otherwise double-count the same item.
+function handleRevokeGrant(io, room, socket, grantId) {
+  const g = room.game;
+  if (!g || socket.data.playerId !== g.challengerId) return;
+  if (g.phase !== "proving" && g.phase !== "judging") return;
+  const idx = (g.granted || []).findIndex((gr) => gr.id === grantId);
+  if (idx === -1) return;
+  const [removed] = g.granted.splice(idx, 1);
+  log(io, room, g.challengerId, g.names[g.challengerId], `took back "${removed.text}" (${total(g)}/${g.claim})`, "bad");
+  report(room, "event", { type: "revoked", detail: `${removed.text} (by ${g.names[g.challengerId]})` });
+  emit(io, room);
 }
 
 function finalizeJudging(io, room) {
@@ -478,6 +497,6 @@ function endGameForLeaver(io, room, leaverId) {
 }
 
 module.exports = {
-  startMatch, handleOpen, handleRaise, handleProveIt, handleAnswer, handleJudge, handleRejectAll, handleGiveUp, handleRematch, endGameForLeaver, pauseGame, resumeGame, setGroups, applyLiveSettings, handlePauseRound, handleNextRound, handleVoteSkip, handleVoteEnd, setReporter,
+  startMatch, handleOpen, handleRaise, handleProveIt, handleAnswer, handleJudge, handleRejectAll, handleRevokeGrant, handleGiveUp, handleRematch, endGameForLeaver, pauseGame, resumeGame, setGroups, applyLiveSettings, handlePauseRound, handleNextRound, handleVoteSkip, handleVoteEnd, setReporter,
   resync: (io, room) => { if (room.game) emit(io, room); },
 };

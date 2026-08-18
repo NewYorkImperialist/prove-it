@@ -45,7 +45,8 @@ function liveRoom({ players = ["p1", "p2"], format = 3, suddenDeath = false, tim
     round: 1, isTiebreaker: false, usedNames: [], lastCatName: null,
     current: testCategory(), phase: "live", deadline: Date.now() + timer * 1000, timeout: null,
     answers: Object.fromEntries(players.map((id) => [id, new Map()])),
-    liveScores: Object.fromEntries(players.map((id) => [id, 0])), lastAnswerAt: {},
+    liveScores: Object.fromEntries(players.map((id) => [id, 0])),
+    misses: Object.fromEntries(players.map((id) => [id, []])), missSeq: 0,
     lastReveal: null, matchWinnerId: null, paused: false, endVotes: new Set(),
     startedAt: Date.now(), gid: "r-test",
   };
@@ -103,6 +104,14 @@ describe("handleAnswer", () => {
     const io = makeIO(); const room = liveRoom(); room.game.activeIds.delete("p1");
     let ack; engine.handleAnswer(io, room, sock("p1"), "alpha", (r) => (ack = r));
     assert.equal(ack.accepted, false);
+  });
+
+  test("a wrong answer is tracked as a miss for later review, deduped per player", () => {
+    const io = makeIO(); const room = liveRoom();
+    engine.handleAnswer(io, room, sock("p1"), "Nowray", () => {});
+    engine.handleAnswer(io, room, sock("p1"), "nowray", () => {}); // same normalized text — shouldn't duplicate
+    assert.equal(room.game.misses.p1.length, 1);
+    assert.equal(room.game.misses.p1[0].text, "Nowray");
   });
 });
 
@@ -227,5 +236,63 @@ describe("playerLeftMatch (N-player forfeit)", () => {
     // p3 is gone from activeIds, so they don't appear in the reveal or win the round — this is
     // the documented v1 behavior (their round is simply forfeited along with them).
     assert.ok(!reveal.perPlayer.some((p) => p.id === "p3"));
+  });
+});
+
+describe("post-round review: approving a missed/off-list answer", () => {
+  test("a round with no misses at all finalizes immediately — no review wait", () => {
+    const io = makeIO(); const room = liveRoom();
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    engine.endLiveRound(io, room);
+    const reveal = io.lastOfType("raceReveal");
+    assert.equal(reveal.final, true); // finalizeRound ran synchronously, no REVIEW_MS wait needed
+    assert.deepEqual(reveal.roundWinnerIds, ["p1"]);
+  });
+
+  test("a round with a miss opens a non-final review window instead of finalizing right away", () => {
+    const io = makeIO(); const room = liveRoom();
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    engine.handleAnswer(io, room, sock("p2"), "Nowray", () => {}); // an off-list miss for p2
+    engine.endLiveRound(io, room);
+    const reveal = io.lastOfType("raceReveal");
+    assert.equal(reveal.final, false);
+    assert.deepEqual(reveal.roundWinnerIds, []); // no winner declared yet
+    assert.equal(room.game.phase, "roundover");
+    const p2 = reveal.perPlayer.find((p) => p.id === "p2");
+    assert.equal(p2.misses.length, 1);
+    assert.equal(p2.misses[0].text, "Nowray");
+  });
+
+  test("another player approving a miss credits it and can flip the round's outcome", (t) => {
+    const io = makeIO(); const room = liveRoom();
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});                 // p1: 1 correct
+    engine.handleAnswer(io, room, sock("p2"), "Nowray", () => {});                // p2: 0 correct, 1 miss
+    engine.endLiveRound(io, room);
+    const missId = room.game.misses.p2[0].id;
+
+    engine.handleApproveMiss(io, room, sock("p1"), "p2", missId); // p1 approves p2's "Nowray"
+    assert.equal(room.game.liveScores.p2, 1); // now tied 1-1
+    const midReveal = io.lastOfType("raceReveal");
+    assert.equal(midReveal.final, false); // approving doesn't finalize by itself
+    assert.equal(room.game.misses.p2.length, 0); // consumed, can't be double-approved
+
+    t.mock.timers.tick(15000); // REVIEW_MS elapses → finalizeRound runs
+    const final = io.lastOfType("raceReveal");
+    assert.equal(final.final, true);
+    assert.equal(final.tie, true); // 1-1 after the approval, instead of p1 winning outright
+  });
+
+  test("you can't approve your own miss, or someone else's after the round is finalized", (t) => {
+    const io = makeIO(); const room = liveRoom();
+    engine.handleAnswer(io, room, sock("p2"), "Nowray", () => {});
+    engine.endLiveRound(io, room);
+    const missId = room.game.misses.p2[0].id;
+
+    engine.handleApproveMiss(io, room, sock("p2"), "p2", missId); // self-approval — ignored
+    assert.equal(room.game.liveScores.p2, 0);
+
+    t.mock.timers.tick(15000); // finalize
+    engine.handleApproveMiss(io, room, sock("p1"), "p2", missId); // too late — already finalized
+    assert.equal(room.game.liveScores.p2, 0);
   });
 });

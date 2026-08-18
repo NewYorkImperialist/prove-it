@@ -2,13 +2,19 @@
 // 2+ players get the same category + timer at once (a live version of solo/daily challenge).
 // The server is authoritative: it owns the round clock and answer validation. Live state
 // broadcasts to the room ONLY ever exposes each player's running COUNT (never their actual
-// answers) — the full per-player answer list is broadcast exactly once, when a round ends.
+// answers) — the full per-player answer/miss list only ever goes out via "raceReveal", starting
+// once the round's timer ends (never while phase === "live"). A round's result isn't final the
+// moment the timer runs out, though: there's a review window where other players can approve
+// each other's missed/off-list answers (see handleApproveMiss), and only finalizeRound() locks
+// in who actually won the round.
 const CATEGORY_GROUPS = require("./public/categories.js");
-const { resolve, buildPool } = require("./lib/answer-matching.js");
+const { norm, resolve, buildPool } = require("./lib/answer-matching.js");
 
 const COUNTDOWN_MS = 3_000;   // 3-2-1-GO before each round's timer starts
-const REVEAL_MS = 7_000;      // how long the reveal/round-summary sits before the next round
-const DEFAULTS = { timer: 30, format: 3, suddenDeath: false }; // format: 3|5|null(endless) round-win target
+const REVIEW_MS = 15_000;     // window to approve missed/off-list answers, only when there's something to review
+const RESULT_MS = 5_000;      // pause showing the round's final result before the next round starts
+const MAX_MISSES = 25;        // per player per round — anti-spam cap on tracked wrong answers
+const DEFAULTS = { timer: 45, format: 5, suddenDeath: false }; // format: 3|5|null(endless) round-win target
 
 // Optional analytics hook · server.js sets this to persist match/round events. No-op by default.
 let report = () => {};
@@ -85,7 +91,7 @@ function startMatch(io, room) {
     roundWins: Object.fromEntries(order.map((id) => [id, 0])),
     round: 0, isTiebreaker: false, usedNames: [], lastCatName: null,
     current: null, phase: "starting", deadline: null, timeout: null,
-    answers: {}, liveScores: {}, lastReveal: null, matchWinnerId: null,
+    answers: {}, liveScores: {}, misses: {}, missSeq: 0, lastReveal: null, matchWinnerId: null,
     paused: false, endVotes: new Set(),
     startedAt: Date.now(),
     gid: "r-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7),
@@ -103,8 +109,9 @@ function beginRound(io, room, opts = {}) {
   if (!avail.length) { g.usedNames = []; avail = g.pool.filter((c) => c.name !== g.lastCatName); if (!avail.length) avail = g.pool; }
   const c = avail[Math.floor(Math.random() * avail.length)];
   g.usedNames.push(c.name); g.lastCatName = c.name; g.current = c;
-  g.answers = {}; g.liveScores = {}; g.endVotes = new Set(); // votes are a per-round intent check, not sticky across rounds
-  for (const id of g.activeIds) { g.answers[id] = new Map(); g.liveScores[id] = 0; }
+  g.answers = {}; g.liveScores = {}; g.misses = {}; g.missSeq = 0;
+  g.endVotes = new Set(); // votes are a per-round intent check, not sticky across rounds
+  for (const id of g.activeIds) { g.answers[id] = new Map(); g.liveScores[id] = 0; g.misses[id] = []; }
   g.phase = "countdown";
   log(io, room, "system", null, g.isTiebreaker ? `Sudden death! Round ${g.round} · ${c.group}: ${c.name}` : `Round ${g.round} · ${c.group}: ${c.name}`);
   setTimer(room, COUNTDOWN_MS, () => startLiveRound(io, room));
@@ -118,7 +125,63 @@ function startLiveRound(io, room) {
   emit(io, room);
 }
 
+// Snapshot of everyone's current answers/misses, used for both the initial (non-final) reveal
+// and every subsequent update as misses get approved or the round gets finalized.
+function currentPerPlayer(room) {
+  const g = room.game;
+  return [...g.activeIds].map((id) => {
+    const mine = g.answers[id] || new Map();
+    return {
+      id, name: g.names[id], score: g.liveScores[id] || 0,
+      got: [...mine.values()].map((v) => v.display),
+      misses: (g.misses[id] || []).map((m) => ({ id: m.id, text: m.text })),
+      missedCount: Math.max(0, g.current.entries.length - mine.size),
+    };
+  });
+}
+
+// Round timer ran out. Doesn't declare a winner yet — first there's a review window (only if
+// anyone had off-list misses) where other players can approve one another's wrong answers,
+// which can still change who won the round. See finalizeRound() for the actual scoring.
 function endLiveRound(io, room) {
+  clearTimer(room);
+  const g = room.game;
+  g.lastReveal = {
+    round: g.round, category: { name: g.current.name, group: g.current.group, emoji: g.current.emoji },
+    perPlayer: currentPerPlayer(room), final: false, roundWinnerIds: [], tie: false, suddenDeathTriggered: false,
+  };
+  io.to(room.code).emit("raceReveal", g.lastReveal);
+  g.phase = "roundover"; g.deadline = null;
+  emit(io, room);
+  const hasMisses = [...g.activeIds].some((id) => (g.misses[id] || []).length > 0);
+  if (hasMisses) setTimer(room, REVIEW_MS, () => finalizeRound(io, room));
+  else finalizeRound(io, room); // nothing to review — go straight to the result
+}
+
+// Any OTHER active player can approve one of your missed/off-list answers during the review
+// window (e.g. "Nowray" for "Norway") — first approval counts, mirrors the duel mode's
+// single-judge model. Only valid before the round's result is finalized.
+function handleApproveMiss(io, room, socket, targetId, missId) {
+  const g = room.game;
+  if (!g || g.phase !== "roundover" || g.lastReveal?.final) return;
+  const approverId = socket.data.playerId;
+  if (!approverId || approverId === targetId || !g.activeIds.has(approverId) || !g.activeIds.has(targetId)) return;
+  const list = g.misses[targetId] || [];
+  const idx = list.findIndex((m) => m.id === missId);
+  if (idx === -1) return;
+  const [miss] = list.splice(idx, 1);
+  const mine = g.answers[targetId] || (g.answers[targetId] = new Map());
+  mine.set(`approved:${miss.id}`, { display: miss.text, at: Date.now() }); // string key — never collides with a real entry id
+  g.liveScores[targetId] = (g.liveScores[targetId] || 0) + 1;
+  log(io, room, approverId, g.names[approverId], `approved "${miss.text}" for ${g.names[targetId]}`, "ok");
+  report(room, "answer", { category: g.current.name, grp: g.current.group, display: miss.text, offList: true, player: g.names[targetId] });
+  g.lastReveal = { ...g.lastReveal, perPlayer: currentPerPlayer(room) };
+  io.to(room.code).emit("raceReveal", g.lastReveal);
+  emit(io, room); // liveScores changed — refresh the score-only broadcast too
+}
+
+// Review window closed (or there was nothing to review) — now the round's result is locked in.
+function finalizeRound(io, room) {
   clearTimer(room);
   const g = room.game;
   // In a sudden-death round, everyone plays again, but only the players who were tied
@@ -143,38 +206,26 @@ function endLiveRound(io, room) {
     else { g.isTiebreaker = false; g.tiebreakerCandidates = null; }
   }
 
-  const perPlayer = [...g.activeIds].map((id) => {
-    const mine = g.answers[id] || new Map();
-    return {
-      id, name: g.names[id], score: g.liveScores[id] || 0,
-      got: [...mine.values()].map((v) => v.display),
-      missedCount: Math.max(0, g.current.entries.length - mine.size),
-    };
-  });
-  g.lastReveal = { category: { name: g.current.name, group: g.current.group, emoji: g.current.emoji },
-    perPlayer, roundWinnerIds, tie, suddenDeathTriggered };
-
+  g.lastReveal = { ...g.lastReveal, perPlayer: currentPerPlayer(room), final: true, roundWinnerIds, tie, suddenDeathTriggered };
   const winnerNames = roundWinnerIds.map((id) => g.names[id]).join(", ");
   log(io, room, "system", null, roundWinnerIds.length
     ? `${winnerNames} ${roundWinnerIds.length > 1 ? "win" : "wins"} the round with ${maxScore}!`
     : (suddenDeathTriggered ? `Tied at ${maxScore} — sudden death!` : `Tied at ${maxScore} — round is a draw.`));
   report(room, "round", { category: g.current.name, grp: g.current.group,
     winnerId: roundWinnerIds[0] || null, winnerName: winnerNames || null, claim: null, proven: maxScore,
-    tie, tiebreaker: g.lastReveal.suddenDeathTriggered });
+    tie, tiebreaker: suddenDeathTriggered });
   io.to(room.code).emit("raceReveal", g.lastReveal);
-
-  g.phase = "roundover"; g.deadline = null;
   emit(io, room);
 
   const leaderId = g.winsNeeded != null ? g.order.find((id) => (g.roundWins[id] || 0) >= g.winsNeeded) : null;
   if (!suddenDeathTriggered && leaderId) {
-    setTimer(room, REVEAL_MS, () => matchOver(io, room, leaderId, "target"), { deadline: false });
+    setTimer(room, RESULT_MS, () => matchOver(io, room, leaderId, "target"), { deadline: false });
   } else if (g.activeIds.size >= 2) {
-    setTimer(room, REVEAL_MS, () => beginRound(io, room, { tiebreaker: suddenDeathTriggered }), { deadline: false });
+    setTimer(room, RESULT_MS, () => beginRound(io, room, { tiebreaker: suddenDeathTriggered }), { deadline: false });
   } else {
     // everyone else already left mid-round — the sole remaining player wins by forfeit.
     const sole = [...g.activeIds][0] || null;
-    setTimer(room, REVEAL_MS, () => matchOver(io, room, sole, "forfeit"), { deadline: false });
+    setTimer(room, RESULT_MS, () => matchOver(io, room, sole, "forfeit"), { deadline: false });
   }
 }
 
@@ -184,7 +235,17 @@ function handleAnswer(io, room, socket, text, ack) {
   if (!g || g.phase !== "live" || !g.activeIds.has(pid)) return ack?.({ ok: true, accepted: false });
   if (g.deadline && Date.now() > g.deadline) return ack?.({ ok: true, accepted: false }); // race lost to the clock
   const entry = resolve(g.current, text);
-  if (!entry) return ack?.({ ok: true, accepted: false }); // not on the list — a silent miss, same UX as solo mode
+  if (!entry) {
+    // Not recognized — logged as a miss so it can be approved by someone else after the round
+    // ends (e.g. a typo/alternate spelling the category's alias list doesn't cover), rather than
+    // silently discarded. Deduped per player so repeated garbage doesn't clutter the review list.
+    const q = norm(text);
+    if (!q) return ack?.({ ok: true, accepted: false });
+    const mine = g.misses[pid] || (g.misses[pid] = []);
+    if (mine.some((m) => m.q === q)) return ack?.({ ok: true, accepted: false });
+    if (mine.length < MAX_MISSES) mine.push({ id: ++g.missSeq, text: String(text).trim().slice(0, 60), q });
+    return ack?.({ ok: true, accepted: false });
+  }
   const mine = g.answers[pid] || (g.answers[pid] = new Map());
   if (mine.has(entry.id)) return ack?.({ ok: true, accepted: false, alreadyHad: true, display: entry.display });
   mine.set(entry.id, { display: entry.display, at: Date.now() });
@@ -285,7 +346,7 @@ function handleRematch(io, room, socket, ack) {
 }
 
 module.exports = {
-  startMatch, beginRound, endLiveRound, handleAnswer, handleVoteEnd, playerLeftMatch, pauseGame, resumeGame,
-  applyLiveSettings, setGroups, setReporter, handleRematch,
+  startMatch, beginRound, endLiveRound, finalizeRound, handleAnswer, handleApproveMiss, handleVoteEnd, playerLeftMatch,
+  pauseGame, resumeGame, applyLiveSettings, setGroups, setReporter, handleRematch,
   resync: (io, room) => { if (room.game) emit(io, room); },
 };

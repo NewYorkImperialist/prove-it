@@ -628,24 +628,41 @@ function handleLog({ by, name, text, kind }) {
 socket.on("log", handleLog);
 socket.on("raceLog", handleLog);
 
-// Round-end reveal (Challenge Race only) — everyone's full answer list, shown once per round
-// as a rich feed card (never sent while the round is still live — see race-engine.js's snapshot()).
+// Round-end reveal (Challenge Race only) — everyone's answer/miss list, shown as a feed card.
+// This fires more than once per round: first as a non-final reveal opening a review window
+// (see race-engine.js's handleApproveMiss), again each time someone approves a miss, and a
+// last time once the result is finalized — updating the SAME card in place rather than piling
+// up duplicates. Never sent while the round is still live (see race-engine.js's snapshot()).
+let raceRevealBox = null, raceRevealRound = null, raceReviewOpen = false;
 socket.on("raceReveal", (r) => {
+  raceReviewOpen = !r.final;
   const feed = $("feed");
-  const box = document.createElement("div");
-  box.className = "msg reveal";
+  if (raceRevealRound !== r.round || !raceRevealBox || !raceRevealBox.isConnected) {
+    raceRevealBox = document.createElement("div");
+    raceRevealBox.className = "msg reveal";
+    feed.appendChild(raceRevealBox);
+    raceRevealRound = r.round;
+  }
   const winnerNames = r.roundWinnerIds.map((id) => (r.perPlayer.find((p) => p.id === id) || {}).name).filter(Boolean).join(", ");
-  const title = r.tie
+  const title = !r.final
+    ? "Reviewing answers…"
+    : r.tie
     ? (r.suddenDeathTriggered ? "Tied — sudden death! One more round to break it." : "Round tied — no one scores this one.")
     : `${winnerNames} won the round!`;
-  const rows = r.perPlayer.slice().sort((a, b) => b.score - a.score)
-    .map((p) => `<div class="rp"><b>${esc(p.name)}</b> — ${p.score} correct${p.got.length ? `: <span class="got">${p.got.map(esc).join(", ")}</span>` : ""}</div>`)
-    .join("");
-  box.innerHTML = `<div style="font-weight:800;margin-bottom:4px">${title}</div>
+  const rows = r.perPlayer.slice().sort((a, b) => b.score - a.score).map((p) => {
+    const got = p.got.length ? `: <span class="got">${p.got.map(esc).join(", ")}</span>` : "";
+    const misses = (!r.final && p.misses && p.misses.length) ? `<div class="misses">${p.misses.map((m) =>
+      `<span class="miss-item">${esc(m.text)}${p.id !== myId ? ` <button class="approve-miss" data-target="${p.id}" data-miss="${m.id}">Approve</button>` : ""}</span>`
+    ).join("")}</div>` : "";
+    return `<div class="rp"><b>${esc(p.name)}</b> — ${p.score} correct${got}</div>${misses}`;
+  }).join("");
+  raceRevealBox.innerHTML = `<div style="font-weight:800;margin-bottom:4px">${title}</div>
     <div style="color:var(--muted);font-size:12px;margin-bottom:6px">${r.category.emoji} ${esc(r.category.name)}</div>${rows}`;
-  feed.appendChild(box);
+  raceRevealBox.querySelectorAll(".approve-miss").forEach((btn) => {
+    btn.onclick = () => { btn.disabled = true; socket.emit("raceApproveMiss", { targetId: btn.dataset.target, missId: +btn.dataset.miss }); };
+  });
   feed.scrollTop = feed.scrollHeight;
-  sfx[r.roundWinnerIds.includes(myId) ? "roundWin" : (r.tie ? "pop" : "roundLose")]();
+  if (r.final) sfx[r.roundWinnerIds.includes(myId) ? "roundWin" : (r.tie ? "pop" : "roundLose")]();
 });
 
 socket.on("raceMatchOver", (payload) => {
@@ -774,7 +791,7 @@ function showPrompt(cat) {
   $("ppCat").textContent = cat.name;
   el.hidden = false;
   el.classList.remove("show"); void el.offsetWidth; el.classList.add("show");
-  clearTimeout(el._t); el._t = setTimeout(() => { el.hidden = true; el.classList.remove("show"); }, 3000);
+  clearTimeout(el._t); el._t = setTimeout(() => { el.hidden = true; el.classList.remove("show"); }, 5000);
 }
 function render() {
   if (!gs) return;
@@ -979,7 +996,7 @@ function renderRace() {
     if (canPlay) { enable = true; placeholder = g.category ? `Name a ${g.category.name}…` : "…"; }
     statusText = `Racing! You have ${me ? (me.score ?? 0) : 0} so far.`;
   } else if (g.phase === "roundover") {
-    statusText = "See the reveal above · next round starting…";
+    statusText = raceReviewOpen ? "Reviewing answers — approve a miss above before time runs out…" : "See the reveal above · next round starting…";
     if (g.winsNeeded == null) addBtn(actions, g.endVotes ? `End game (${g.endVotes}/${roster.filter((p) => p.active).length})` : "End game", "danger", () => socket.emit("raceVoteEnd"));
   } else if (g.phase === "matchover") {
     statusText = g.matchWinnerId ? `${nameOf(g.matchWinnerId)} wins the match!` : "Match over.";
@@ -1045,6 +1062,19 @@ function note(box, text) {
   n.className = "pnote"; n.textContent = text;
   box.appendChild(n);
 }
+// An off-list answer the challenger already accepted this round — shown only to the challenger,
+// with a way to undo it (e.g. they accepted "Nowray" and the prover later also typed the
+// correctly-spelled "Norway", which matched the real list entry and double-counted the item).
+function grantedRow(box, gr) {
+  const row = document.createElement("div");
+  row.className = "prow granted";
+  row.innerHTML = `<span class="ptext">${gr.text}</span>`;
+  const undo = document.createElement("button");
+  undo.className = "rej"; undo.textContent = "Take back";
+  undo.onclick = () => socket.emit("revokeGrant", { grantId: gr.id });
+  row.appendChild(undo);
+  box.appendChild(row);
+}
 
 function renderPending() {
   const box = $("gpending");
@@ -1054,23 +1084,30 @@ function renderPending() {
   if (gs.phase === "proving") {
     // live judging · the whole pending list at once
     const pending = gs.pending || [];
-    if (!pending.length) return;
-    if (amJudge) {
-      pending.forEach((p) => judgeRow(box, p));
-      if (pending.length > 1) rejectAllBtn(box, "Reject all");
-    } else {
-      note(box, `Off-list, waiting on opponent: ${pending.map((p) => p.text).join(", ")}`);
+    if (pending.length) {
+      if (amJudge) {
+        pending.forEach((p) => judgeRow(box, p));
+        if (pending.length > 1) rejectAllBtn(box, "Reject all");
+      } else {
+        note(box, `Off-list, waiting on opponent: ${pending.map((p) => p.text).join(", ")}`);
+      }
     }
   } else if (gs.phase === "judging") {
     // forced ruling · one at a time
     const a = gs.judgeActive;
-    if (!a) return;
-    if (amJudge) {
-      judgeRow(box, a);
-      if (gs.judgeRemaining > 1) rejectAllBtn(box, `Reject remaining (${gs.judgeRemaining})`);
-    } else {
-      note(box, `Opponent ruling: “${a.text}” (${gs.judgeRemaining} left)`);
+    if (a) {
+      if (amJudge) {
+        judgeRow(box, a);
+        if (gs.judgeRemaining > 1) rejectAllBtn(box, `Reject remaining (${gs.judgeRemaining})`);
+      } else {
+        note(box, `Opponent ruling: “${a.text}” (${gs.judgeRemaining} left)`);
+      }
     }
+  }
+  // Already-granted off-list answers can be undone any time while the round is still live —
+  // only the challenger who granted them sees this.
+  if (amJudge && (gs.phase === "proving" || gs.phase === "judging") && gs.granted && gs.granted.length) {
+    gs.granted.forEach((gr) => grantedRow(box, gr));
   }
 }
 function ackErr(r) { if (r && !r.ok && r.error) flashStatus(r.error); }

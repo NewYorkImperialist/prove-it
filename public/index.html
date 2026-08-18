@@ -186,6 +186,13 @@
   .msg.reveal .rp { margin:4px 0; }
   .msg.reveal .rp b { color:var(--gold); }
   .msg.reveal .rp .got { color:var(--muted); }
+  /* wrong/off-list answers, open for another player to approve during the post-round review window */
+  .msg.reveal .misses { margin:2px 0 8px 4px; display:flex; flex-wrap:wrap; gap:6px; }
+  .msg.reveal .miss-item { display:inline-flex; align-items:center; gap:6px; background:rgba(255,255,255,.04);
+    border:1px solid var(--line2); border-radius:7px; padding:3px 6px 3px 9px; font-size:12px; color:var(--muted); }
+  .msg.reveal .approve-miss { background:var(--accent2); color:#08130d; border:none; border-radius:6px;
+    padding:3px 9px; font-size:11px; font-weight:700; cursor:pointer; }
+  .msg.reveal .approve-miss:disabled { opacity:.5; cursor:default; }
   #topbar .logo { display:flex; align-items:center; gap:9px; font-family:var(--display); font-size:16px; font-weight:700; letter-spacing:-.3px; transform-origin:left center; }
   #topbar .logo .logobadge { width:28px; height:28px; font-size:15px; }
   /* 🎯 easter-egg: logo grows + shakes when someone answers "Prove It!" */
@@ -243,7 +250,7 @@
     border-radius:18px; box-shadow:0 24px 80px rgba(0,0,0,.6); max-width:92vw; }
   #promptpop .pp-label { font-family:var(--mono); font-size:13px; text-transform:uppercase; letter-spacing:2px; color:var(--accent); margin-bottom:8px; }
   #promptpop .pp-cat { font-family:var(--display); font-weight:700; font-size:clamp(28px,7vw,56px); letter-spacing:-1px; color:var(--text); line-height:1.1; }
-  #promptpop.show .pp-inner { animation:promptPop 3s ease forwards; }
+  #promptpop.show .pp-inner { animation:promptPop 5s ease forwards; }
   @keyframes promptPop { 0%{opacity:0;transform:scale(.86)} 9%{opacity:1;transform:scale(1)} 78%{opacity:1;transform:scale(1)} 100%{opacity:0;transform:scale(1.06)} }
   @media (prefers-reduced-motion:reduce) { #promptpop.show .pp-inner { animation:none; } }
 
@@ -286,6 +293,9 @@
   .prow button { padding:7px 12px; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer; border:none; }
   .prow .acc { background:var(--accent2); color:#08130d; }
   .prow .rej { background:var(--bad); color:#fff; }
+  /* an off-list answer already granted this round — distinct from the gold "awaiting ruling"
+     look so it doesn't read as still-pending; the "Take back" button undoes it. */
+  .prow.granted { background:rgba(62,207,142,.12); border-color:var(--accent2); }
   .rejall { align-self:flex-end; background:transparent; color:var(--muted); border:none; text-decoration:underline; font-size:12px; padding:2px 4px; cursor:pointer; }
   .pnote { font-size:13px; color:var(--gold); padding:2px; }
 

@@ -17,7 +17,7 @@ function gamePeek(room) {
   const nameOf = (id) => g.names[id] || "?";
   const proven = (g.proven || []).map((id) => { const e = (g.current.entries || []).find((x) => x.id === id); return e ? e.display : "?"; });
   return {
-    phase: g.phase, round: g.round,
+    mode: "duel", phase: g.phase, round: g.round,
     category: g.current ? `${g.current.group} — ${g.current.name}` : "?",
     claim: g.claim, target: g.target === Infinity ? "∞" : g.target,
     turn: nameOf(g.turnId),
@@ -26,6 +26,24 @@ function gamePeek(room) {
     paused: !!g.paused, intermission: !!g.intermission,
   };
 }
+// Same idea for a "Challenge Race" room (room.mode === "race") — a very different shape of
+// game state (see race-engine.js), so it gets its own peek rather than being squeezed into
+// gamePeek()'s duel-specific fields.
+function racePeek(room) {
+  const g = room.game;
+  if (!g) return null;
+  const nameOf = (id) => g.names[id] || "?";
+  return {
+    mode: "race", phase: g.phase, round: g.round,
+    category: g.current ? `${g.current.group} — ${g.current.name}` : "?",
+    format: g.format == null ? "endless" : `bo${g.format}`, suddenDeath: !!g.suddenDeath, isTiebreaker: !!g.isTiebreaker,
+    roundWins: g.order.map((id) => `${nameOf(id)}: ${g.roundWins[id] || 0}`).join("   ·   "),
+    liveScores: [...g.activeIds].map((id) => `${nameOf(id)}: ${g.liveScores[id] || 0}`).join("   ·   "),
+    left: g.leftPlayers ? [...g.leftPlayers].map(nameOf) : [],
+    paused: !!g.paused,
+  };
+}
+function anyGamePeek(room) { return room.mode === "race" ? racePeek(room) : gamePeek(room); }
 function runLabel(r) {
   if (String(r.challenge_id || "").startsWith("d-")) return `daily ${String(r.challenge_id).replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")}`;
   let rounds = []; try { rounds = JSON.parse(r.rounds || "[]"); } catch (e) {}
@@ -56,7 +74,8 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       createdAt: room.createdAt || null, lastActivityAt: room.lastActivityAt || null,
       players: [...room.players.values()].map((p) => ({ name: p.name, connected: p.connected, host: p.id === room.hostId })),
       spectators: room.spectators ? room.spectators.size : 0,
-      game: gamePeek(room),
+      mode: room.mode || "duel",
+      game: anyGamePeek(room),
     }));
   }
   // Top-of-page at-a-glance health check — meant to answer "is it the server, the DB, or my own
@@ -250,16 +269,23 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const card = (r) => {
       const ps = r.players.map((p) => `${esc(p.name)}${p.host ? " 👑" : ""}${p.connected === false ? " (reconnecting…)" : ""}`).join(" vs ") || "—";
       const g = r.game;
-      const gameHtml = g ? `
+      const gameHtml = !g ? `<div class="g">In the waiting room.</div>`
+        : g.mode === "race" ? `
+        <div class="g"><b>${esc(g.category)}</b> · round ${g.round} · phase <b>${esc(g.phase)}</b>${g.paused ? " · ⏸ paused" : ""}${g.isTiebreaker ? " · 🔥 sudden death" : ""}</div>
+        <div class="g">Format: ${esc(g.format)}${g.suddenDeath ? " (sudden death on)" : ""}</div>
+        <div class="g">Round wins: ${esc(g.roundWins)}</div>
+        <div class="g">Live scores: ${esc(g.liveScores)}</div>
+        ${g.left.length ? `<div class="g">Left the race: ${esc(g.left.join(", "))}</div>` : ""}
+      ` : `
         <div class="g"><b>${esc(g.category)}</b> · round ${g.round} · phase <b>${esc(g.phase)}</b>${g.paused ? " · ⏸ paused" : ""}</div>
         <div class="g">Score: ${esc(g.scores)} &nbsp; (first to ${esc(g.target)})</div>
         <div class="g">Claim: <b>${g.claim}</b> · current turn: <b>${esc(g.turn)}</b></div>
         <div class="g">Proven (${g.proven.length}): ${g.proven.length ? esc(g.proven.join(", ")) : "—"}</div>
         ${g.granted.length ? `<div class="g">Granted off-list: ${esc(g.granted.join(", "))}</div>` : ""}
         ${g.pending.length ? `<div class="g pend">Awaiting ruling: ${esc(g.pending.join(", "))}</div>` : ""}
-      ` : `<div class="g">In the waiting room.</div>`;
+      `;
       return `<div class="card ${r.status}">
-        <div class="hd"><span class="code">${esc(r.code)}</span><span class="badge">${r.status === "playing" ? "🟢 playing" : "🟡 lobby"}</span>
+        <div class="hd"><span class="code">${esc(r.code)}</span><span class="badge">${r.status === "playing" ? "🟢 playing" : "🟡 lobby"}</span><span class="badge">${r.mode === "race" ? "🏁 race" : "⚔️ duel"}</span>
           <a class="watch" href="/?ghost=${encodeURIComponent(r.code)}&key=${k}" target="_blank">👻 ghost</a>
           <a class="watch" href="/?spectate=${encodeURIComponent(r.code)}" target="_blank">👀 watch</a>
           <a class="close" href="/admin/close?key=${k}&code=${encodeURIComponent(r.code)}" onclick="return confirm('Close room ${esc(r.code)}? This kicks everyone out.')">✕ close</a></div>

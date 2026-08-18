@@ -180,3 +180,135 @@ describe("rooms.js — presence + owner tools", () => {
     assert.ok(!roomsApi.rooms.has(created.code));
   });
 });
+
+// The owner's invisible watch. The contract is stronger than "spectator with a flag": a ghost is
+// registered in NO roster, which is what makes it invisible and — as a free consequence — unable
+// to chat, since the chat handler has nobody to attribute a message to.
+describe("rooms.js — owner ghost watch", () => {
+  // ghostWatch reads process.env.OWNER_KEY at call time, so each test can set its own.
+  async function withOwnerKey(key, fn) {
+    const prev = process.env.OWNER_KEY;
+    if (key === null) delete process.env.OWNER_KEY;
+    else process.env.OWNER_KEY = key;
+    try {
+      return await fn();
+    } finally {
+      if (prev === undefined) delete process.env.OWNER_KEY;
+      else process.env.OWNER_KEY = prev;
+    }
+  }
+
+  test("refuses to ghost with no owner key configured, or with the wrong key", async () => {
+    const a = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+
+    await withOwnerKey(null, async () => {
+      const g = await connect();
+      const res = await emit(g, "ghostWatch", { code: created.code, key: "anything" });
+      assert.equal(res.ok, false); // nothing to authorise against
+    });
+    await withOwnerKey("right-key", async () => {
+      const g = await connect();
+      const res = await emit(g, "ghostWatch", { code: created.code, key: "wrong-key" });
+      assert.equal(res.ok, false);
+      assert.match(res.error, /Not authorized/);
+    });
+  });
+
+  test("refuses a room code that doesn't exist", async () => {
+    await withOwnerKey("k", async () => {
+      const g = await connect();
+      const res = await emit(g, "ghostWatch", { code: "ZZZZ", key: "k" });
+      assert.equal(res.ok, false);
+      assert.match(res.error, /No room/);
+    });
+  });
+
+  test("a ghost appears in neither roster, and the players' own view is untouched", async () => {
+    await withOwnerKey("k", async () => {
+      const a = await connect();
+      const created = await emit(a, "createRoom", { name: "Alice" });
+      const tracked = trackRoomState(a);
+      await sleep(30);
+      const before = JSON.stringify(tracked.current);
+
+      const g = await connect();
+      const res = await emit(g, "ghostWatch", { code: created.code, key: "k" });
+      assert.equal(res.ok, true);
+      assert.equal(res.ghost, true);
+      await sleep(50);
+
+      const room = roomsApi.rooms.get(created.code);
+      assert.equal(room.players.size, 1, "a ghost must not become a player");
+      assert.equal(room.spectators.size, 0, "a ghost must not become a watcher either");
+      assert.equal(JSON.stringify(tracked.current), before, "the players' room state must not change");
+    });
+  });
+
+  test("a normal spectator IS listed — the control proving the ghost's absence is real", async () => {
+    await withOwnerKey("k", async () => {
+      const a = await connect();
+      const created = await emit(a, "createRoom", { name: "Alice" });
+
+      const g = await connect();
+      await emit(g, "ghostWatch", { code: created.code, key: "k" });
+      const spec = await connect();
+      await emit(spec, "spectateRoom", { code: created.code, name: "Watcher" });
+      await sleep(50);
+
+      const room = roomsApi.rooms.get(created.code);
+      assert.equal(room.spectators.size, 1); // the spectator, and only the spectator
+      assert.deepEqual([...room.spectators.values()].map((s) => s.name), ["Watcher"]);
+    });
+  });
+
+  test("a ghost stays out of the online count, and uncounts itself only once", async () => {
+    await withOwnerKey("k", async () => {
+      const a = await connect();
+      const created = await emit(a, "createRoom", { name: "Alice" });
+      await sleep(30);
+      const before = roomsApi.getOnline();
+
+      const g = await connect();
+      await sleep(30);
+      assert.equal(roomsApi.getOnline(), before + 1, "a fresh socket counts until it identifies itself");
+
+      await emit(g, "ghostWatch", { code: created.code, key: "k" });
+      await sleep(30);
+      assert.equal(roomsApi.getOnline(), before, "ghosting removes it from the count");
+
+      await emit(g, "ghostWatch", { code: created.code, key: "k" }); // re-ghost (e.g. a reconnect)
+      await sleep(30);
+      assert.equal(roomsApi.getOnline(), before, "and never double-decrements");
+    });
+  });
+
+  test("a ghost is handed the room's current state the moment it arrives", async () => {
+    await withOwnerKey("k", async () => {
+      const a = await connect();
+      const created = await emit(a, "createRoom", { name: "Alice" });
+      const g = await connect();
+      const stateP = waitFor(g, "roomState");
+      const res = await emit(g, "ghostWatch", { code: created.code, key: "k" });
+      assert.equal(res.inGame, false); // still in the lobby
+      const rs = await stateP;
+      assert.equal(rs.code, created.code);
+      assert.deepEqual(rs.players.map((p) => p.name), ["Alice"]);
+    });
+  });
+
+  test("a ghost cannot chat — being in no roster, there's nobody to attribute a message to", async () => {
+    await withOwnerKey("k", async () => {
+      const a = await connect();
+      const created = await emit(a, "createRoom", { name: "Alice" });
+      const g = await connect();
+      await emit(g, "ghostWatch", { code: created.code, key: "k" });
+
+      let heard = null;
+      a.on("chat", (m) => { heard = m; });
+      g.emit("chat", { text: "boo" });
+      await sleep(120);
+      assert.equal(heard, null, "a ghost's chat must never reach the room");
+    });
+  });
+});

@@ -50,7 +50,7 @@ function makeRoom(gameOverrides = {}, roomOverrides = {}) {
     order: ["p1", "p2"], names: { p1: "Alice", p2: "Bob" },
     pool: [testCategory()], groups: [], // beginRound() needs at least one category to pick from
     scores: { p1: 0, p2: 0 },
-    timer: 30, target: 5, autoAdvance: true, skipVotes: new Set(), endVotes: new Set(),
+    timer: 30, target: 5, autoAdvance: true, increment: 0, skipVotes: new Set(), endVotes: new Set(),
     round: 1, usedNames: [], lastCatName: null, intermission: false,
     claim: 0, holderId: null, turnId: "p1", proven: [], granted: [],
     phase: "opening", deadline: null, timeout: null,
@@ -264,6 +264,38 @@ describe("handleAnswer", () => {
     assert.equal(room.game.scores.p1, 5);
     assert.equal(room.game.phase, "proving"); // bonus is score, not claim progress
   });
+
+  // Simulates the active prove-timer the way startProving() would arm one, so extendTimer()
+  // (called from a correct/granted answer) has something real to extend.
+  function armTimer(room) {
+    room.game.timerFn = () => { room.game.timedOut = true; };
+    room.game.timeout = setTimeout(room.game.timerFn, 999999);
+    room.game.deadline = Date.now() + 10000;
+  }
+
+  test("a correct answer extends the deadline by the configured time increment", () => {
+    const io = makeIO(); const room = provingRoom({ increment: 5 });
+    armTimer(room);
+    const before = room.game.deadline;
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    assert.ok(room.game.deadline >= before + 4900 && room.game.deadline <= before + 5100);
+  });
+
+  test("increment of 0 (the default) never touches the deadline", () => {
+    const io = makeIO(); const room = provingRoom({ increment: 0 });
+    armTimer(room);
+    const before = room.game.deadline;
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    assert.equal(room.game.deadline, before);
+  });
+
+  test("a duplicate answer doesn't extend the timer again", () => {
+    const io = makeIO(); const room = provingRoom({ increment: 5, proven: [0] });
+    armTimer(room);
+    const before = room.game.deadline;
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    assert.equal(room.game.deadline, before);
+  });
 });
 
 describe("handleJudge / handleRejectAll", () => {
@@ -295,6 +327,16 @@ describe("handleJudge / handleRejectAll", () => {
     assert.equal(room.game.pending.size, 0);
     assert.deepEqual(room.game.granted, []);
     assert.equal(room.game.phase, "proving");
+  });
+
+  test("accepting a pending answer during live proving also extends the timer", () => {
+    const io = makeIO(); const room = pendingRoom({ increment: 3 });
+    room.game.timerFn = () => {};
+    room.game.timeout = setTimeout(room.game.timerFn, 999999);
+    room.game.deadline = Date.now() + 10000;
+    const before = room.game.deadline;
+    engine.handleJudge(io, room, sock("p2"), { answerId: 1, accept: true });
+    assert.ok(room.game.deadline >= before + 2900 && room.game.deadline <= before + 3100);
   });
 
   test("reject-all clears every pending answer in one shot", () => {

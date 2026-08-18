@@ -32,18 +32,20 @@ function testCategory(overrides = {}) {
 
 // A room with room.game already sitting in "live" phase, bypassing startMatch's random
 // category pick so answer-handling tests are deterministic.
-function liveRoom({ players = ["p1", "p2"], format = 3, suddenDeath = false, timer = 30 } = {}) {
+function liveRoom({ players = ["p1", "p2"], format = 3, suddenDeath = false, timer = 30, increment = 0 } = {}) {
   const playersMap = new Map(players.map((id) => [id, { id, name: id.toUpperCase(), crown: false, connected: true }]));
   const room = { code: "ABCD", players: playersMap, spectators: new Map(), status: "playing", settings: {}, hostId: players[0] };
   const winsNeeded = format == null ? null : Math.ceil(format / 2);
+  const timerFn = () => {};
   room.game = {
     order: [...players], names: Object.fromEntries(players.map((id) => [id, id.toUpperCase()])),
     activeIds: new Set(players), leftPlayers: new Set(),
     pool: [testCategory()], groups: [],
     format, winsNeeded, suddenDeath, tiebreakerCandidates: null,
-    timer, roundWins: Object.fromEntries(players.map((id) => [id, 0])),
+    timer, increment, roundWins: Object.fromEntries(players.map((id) => [id, 0])),
     round: 1, isTiebreaker: false, usedNames: [], lastCatName: null,
-    current: testCategory(), phase: "live", deadline: Date.now() + timer * 1000, timeout: null,
+    current: testCategory(), phase: "live", deadline: Date.now() + timer * 1000,
+    timerFn, timeout: setTimeout(timerFn, 999999), // a real (mocked) armed timer, like a live round actually has
     answers: Object.fromEntries(players.map((id) => [id, new Map()])),
     liveScores: Object.fromEntries(players.map((id) => [id, 0])),
     misses: Object.fromEntries(players.map((id) => [id, []])), missSeq: 0,
@@ -84,6 +86,28 @@ describe("handleAnswer", () => {
     let ack; engine.handleAnswer(io, room, sock("p1"), "alpha", (r) => (ack = r));
     assert.equal(ack.alreadyHad, true);
     assert.equal(room.game.liveScores.p1, 1);
+  });
+
+  test("a correct answer extends the shared round clock by the configured time increment", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 5 });
+    const before = room.game.deadline;
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    assert.ok(room.game.deadline >= before + 4900 && room.game.deadline <= before + 5100);
+  });
+
+  test("increment of 0 (the default) never touches the shared clock", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 0 });
+    const before = room.game.deadline;
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    assert.equal(room.game.deadline, before);
+  });
+
+  test("a duplicate answer doesn't extend the clock again", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 5 });
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    const before = room.game.deadline;
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    assert.equal(room.game.deadline, before);
   });
 
   test("answers are rejected once the round isn't 'live' anymore", () => {

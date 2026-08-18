@@ -111,6 +111,31 @@ describe("routes/admin.js — server controls", () => {
   });
 });
 
+describe("routes/admin.js — gamePeek rendering", () => {
+  // Regression test: game-engine.js's g.granted holds {id,text,q} objects (so a specific grant
+  // can be revoked — see handleRevokeGrant), not bare strings. The dashboard must render the
+  // text, not "[object Object]".
+  test("a duel room's granted off-list answers render as readable text, not [object Object]", async () => {
+    const { app, rooms } = buildApp();
+    rooms.set("ABCD", {
+      code: "ABCD", status: "started", createdAt: Date.now(), lastActivityAt: Date.now(),
+      players: new Map([["p1", { id: "p1", name: "Alice", connected: true }], ["p2", { id: "p2", name: "Bob", connected: true }]]),
+      spectators: new Map(),
+      game: {
+        phase: "proving", round: 1, current: { name: "Test Cat", group: "Testing", entries: [] },
+        order: ["p1", "p2"], names: { p1: "Alice", p2: "Bob" },
+        claim: 5, target: 5, turnId: "p1", scores: { p1: 0, p2: 0 },
+        proven: [], granted: [{ id: 1, text: "Nowray", q: "nowray" }], pending: new Map(),
+        paused: false, intermission: false,
+      },
+    });
+    const dash = await request(app).get("/admin?key=test-owner-key");
+    assert.equal(dash.status, 200);
+    assert.match(dash.text, /Granted off-list: Nowray/);
+    assert.equal(dash.text.includes("[object Object]"), false);
+  });
+});
+
 describe("routes/admin.js — category health", () => {
   test("lists categories with no persistence configured", async () => {
     const { app } = buildApp();

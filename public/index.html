@@ -400,12 +400,12 @@
   #soloApp .seg { display:flex; gap:8px; }
   #soloApp .seg button { flex:1; background:var(--panel2); color:var(--text); border:1px solid var(--line2); border-radius:10px; padding:11px; font-weight:700; font-size:14px; }
   #soloApp .seg button.on { background:var(--accent); border-color:var(--accent); color:var(--markfg); }
-  #soloApp .timecustom { display:flex; align-items:center; gap:8px; margin-top:8px; }
-  #soloApp .timecustom button { width:42px; height:42px; flex:0 0 auto; font-size:22px; font-weight:700; background:var(--panel2); color:var(--text); border:1px solid var(--line2); border-radius:10px; }
-  #soloApp .timecustom button:hover { border-color:var(--accent); color:var(--accent); }
-  #soloApp .timecustom input { width:84px; flex:0 0 auto; text-align:center; font-variant-numeric:tabular-nums; -moz-appearance:textfield; }
-  #soloApp .timecustom input::-webkit-outer-spin-button, #soloApp .timecustom input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
-  #soloApp .timecustom .unit { color:var(--muted); font-size:13px; }
+  .timecustom { display:flex; align-items:center; gap:8px; margin-top:8px; }
+  .timecustom button { width:42px; height:42px; flex:0 0 auto; font-size:22px; font-weight:700; background:var(--panel2); color:var(--text); border:1px solid var(--line2); border-radius:10px; padding:0; }
+  .timecustom button:hover { border-color:var(--accent); color:var(--accent); }
+  .timecustom input { width:84px; flex:0 0 auto; text-align:center; font-variant-numeric:tabular-nums; -moz-appearance:textfield; padding:12px 6px; }
+  .timecustom input::-webkit-outer-spin-button, .timecustom input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+  .timecustom .unit { color:var(--muted); font-size:13px; }
   #soloApp .btn { display:block; width:100%; background:var(--accent); color:var(--markfg); border:none; border-radius:12px; padding:15px; font-size:16px; font-weight:800; margin-top:18px; }
   #soloApp .btn.ghost { background:var(--panel2); color:var(--text); border:1px solid var(--line2); }
   #soloApp .btn:active { transform:translateY(1px); }
@@ -621,6 +621,14 @@
       <div class="checks" id="catChecks"></div>
       <div class="group-title">Timer</div>
       <div class="seg" id="timerSeg"></div>
+      <div class="group-title">Time increment per correct answer</div>
+      <div class="seg" id="mpIncSeg"></div>
+      <div class="timecustom">
+        <button type="button" id="mpIncMinus" aria-label="less increment">−</button>
+        <input id="mpIncCustom" type="number" min="0" max="30" step="1" inputmode="numeric">
+        <span class="unit">seconds</span>
+        <button type="button" id="mpIncPlus" aria-label="more increment">+</button>
+      </div>
       <div class="group-title">Win at</div>
       <div class="seg" id="winSeg"></div>
       <div class="group-title">Next round</div>
@@ -636,6 +644,14 @@
       <div class="checks" id="raceCatChecks"></div>
       <div class="group-title">Timer per round</div>
       <div class="seg" id="raceTimerSeg"></div>
+      <div class="group-title">Time increment per correct answer</div>
+      <div class="seg" id="raceIncSeg"></div>
+      <div class="timecustom">
+        <button type="button" id="raceIncMinus" aria-label="less increment">−</button>
+        <input id="raceIncCustom" type="number" min="0" max="30" step="1" inputmode="numeric">
+        <span class="unit">seconds</span>
+        <button type="button" id="raceIncPlus" aria-label="more increment">+</button>
+      </div>
       <div class="group-title">Match format</div>
       <div class="seg" id="formatSeg">
         <button data-format="3">Best of 3</button>
@@ -678,6 +694,8 @@
         <div id="gHostSettings">
           <div class="group-title">Timer</div>
           <div class="seg" id="gTimerSeg"></div>
+          <div class="group-title">Increment</div>
+          <div class="seg" id="gIncSeg"></div>
           <div class="group-title">Win at</div>
           <div class="seg" id="gWinSeg"></div>
           <div class="group-title">Next round</div>
@@ -767,6 +785,14 @@
           <button type="button" id="timePlus" aria-label="more time">+</button>
         </div>
         <button class="btn ghost" id="recTimesBtn" style="margin-top:10px">⏱ Recommended time per round: off</button>
+        <label class="fld">Time increment per correct answer</label>
+        <div class="seg" id="incSeg"></div>
+        <div class="timecustom">
+          <button type="button" id="incMinus" aria-label="less increment">−</button>
+          <input id="incCustom" type="number" min="0" max="30" step="1" inputmode="numeric">
+          <span class="unit">seconds</span>
+          <button type="button" id="incPlus" aria-label="more increment">+</button>
+        </div>
         <div id="genreWrap">
           <label class="fld" for="genreSel">Genre (a random category each round)</label>
           <select id="genreSel"></select>

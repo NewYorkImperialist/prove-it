@@ -9,6 +9,7 @@ const { createMatchmaking } = require("./matchmaking.js");
 const TIMERS = [15, 30, 45, 60];
 const TARGETS = [3, 5, 10]; // plus null = endless (duel mode's win target)
 const FORMATS = [3, 5, null]; // best-of-3 / best-of-5 / endless (race mode's round-win target)
+const isValidIncrement = (n) => Number.isInteger(n) && n >= 0 && n <= 30; // bonus seconds per correct answer
 const MAX_PLAYERS = 2; // the 1v1 duel is always exactly 2
 const MAX_RACE_PLAYERS = 8; // race rooms allow a small group
 const MIN_RACE_PLAYERS = 2;
@@ -87,8 +88,8 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     const now = Date.now();
     const room = { code, hostId, status: "waiting", mode: isRace ? "race" : "duel",
       settings: settings || (isRace
-        ? { groups: [...DEFAULT_GROUPS], timer: 45, format: 5, suddenDeath: false, maxPlayers: MAX_RACE_PLAYERS }
-        : { groups: [...DEFAULT_GROUPS], timer: 30, target: 5, autoAdvance: true }),
+        ? { groups: [...DEFAULT_GROUPS], timer: 45, format: 5, suddenDeath: false, maxPlayers: MAX_RACE_PLAYERS, increment: 0 }
+        : { groups: [...DEFAULT_GROUPS], timer: 30, target: 5, autoAdvance: true, increment: 0 }),
       players: new Map(), spectators: new Map(), graceTimeout: null, createdAt: now, lastActivityAt: now };
     room.players.set(hostId, { id: hostId, name: cleanName(hostName), socketId, connected: true });
     rooms.set(code, room);
@@ -179,7 +180,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       if (room.game) engineFor(room).resumeGame(io, room); // unpause + push game state
     }
 
-    // mode: "duel" (default) or "race". raceSettings: {groups, timer, format, suddenDeath, maxPlayers} — ignored for duel rooms.
+    // mode: "duel" (default) or "race". raceSettings: {groups, timer, format, suddenDeath, maxPlayers, increment} — ignored for duel rooms.
     socket.on("createRoom", ({ name, playerId, mode, raceSettings } = {}, ack) => {
       if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
       leaveCurrentRoom(socket);
@@ -191,6 +192,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
         format: FORMATS.includes(raceSettings?.format) ? raceSettings.format : 5,
         suddenDeath: !!raceSettings?.suddenDeath,
         maxPlayers: Number.isInteger(raceSettings?.maxPlayers) ? Math.min(MAX_RACE_PLAYERS, Math.max(MIN_RACE_PLAYERS, raceSettings.maxPlayers)) : MAX_RACE_PLAYERS,
+        increment: isValidIncrement(raceSettings?.increment) ? raceSettings.increment : 0,
       } : undefined;
       const room = newRoom({ mode, hostId: pid, hostName: name, socketId: socket.id, settings });
       attach(room, socket, pid);
@@ -295,7 +297,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     });
 
     // Host configures the DUEL room — before starting (all settings) and mid-game (timer/target/auto).
-    socket.on("setSettings", ({ groups, timer, target, autoAdvance } = {}) => {
+    socket.on("setSettings", ({ groups, timer, target, autoAdvance, increment } = {}) => {
       const room = rooms.get(socket.data.roomCode);
       if (!room || room.mode === "race" || room.hostId !== socket.data.playerId) return; // race rooms use raceSetSettings
       const s = room.settings;
@@ -308,12 +310,13 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       if (TIMERS.includes(timer)) { s.timer = timer; patch.timer = timer; }
       if (target === null || TARGETS.includes(target)) { s.target = target; patch.target = target; }
       if (typeof autoAdvance === "boolean") { s.autoAdvance = autoAdvance; patch.autoAdvance = autoAdvance; }
+      if (isValidIncrement(increment)) { s.increment = increment; patch.increment = increment; }
       broadcast(room);
       if (inGame && room.game) engine.applyLiveSettings(io, room, patch); // apply to the live match
     });
 
     // Host configures the RACE room — format/suddenDeath lock once the match starts; groups/timer stay live-adjustable.
-    socket.on("raceSetSettings", ({ groups, timer, format, suddenDeath } = {}) => {
+    socket.on("raceSetSettings", ({ groups, timer, format, suddenDeath, increment } = {}) => {
       const room = rooms.get(socket.data.roomCode);
       if (!room || room.mode !== "race" || room.hostId !== socket.data.playerId) return;
       const s = room.settings;
@@ -325,6 +328,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       }
       const patch = {};
       if (TIMERS.includes(timer)) { s.timer = timer; patch.timer = timer; }
+      if (isValidIncrement(increment)) { s.increment = increment; patch.increment = increment; }
       if (inGame && Array.isArray(groups)) { const valid = groups.filter((k) => CATEGORY_GROUPS[k]); if (valid.length) patch.groups = valid; }
       broadcast(room);
       if (inGame && room.game) raceEngine.applyLiveSettings(io, room, patch);

@@ -12,7 +12,7 @@ const JUDGE_MS_PER = 5_000;   // forced end-of-round ruling: seconds per remaini
 const ANSWER_COOLDOWN_MS = 350; // min gap between a prover's submissions (anti-spam)
 const MAX_PENDING = 6;          // max off-list answers awaiting a ruling at once
 const MAX_OFFLIST = 15;         // max off-list answers a prover can queue per round
-const DEFAULTS = { timer: 30, target: 5, autoAdvance: true }; // prove seconds, points to win, auto next round
+const DEFAULTS = { timer: 30, target: 5, autoAdvance: true, increment: 0 }; // prove seconds, points to win, auto next round, bonus seconds per correct answer
 
 // Optional analytics hook · server.js sets this to persist game/round events. No-op by default.
 let report = () => {};
@@ -31,6 +31,13 @@ function setTimer(room, ms, fn, { deadline = true } = {}) {
   g.deadline = deadline ? Date.now() + ms : null;
   g.timeout = setTimeout(() => { g.timeout = null; fn(); }, ms);
   if (g.timeout.unref) g.timeout.unref(); // don't keep the process alive just for a round timer
+}
+// Chess-clock-style bonus: adds `ms` to whatever timer is currently running (the prove-time
+// countdown), reusing its own callback so it still fires the same thing, just later.
+function extendTimer(room, ms) {
+  const g = room.game;
+  if (!g.timeout || g.deadline == null) return; // no live countdown to extend
+  setTimer(room, Math.max(0, g.deadline - Date.now()) + ms, g.timerFn);
 }
 
 // Freeze the clock when a player drops; resume re-arms it with the time that was left.
@@ -130,7 +137,7 @@ function snapshot(room) {
     granted: g.granted ? g.granted.map((gr) => ({ id: gr.id, text: gr.text })) : [],
     judgeActive: g.judgeActive ? { id: g.judgeActive.id, text: g.judgeActive.text } : null,
     judgeRemaining: g.judgeQueue ? g.judgeQueue.length : 0,
-    scores: g.scores, target: g.target === Infinity ? null : g.target, timer: g.timer,
+    scores: g.scores, target: g.target === Infinity ? null : g.target, timer: g.timer, increment: g.increment || 0,
     players: g.order.map((id) => ({ id, name: g.names[id], crown: !!room.players.get(id)?.crown })),
     spectators: room.spectators ? room.spectators.size : 0,
     lastResult: g.lastResult || null,
@@ -155,6 +162,7 @@ function startMatch(io, room) {
     order, names, pool: buildPool(room.settings), groups: (room.settings?.groups || []).slice(),
     scores: { [order[0]]: 0, [order[1]]: 0 },
     timer: s.timer, target: s.target == null ? Infinity : s.target, // null settings → endless
+    increment: Number.isFinite(s.increment) ? Math.max(0, Math.min(30, s.increment)) : 0,
     autoAdvance: s.autoAdvance !== false, skipVotes: new Set(),
     round: 0, usedNames: [], lastCatName: null,
     claim: 0, holderId: null, turnId: null, proven: [], current: null,
@@ -295,6 +303,7 @@ function handleAnswer(io, room, socket, text, ack) {
       g.proven.push(entry.id);
       log(io, room, socket.data.playerId, me, `${entry.display} ✓ (${total(g)}/${g.claim})`, "ok");
       report(room, "answer", { category: g.current.name, grp: g.current.group, display: entry.display, offList: false, player: me });
+      if (g.increment) extendTimer(room, g.increment * 1000); // chess-clock bonus for a correct answer
       // 🛢️ Strait of Hormuz → rain oil barrels (no points, just chaos).
       if (g.current.name === "Seas and Oceans" && entry.display === "Strait of Hormuz") {
         io.to(room.code).emit("easterEgg", { name: me, phrase: entry.display, fx: "oil" });
@@ -390,6 +399,8 @@ function applyRuling(io, room, p, accept) {
     g.granted.push({ id: grantId, text: p.text, q: p.q });
     log(io, room, g.challengerId, g.names[g.challengerId], `accepted "${p.text}" ✓ (${total(g)}/${g.claim})`, "ok");
     report(room, "answer", { category: g.current.name, grp: g.current.group, display: p.text, offList: true, player: g.names[g.holderId] });
+    // only extend the live prove-timer, not the (unrelated) forced end-of-round judging clock
+    if (g.increment && g.phase === "proving") extendTimer(room, g.increment * 1000);
   } else {
     log(io, room, g.challengerId, g.names[g.challengerId], `rejected "${p.text}"`, "bad");
     report(room, "event", { type: "rejected", detail: `${p.text} (by ${g.names[g.challengerId]})` });
@@ -457,12 +468,13 @@ function handleRematch(io, room, socket, ack) {
 }
 
 // Host tweaked timer / win target / auto-advance mid-match. Applies going forward.
-function applyLiveSettings(io, room, { timer, target, autoAdvance } = {}) {
+function applyLiveSettings(io, room, { timer, target, autoAdvance, increment } = {}) {
   const g = room.game;
   if (!g) return;
   if (typeof timer === "number") g.timer = timer;
   if (target !== undefined) g.target = target == null ? Infinity : target;
   if (typeof autoAdvance === "boolean") g.autoAdvance = autoAdvance;
+  if (typeof increment === "number") g.increment = Math.max(0, Math.min(30, increment));
   log(io, room, "system", null, "Host updated the game settings.");
   // lowering the win target may already decide the match
   if (g.phase !== "matchover" && g.target !== Infinity) {

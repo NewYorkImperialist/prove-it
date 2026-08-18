@@ -494,8 +494,34 @@ socket.on("roomState", (room) => {
 // ---------- room settings (host configures before starting) ----------
 const TIMERS = [15, 30, 45, 60];
 const WINS = [3, 5, 10, "∞"]; // ∞ → null (endless)
+const INCREMENTS = [0, 2, 5]; // bonus seconds added to the clock per correct answer
 let builtSettings = false;
 let curSettings = null;
+
+// Shared by the duel lobby, the duel mid-game menu, and the race lobby — all three offer the
+// same "Increment" preset buttons (0/+2s/+5s), wired to emit `event` with {increment}. A lobby
+// surface also gets a numeric stepper (customIds: [minusId, inputId, plusId]) for any other value;
+// the compact mid-game menu only offers the presets, like its existing Timer/Win-at segs do.
+function buildIncrementSeg(segId, event, customIds) {
+  const seg = $(segId); if (!seg) return;
+  INCREMENTS.forEach((n) => {
+    const b = document.createElement("button");
+    b.textContent = n === 0 ? "0" : "+" + n + "s"; b.dataset.inc = n;
+    b.onclick = () => iAmHost && socket.emit(event, { increment: n });
+    seg.appendChild(b);
+  });
+  if (!customIds) return;
+  const [minusId, inputId, plusId] = customIds;
+  const emitCustom = (n) => { if (iAmHost) socket.emit(event, { increment: Math.max(0, Math.min(30, n)) }); };
+  $(minusId).onclick = () => emitCustom((parseInt($(inputId).value, 10) || 0) - 1);
+  $(plusId).onclick = () => emitCustom((parseInt($(inputId).value, 10) || 0) + 1);
+  $(inputId).addEventListener("change", () => { const v = parseInt($(inputId).value, 10); if (!isNaN(v)) emitCustom(v); });
+}
+function syncIncrementSeg(segId, value, customIds) {
+  const seg = $(segId); if (!seg) return;
+  seg.querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.inc === value));
+  if (customIds && document.activeElement !== $(customIds[1])) $(customIds[1]).value = value;
+}
 
 function buildLobbySettings() {
   if (builtSettings) return;
@@ -514,6 +540,7 @@ function buildLobbySettings() {
     b.onclick = () => iAmHost && socket.emit("setSettings", { timer: s });
     $("timerSeg").appendChild(b);
   });
+  buildIncrementSeg("mpIncSeg", "setSettings", ["mpIncMinus", "mpIncCustom", "mpIncPlus"]);
   WINS.forEach((w) => {
     const b = document.createElement("button");
     b.textContent = w; b.dataset.win = w;
@@ -540,6 +567,7 @@ function syncSettings(s) {
     i.parentElement.classList.toggle("on", i.checked);
   });
   $("timerSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.timer === s.timer));
+  syncIncrementSeg("mpIncSeg", s.increment || 0, ["mpIncMinus", "mpIncCustom", "mpIncPlus"]);
   $("winSeg").querySelectorAll("button").forEach((b) =>
     b.classList.toggle("on", b.dataset.win === "∞" ? s.target == null : +b.dataset.win === s.target));
   $("advanceSeg").querySelectorAll("button").forEach((b) =>
@@ -570,6 +598,7 @@ function buildRaceLobbySettings() {
     b.onclick = () => iAmHost && socket.emit("raceSetSettings", { timer: s });
     $("raceTimerSeg").appendChild(b);
   });
+  buildIncrementSeg("raceIncSeg", "raceSetSettings", ["raceIncMinus", "raceIncCustom", "raceIncPlus"]);
   $("formatSeg").querySelectorAll("button").forEach((b) => {
     b.onclick = () => iAmHost && socket.emit("raceSetSettings", { format: b.dataset.format === "endless" ? null : +b.dataset.format });
   });
@@ -593,6 +622,7 @@ function syncRaceSettings(s) {
     i.parentElement.classList.toggle("on", i.checked);
   });
   $("raceTimerSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.timer === s.timer));
+  syncIncrementSeg("raceIncSeg", s.increment || 0, ["raceIncMinus", "raceIncCustom", "raceIncPlus"]);
   $("formatSeg").querySelectorAll("button").forEach((b) => {
     const val = b.dataset.format === "endless" ? null : +b.dataset.format;
     b.classList.toggle("on", val === s.format);
@@ -976,7 +1006,7 @@ function renderRace() {
   // banner
   if (g.category) { $("catLabel").textContent = `${g.category.emoji} ${g.category.group}`; $("catName").textContent = g.category.name; }
   const fmtLabel = g.winsNeeded == null ? "Endless" : `Best of ${g.format}`;
-  $("claimLine").textContent = `Round ${g.round} · ${fmtLabel}${g.suddenDeath ? " · sudden death on ties" : ""}${g.isTiebreaker ? " · Tiebreaker!" : ""}`;
+  $("claimLine").textContent = `Round ${g.round} · ${fmtLabel}${g.increment ? ` · +${g.increment}s per answer` : ""}${g.suddenDeath ? " · sudden death on ties" : ""}${g.isTiebreaker ? " · Tiebreaker!" : ""}`;
 
   const promptKey = g.round + "|" + (g.category ? g.category.name : "");
   if (g.phase === "countdown" && g.category && promptKey !== lastPromptKey) { lastPromptKey = promptKey; showPrompt(g.category); }
@@ -1386,6 +1416,7 @@ function buildSettingsMenu() {
     b.onclick = () => iAmHost && socket.emit("setSettings", { timer: s });
     $("gTimerSeg").appendChild(b);
   });
+  buildIncrementSeg("gIncSeg", "setSettings");
   WINS.forEach((w) => {
     const b = document.createElement("button"); b.textContent = w; b.dataset.win = w;
     b.onclick = () => iAmHost && socket.emit("setSettings", { target: w === "∞" ? null : w });
@@ -1401,6 +1432,7 @@ function syncSettingsMenu() {
   $("gHostSettings").style.display = (gs && iAmHost) ? "" : "none";
   if (gs) {
     $("gTimerSeg").querySelectorAll("button").forEach((b) => b.classList.toggle("on", +b.dataset.timer === gs.timer));
+    syncIncrementSeg("gIncSeg", gs.increment || 0);
     $("gWinSeg").querySelectorAll("button").forEach((b) =>
       b.classList.toggle("on", b.dataset.win === "∞" ? gs.target == null : +b.dataset.win === gs.target));
     $("gAdvanceSeg").querySelectorAll("button").forEach((b) =>
@@ -1453,6 +1485,7 @@ let lastTickSec = null;
 const $ = (id) => document.getElementById(id);
 function esc(s) { return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 let perRound = 45; // seconds per round · chosen by the host, then locked so every run is comparable
+let increment = 0; // seconds added to the clock for each correct answer this round (0 = off)
 
 // ---- theme + favicon ----
 function setFavicon(t) {
@@ -1580,6 +1613,18 @@ function buildTimeSeg() {
   const seg = $("timeSeg"); seg.innerHTML = "";
   TIME_PRESETS.forEach((s) => { const b = document.createElement("button"); b.dataset.s = s; b.textContent = s + "s"; if (s === perRound) b.classList.add("on"); b.onclick = () => setPerRound(s); seg.appendChild(b); });
   $("timeCustom").value = perRound;
+}
+const INCREMENT_PRESETS = [0, 2, 5];
+// Set the time increment (0–30s added to the clock per correct answer) and keep presets + the custom field in sync.
+function setIncrement(s) {
+  increment = Math.max(0, Math.min(30, parseInt(s, 10) || 0));
+  [...$("incSeg").children].forEach((c) => c.classList.toggle("on", Number(c.dataset.s) === increment));
+  if ($("incCustom") && document.activeElement !== $("incCustom")) $("incCustom").value = increment;
+}
+function buildIncSeg() {
+  const seg = $("incSeg"); seg.innerHTML = "";
+  INCREMENT_PRESETS.forEach((s) => { const b = document.createElement("button"); b.dataset.s = s; b.textContent = s === 0 ? "0" : "+" + s + "s"; if (s === increment) b.classList.add("on"); b.onclick = () => setIncrement(s); seg.appendChild(b); });
+  $("incCustom").value = increment;
 }
 function setMode(m) {
   mode = m;
@@ -1717,12 +1762,19 @@ function nearMiss(nq, cat) {
   }
   return best;
 }
+// Adds this round's configured bonus time to the clock for a correct answer (0 = no-op).
+function bumpTimer() {
+  if (!increment) return;
+  timeLeft += increment;
+  $("sprintTimer").textContent = fmtClock(Math.max(0, timeLeft));
+  $("sprintTimer").classList.toggle("low", timeLeft <= 10); // extra time can pull it back out of the "low" red state
+}
 // Returns true if the text should be KEPT in the box (a near-miss → let them re-spell), false otherwise.
 function submit(q) {
   rChars += q.length; if (!rT0) rT0 = Date.now(); showWpm(); // typing-speed accounting (all submissions count)
   if (geoMode === "fill") { // capitals fill-in: type a capital, it fills the matching country/state
     const r = GeoMap.tryFill(q);
-    if (r === "ok") { count = GeoMap.filled(); updateCount(); $("cmsg").textContent = ""; roundGuesses.push({ display: q, verdict: "ok", at: Date.now() }); if (count >= GeoMap.total()) finishRoundEarly(); return false; }
+    if (r === "ok") { count = GeoMap.filled(); updateCount(); $("cmsg").textContent = ""; roundGuesses.push({ display: q, verdict: "ok", at: Date.now() }); bumpTimer(); if (count >= GeoMap.total()) finishRoundEarly(); return false; }
     if (r === "dup") { flash("already filled in"); return false; }
     roundGuesses.push({ display: q, verdict: "miss", at: Date.now() }); flash("✗ not a capital on the board"); return false;
   }
@@ -1732,6 +1784,7 @@ function submit(q) {
     if (named.has(m.id)) { roundGuesses.push({ display: m.display, verdict: "dup", at: Date.now() }); flash("already got that one"); return false; }
     named.add(m.id); count++; updateCount(); $("cmsg").textContent = "";
     roundGuesses.push({ display: m.display, verdict: "ok", at: Date.now() });
+    bumpTimer();
     if (mapActive && window.GeoMap) GeoMap.light(m.id); // light up the country/state on the map
     const sp = document.createElement("span"); sp.textContent = m.display; $("chips").prepend(sp);
     if (count >= cat.entries.length) finishRoundEarly(); // got them all → record the finish time and end the round
@@ -1920,7 +1973,7 @@ function buildAllCatSelect() { $("catSel").innerHTML = catOptions().innerHTML; }
 function initCreate() {
   isDaily = false; playOrigin = "solo";
   show("create");
-  buildRoundsSeg(); buildTimeSeg(); buildGenreSelect(); buildAllCatSelect(); setMode("genre");
+  buildRoundsSeg(); buildTimeSeg(); buildIncSeg(); buildGenreSelect(); buildAllCatSelect(); setMode("genre");
   $("byName").value = myName;
 }
 // ============ DAILY CHALLENGE ============
@@ -2092,6 +2145,10 @@ $("timeMinus").onclick = () => setPerRound(perRound - 5);
 $("timePlus").onclick = () => setPerRound(perRound + 5);
 $("timeCustom").addEventListener("input", () => { const v = parseInt($("timeCustom").value, 10); if (v) setPerRound(v); });
 $("timeCustom").addEventListener("blur", () => { $("timeCustom").value = perRound; });
+$("incMinus").onclick = () => setIncrement(increment - 1);
+$("incPlus").onclick = () => setIncrement(increment + 1);
+$("incCustom").addEventListener("input", () => { const v = parseInt($("incCustom").value, 10); if (!isNaN(v)) setIncrement(v); });
+$("incCustom").addEventListener("blur", () => { $("incCustom").value = increment; });
 $("readyBack").onclick = () => { if (isDaily) window.PI.showHome(); else backToStart(); }; // daily → menu, solo → build screen
 $("readyStart").onclick = () => runCountdown(() => startRound(0));
 $("readyLB").onclick = () => { $("readyLB").textContent = "Refresh leaderboard"; renderLeaderboard($("readyLBWrap")); };

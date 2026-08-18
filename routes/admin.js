@@ -22,7 +22,7 @@ function gamePeek(room) {
     claim: g.claim, target: g.target === Infinity ? "∞" : g.target,
     turn: nameOf(g.turnId),
     scores: g.order.map((id) => `${nameOf(id)}: ${g.scores[id] || 0}`).join("   ·   "),
-    proven, granted: g.granted || [], pending: g.pending ? [...g.pending.values()].map((p) => p.text) : [],
+    proven, granted: (g.granted || []).map((gr) => gr.text), pending: g.pending ? [...g.pending.values()].map((p) => p.text) : [],
     paused: !!g.paused, intermission: !!g.intermission,
   };
 }

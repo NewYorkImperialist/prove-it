@@ -14,7 +14,7 @@ const COUNTDOWN_MS = 3_000;   // 3-2-1-GO before each round's timer starts
 const REVIEW_MS = 15_000;     // window to approve missed/off-list answers, only when there's something to review
 const RESULT_MS = 5_000;      // pause showing the round's final result before the next round starts
 const MAX_MISSES = 25;        // per player per round — anti-spam cap on tracked wrong answers
-const DEFAULTS = { timer: 45, format: 5, suddenDeath: false }; // format: 3|5|null(endless) round-win target
+const DEFAULTS = { timer: 45, format: 5, suddenDeath: false, increment: 0 }; // format: 3|5|null(endless); increment: bonus seconds per correct answer
 
 // Optional analytics hook · server.js sets this to persist match/round events. No-op by default.
 let report = () => {};
@@ -31,6 +31,13 @@ function setTimer(room, ms, fn, { deadline = true } = {}) {
   g.deadline = deadline ? Date.now() + ms : null;
   g.timeout = setTimeout(() => { g.timeout = null; fn(); }, ms);
   if (g.timeout.unref) g.timeout.unref();
+}
+// Chess-clock-style bonus: adds `ms` to the round's shared clock, reusing whatever's currently
+// scheduled (only meaningful during "live" — the countdown/reveal/result timers aren't extended).
+function extendTimer(room, ms) {
+  const g = room.game;
+  if (!g.timeout || g.deadline == null) return;
+  setTimer(room, Math.max(0, g.deadline - Date.now()) + ms, g.timerFn);
 }
 function pauseGame(io, room) {
   const g = room.game;
@@ -60,7 +67,7 @@ function snapshot(room) {
   return {
     phase: g.phase, round: g.round,
     category: g.current ? { name: g.current.name, group: g.current.group, emoji: g.current.emoji, size: g.current.entries.length } : null,
-    deadline: g.deadline || null, timer: g.timer,
+    deadline: g.deadline || null, timer: g.timer, increment: g.increment || 0,
     format: g.format, winsNeeded: g.winsNeeded, suddenDeath: !!g.suddenDeath, isTiebreaker: !!g.isTiebreaker,
     roundWins: g.order.map((id) => ({ id, name: g.names[id], wins: g.roundWins[id] || 0, active: g.activeIds.has(id) })),
     // score-only: a running count per player, NEVER the actual items they've named — that's
@@ -87,7 +94,7 @@ function startMatch(io, room) {
     pool: buildPool(room.settings), groups: (room.settings?.groups || []).slice(),
     format, winsNeeded: format == null ? null : Math.ceil(format / 2), // bo3→2, bo5→3, endless→null
     suddenDeath: !!s.suddenDeath, tiebreakerCandidates: null,
-    timer: s.timer || 30,
+    timer: s.timer || 30, increment: Number.isFinite(s.increment) ? Math.max(0, Math.min(30, s.increment)) : 0,
     roundWins: Object.fromEntries(order.map((id) => [id, 0])),
     round: 0, isTiebreaker: false, usedNames: [], lastCatName: null,
     current: null, phase: "starting", deadline: null, timeout: null,
@@ -251,6 +258,7 @@ function handleAnswer(io, room, socket, text, ack) {
   mine.set(entry.id, { display: entry.display, at: Date.now() });
   g.liveScores[pid] = (g.liveScores[pid] || 0) + 1;
   report(room, "answer", { category: g.current.name, grp: g.current.group, display: entry.display, offList: false, player: g.names[pid] });
+  if (g.increment) extendTimer(room, g.increment * 1000); // chess-clock bonus, extends the whole room's shared clock
   ack?.({ ok: true, accepted: true, display: entry.display });
   emit(io, room); // score-only broadcast — the matched item's name never leaves the server here
 }
@@ -315,10 +323,11 @@ function playerLeftMatch(io, room, leaverId) {
 }
 
 // Host tweaked timer / categories mid-match. Format/sudden-death are locked once started.
-function applyLiveSettings(io, room, { timer, groups } = {}) {
+function applyLiveSettings(io, room, { timer, groups, increment } = {}) {
   const g = room.game;
   if (!g) return;
   if (typeof timer === "number") g.timer = timer;
+  if (typeof increment === "number") g.increment = Math.max(0, Math.min(30, increment));
   if (Array.isArray(groups) && groups.length) {
     const valid = groups.filter((k) => CATEGORY_GROUPS[k]);
     if (valid.length) { g.pool = buildPool({ groups: valid }); g.groups = valid; room.settings = { ...(room.settings || {}), groups: valid }; }

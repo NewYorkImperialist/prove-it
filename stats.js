@@ -47,6 +47,12 @@ async function init() {
       `CREATE TABLE IF NOT EXISTS bandwidth (day TEXT PRIMARY KEY, bytes INTEGER DEFAULT 0, reqs INTEGER DEFAULT 0)`,
       // tiny key/value store (used by the cost guard to remember a per-cycle budget override across restarts)
       `CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)`,
+      // one row per player per completed "Challenge Race" match (mode='race' games in `games`) —
+      // a separate child table rather than widening `games` with p3_id..p6_id-style columns,
+      // since a race can have 2-8 players.
+      `CREATE TABLE IF NOT EXISTS race_players (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, gid TEXT, player_id TEXT, name TEXT,
+        round_wins INTEGER, final_rank INTEGER, at INTEGER)`,
     ], "write");
     // migrate existing tables: mode (mp/sp) + difficulty. ALTER fails harmlessly if the column already exists.
     for (const [t, c] of [["games", "mode TEXT DEFAULT 'mp'"], ["games", "difficulty TEXT"], ["rounds", "mode TEXT DEFAULT 'mp'"],
@@ -55,7 +61,11 @@ async function init() {
       ["games", "gid TEXT"], ["rounds", "gid TEXT"], ["answers", "gid TEXT"], ["answers", "player TEXT"], ["events", "gid TEXT"],
       ["sessions", "ip TEXT"], ["sessions", "visitor_id TEXT"], ["sessions", "tz TEXT"], ["sessions", "locale TEXT"], ["sessions", "geo TEXT"],
       ["challenges", "timer INTEGER DEFAULT 45"], ["challenge_results", "wpms TEXT"], ["challenge_results", "crown INTEGER DEFAULT 0"],
-      ["challenge_results", "gid TEXT"], ["challenge_results", "times TEXT"], ["challenge_results", "mode TEXT"], ["answers", "verdict TEXT"]]) { // gid→guesses; times[]=speed; mode=solo/daily/link (keeps solo boards separate); verdict=ok/miss/dup
+      ["challenge_results", "gid TEXT"], ["challenge_results", "times TEXT"], ["challenge_results", "mode TEXT"], ["answers", "verdict TEXT"],
+      // Challenge Race additions: format (bo3/bo5/endless) + sudden-death flag + player count on `games`;
+      // tie/tiebreaker flags on `rounds` (duel rows just leave these 0/NULL).
+      ["games", "format TEXT"], ["games", "sudden_death INTEGER DEFAULT 0"], ["games", "player_count INTEGER"],
+      ["rounds", "tie INTEGER DEFAULT 0"], ["rounds", "tiebreaker INTEGER DEFAULT 0"]]) { // gid→guesses; times[]=speed; mode=solo/daily/link (keeps solo boards separate); verdict=ok/miss/dup
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
     // one-time backfill: tag pre-`mode` challenge_results so old solo scores stay on the geography boards.
@@ -75,15 +85,24 @@ const fire = (sql, args) => { if (client) client.execute({ sql, args }).catch((e
 
 function recordGame(g) {
   fire(
-    `INSERT INTO games (code,p1_id,p1_name,p1_score,p2_id,p2_name,p2_score,winner_id,winner_name,groups,timer,target,rounds,reason,started_at,ended_at,duration_ms,mode,difficulty,gid)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [g.code, g.p1_id, g.p1_name, g.p1_score, g.p2_id, g.p2_name, g.p2_score, g.winner_id, g.winner_name,
-     g.groups, g.timer, g.target, g.rounds, g.reason, g.started_at, g.ended_at, g.duration_ms, g.mode || "mp", g.difficulty || null, g.gid || null]
+    `INSERT INTO games (code,p1_id,p1_name,p1_score,p2_id,p2_name,p2_score,winner_id,winner_name,groups,timer,target,rounds,reason,started_at,ended_at,duration_ms,mode,difficulty,gid,format,sudden_death,player_count)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [g.code, g.p1_id || null, g.p1_name || null, g.p1_score ?? null, g.p2_id || null, g.p2_name || null, g.p2_score ?? null, g.winner_id, g.winner_name,
+     g.groups, g.timer, g.target ?? null, g.rounds, g.reason, g.started_at, g.ended_at, g.duration_ms, g.mode || "mp", g.difficulty || null, g.gid || null,
+     g.format || null, g.sudden_death || 0, g.player_count || null]
   );
 }
 function recordRound(r) {
-  fire(`INSERT INTO rounds (game_code,category,grp,winner_id,winner_name,claim,proven,at,mode,difficulty,gid) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    [r.code, r.category, r.grp, r.winner_id, r.winner_name, r.claim, r.proven, r.at, r.mode || "mp", r.difficulty || null, r.gid || null]);
+  fire(`INSERT INTO rounds (game_code,category,grp,winner_id,winner_name,claim,proven,at,mode,difficulty,gid,tie,tiebreaker) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [r.code, r.category, r.grp, r.winner_id, r.winner_name, r.claim, r.proven, r.at, r.mode || "mp", r.difficulty || null, r.gid || null, r.tie ? 1 : 0, r.tiebreaker ? 1 : 0]);
+}
+// One row per player in a completed Challenge Race match — see the race_players table comment above.
+function recordRacePlayers(gid, players) {
+  if (!gid || !Array.isArray(players)) return;
+  for (const p of players) {
+    fire(`INSERT INTO race_players (gid,player_id,name,round_wins,final_rank,at) VALUES (?,?,?,?,?,?)`,
+      [gid, p.id, p.name, p.roundWins || 0, p.finalRank || null, Date.now()]);
+  }
 }
 function recordAnswer(a) {
   fire(`INSERT INTO answers (game_code,category,grp,display,off_list,at,mode,gid,player) VALUES (?,?,?,?,?,?,?,?,?)`,
@@ -492,4 +511,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet };
+module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet };

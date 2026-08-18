@@ -3,6 +3,7 @@
 // state machine, the clocks, and answer validation. Clients send intents and
 // render the broadcast snapshots.
 const CATEGORY_GROUPS = require("./public/categories.js");
+const { norm, resolve, buildPool } = require("./lib/answer-matching.js");
 
 const OPEN_MS = 20_000;       // time to open with a number
 const TURN_MS = 10_000;       // time to raise / call Prove It!
@@ -16,29 +17,6 @@ const DEFAULTS = { timer: 30, target: 5, autoAdvance: true }; // prove seconds, 
 // Optional analytics hook · server.js sets this to persist game/round events. No-op by default.
 let report = () => {};
 function setReporter(fn) { report = typeof fn === "function" ? fn : () => {}; }
-
-// ---------- matching helpers (mirror the client) ----------
-function norm(s) {
-  return String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
-}
-function buildCategory(cat, group, emoji) {
-  return {
-    name: cat.name, group, emoji, exact: !!cat.exact,
-    entries: cat.items.map((item, id) => {
-      const names = Array.isArray(item) ? item : [item];
-      return { id, display: names[0], aliases: names.map(norm) };
-    }),
-  };
-}
-function resolve(cat, value) {
-  const q = norm(value);
-  return cat.entries.find((e) => e.aliases.includes(q)) || null;
-}
-function buildPool(settings) {
-  const groups = settings?.groups?.length ? settings.groups : Object.keys(CATEGORY_GROUPS);
-  return groups.flatMap((k) =>
-    (CATEGORY_GROUPS[k]?.cats || []).map((c) => buildCategory(c, k, CATEGORY_GROUPS[k].emoji)));
-}
 
 // ---------- small utilities ----------
 const other = (g, id) => g.order.find((x) => x !== id);

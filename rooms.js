@@ -4,9 +4,14 @@
 // Identity is the stable playerId (the client keeps it in sessionStorage), NOT the
 // socket id — so a reconnect with a new socket re-claims the same player slot.
 
+const { createMatchmaking } = require("./matchmaking.js");
+
 const TIMERS = [15, 30, 45, 60];
-const TARGETS = [3, 5, 10]; // plus null = endless
-const MAX_PLAYERS = 2;
+const TARGETS = [3, 5, 10]; // plus null = endless (duel mode's win target)
+const FORMATS = [3, 5, null]; // best-of-3 / best-of-5 / endless (race mode's round-win target)
+const MAX_PLAYERS = 2; // the 1v1 duel is always exactly 2
+const MAX_RACE_PLAYERS = 8; // race rooms allow a small group
+const MIN_RACE_PLAYERS = 2;
 const GRACE_MS = 30000; // time to reconnect before forfeiting
 
 // ---- client IP + rough geolocation (owner-only analytics) ----
@@ -33,10 +38,14 @@ async function geoLookup(ip) {
 }
 const deviceOf = (socket) => (/Mobile|Android|iPhone|iPad|iPod/i.test(socket.handshake.headers["user-agent"] || "") ? "mobile" : "desktop");
 
-// io: the Socket.IO server. engine: game-engine.js. analytics: stats.js (persistent history).
-// CATEGORY_GROUPS/DEFAULT_GROUPS: lib/category-data.js.
-function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS }) {
+// io: the Socket.IO server. engine: game-engine.js (the 1v1 duel). raceEngine: race-engine.js
+// (the live "Challenge Race" mode — room.mode distinguishes which engine owns room.game).
+// analytics: stats.js (persistent history). CATEGORY_GROUPS/DEFAULT_GROUPS: lib/category-data.js.
+function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS, quickMatchGraceMs }) {
   const rooms = new Map();
+  const engineFor = (room) => (room.mode === "race" ? raceEngine : engine);
+  const capFor = (room) => (room.mode === "race" ? (room.settings?.maxPlayers || MAX_RACE_PLAYERS) : MAX_PLAYERS);
+  const minFor = (room) => (room.mode === "race" ? MIN_RACE_PLAYERS : MAX_PLAYERS);
   let lockdown = false; // owner maintenance kill-switch: blocks new games until toggled back on
   const serverStartedAt = Date.now();
   const stats = { roomsCreated: 0, gamesStarted: 0, peakRooms: 0 }; // resets on server restart (no DB)
@@ -61,7 +70,7 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
 
   function roomState(room) {
     return {
-      code: room.code, hostId: room.hostId, status: room.status, settings: room.settings,
+      code: room.code, hostId: room.hostId, status: room.status, mode: room.mode, settings: room.settings,
       players: [...room.players.values()].map((p) => ({
         id: p.id, name: p.name, isHost: p.id === room.hostId, connected: p.connected, crown: !!p.crown,
       })),
@@ -69,6 +78,23 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
     };
   }
   function broadcast(room) { touch(room); io.to(room.code).emit("roomState", roomState(room)); }
+
+  // Shared room construction, used both by the explicit "create room" flow and by
+  // matchmaking.js's auto-paired quick-match flow — one place builds the room object.
+  function newRoom({ mode, hostId, hostName, socketId, settings }) {
+    const isRace = mode === "race";
+    const code = makeCode();
+    const now = Date.now();
+    const room = { code, hostId, status: "waiting", mode: isRace ? "race" : "duel",
+      settings: settings || (isRace
+        ? { groups: [...DEFAULT_GROUPS], timer: 30, format: 3, suddenDeath: false, maxPlayers: MAX_RACE_PLAYERS }
+        : { groups: [...DEFAULT_GROUPS], timer: 30, target: 5, autoAdvance: true }),
+      players: new Map(), spectators: new Map(), graceTimeout: null, createdAt: now, lastActivityAt: now };
+    room.players.set(hostId, { id: hostId, name: cleanName(hostName), socketId, connected: true });
+    rooms.set(code, room);
+    stats.roomsCreated++; stats.peakRooms = Math.max(stats.peakRooms, rooms.size);
+    return room;
+  }
 
   function attach(room, socket, playerId) {
     const p = room.players.get(playerId);
@@ -90,7 +116,9 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
       return;
     }
     if (room.hostId === playerId) room.hostId = [...room.players.keys()][0];
-    if (wasInGame) engine.endGameForLeaver(io, room, playerId);
+    // Race matches keep going with whoever's left (only dropping to 1 player ends it by
+    // forfeit); the 1v1 duel has no such concept — any departure ends it immediately.
+    if (wasInGame) { if (room.mode === "race") raceEngine.playerLeftMatch(io, room, playerId); else engine.endGameForLeaver(io, room, playerId); }
     broadcast(room);
   }
 
@@ -109,6 +137,12 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
   }
 
   function closeAllRooms() { let n = 0; for (const code of [...rooms.keys()]) if (closeRoom(code)) n++; return n; }
+  // Quick-match queue for the race mode — pairs/batches waiting players into a fresh race
+  // room. Lives in its own module (matchmaking.js) but is tightly coupled to this closure's
+  // room-creation/attach/broadcast primitives, so it's instantiated here rather than injected
+  // from server.js the way engine/raceEngine are.
+  const matchmaking = createMatchmaking({ newRoom, attach, broadcast, DEFAULT_GROUPS, graceMs: quickMatchGraceMs });
+
   function leaveCurrentRoom(socket) {
     const code = socket.data.roomCode, pid = socket.data.playerId;
     socket.data.roomCode = null;
@@ -140,26 +174,28 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
       attach(room, socket, pid);
       if (room.graceTimeout) { clearTimeout(room.graceTimeout); room.graceTimeout = null; }
       io.to(room.code).emit("opponentStatus", { connected: true, name: room.players.get(pid).name });
-      ack?.({ ok: true, code: room.code, you: pid, inGame: !!room.game });
+      ack?.({ ok: true, code: room.code, you: pid, inGame: !!room.game, mode: room.mode });
       broadcast(room);
-      if (room.game) engine.resumeGame(io, room); // unpause + push gameState
+      if (room.game) engineFor(room).resumeGame(io, room); // unpause + push game state
     }
 
-    socket.on("createRoom", ({ name, playerId } = {}, ack) => {
+    // mode: "duel" (default) or "race". raceSettings: {groups, timer, format, suddenDeath, maxPlayers} — ignored for duel rooms.
+    socket.on("createRoom", ({ name, playerId, mode, raceSettings } = {}, ack) => {
       if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
       leaveCurrentRoom(socket);
-      const code = makeCode();
       const pid = playerId || genId();
-      const now = Date.now();
-      const room = { code, hostId: pid, status: "waiting",
-        settings: { groups: [...DEFAULT_GROUPS], timer: 30, target: 5, autoAdvance: true },
-        players: new Map(), spectators: new Map(), graceTimeout: null, createdAt: now, lastActivityAt: now };
-      room.players.set(pid, { id: pid, name: cleanName(name), socketId: socket.id, connected: true });
-      rooms.set(code, room);
-      stats.roomsCreated++; stats.peakRooms = Math.max(stats.peakRooms, rooms.size);
+      const isRace = mode === "race";
+      const settings = isRace ? {
+        groups: (raceSettings?.groups?.length ? raceSettings.groups.filter((k) => CATEGORY_GROUPS[k]) : null) || [...DEFAULT_GROUPS],
+        timer: TIMERS.includes(raceSettings?.timer) ? raceSettings.timer : 30,
+        format: FORMATS.includes(raceSettings?.format) ? raceSettings.format : 3,
+        suddenDeath: !!raceSettings?.suddenDeath,
+        maxPlayers: Number.isInteger(raceSettings?.maxPlayers) ? Math.min(MAX_RACE_PLAYERS, Math.max(MIN_RACE_PLAYERS, raceSettings.maxPlayers)) : MAX_RACE_PLAYERS,
+      } : undefined;
+      const room = newRoom({ mode, hostId: pid, hostName: name, socketId: socket.id, settings });
       attach(room, socket, pid);
-      console.log(`🏠 room ${code} created`);
-      ack?.({ ok: true, code, you: pid });
+      console.log(`🏠 room ${room.code} created (${room.mode})`);
+      ack?.({ ok: true, code: room.code, you: pid, mode: room.mode });
       broadcast(room);
     });
 
@@ -170,17 +206,25 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
       if (!room) return ack?.({ ok: false, error: "No room with that code." });
       const pid = playerId || genId();
       if (room.players.has(pid)) return doResume(room, pid, ack); // rejoining your own slot
-      if (room.players.size >= MAX_PLAYERS) return ack?.({ ok: false, error: "That room is full." });
+      if (room.players.size >= capFor(room)) return ack?.({ ok: false, error: "That room is full." });
       if (room.status !== "waiting") return ack?.({ ok: false, error: "That game already started." });
       leaveCurrentRoom(socket);
       room.players.set(pid, { id: pid, name: cleanName(name), socketId: socket.id, connected: true });
       attach(room, socket, pid);
       console.log(`➕ joined room ${code}`);
-      ack?.({ ok: true, code, you: pid });
+      ack?.({ ok: true, code, you: pid, mode: room.mode });
       broadcast(room);
     });
 
-    // Join a room as a read-only spectator (watch the duel; can chat but can't play).
+    // Quick-match: queue for the race mode and get auto-paired/batched into a fresh room.
+    socket.on("quickMatchJoin", (payload = {}, ack) => {
+      if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
+      leaveCurrentRoom(socket);
+      matchmaking.join(socket, payload, ack);
+    });
+    socket.on("quickMatchLeave", (_p, ack) => { matchmaking.leave(socket); ack?.({ ok: true }); });
+
+    // Join a room as a read-only spectator (watch the game; can chat but can't play).
     socket.on("spectateRoom", ({ code, name, playerId } = {}, ack) => {
       if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
       code = String(code || "").toUpperCase().trim();
@@ -195,9 +239,9 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
       socket.data.roomCode = code; socket.data.playerId = pid; socket.data.spectator = true;
       if (socket.data.session) { socket.data.session.spectated = true; socket.data.session.name = cleanName(name); }
       console.log(`👀 spectating room ${code}`);
-      ack?.({ ok: true, code, you: pid, spectator: true, inGame: !!room.game });
+      ack?.({ ok: true, code, you: pid, spectator: true, inGame: !!room.game, mode: room.mode });
       broadcast(room);
-      if (room.game) engine.resync(io, room); // push current game state to the new spectator
+      if (room.game) engineFor(room).resync(io, room); // push current game state to the new spectator
     });
 
     // 👻 Owner-only INVISIBLE watch: joins the room's broadcast feed without ever appearing
@@ -214,7 +258,7 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
       console.log(`👻 ghost-watching room ${code}`);
       ack?.({ ok: true, code, you: socket.data.playerId, ghost: true, inGame: !!room.game });
       socket.emit("roomState", roomState(room));  // current lobby/players, to the ghost only
-      if (room.game) engine.resync(io, room);     // current game state (re-broadcast is idempotent for players)
+      if (room.game) engineFor(room).resync(io, room); // current game state (re-broadcast is idempotent for players)
     });
 
     // Reconnect to an existing slot (after refresh / network drop).
@@ -235,7 +279,7 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
       if (!process.env.OWNER_KEY || key !== process.env.OWNER_KEY) return; // wrong/absent key → ignored
       p.crown = !!on;
       broadcast(room);
-      engine.resync(io, room); // refresh in-game name labels too
+      engineFor(room).resync(io, room); // refresh in-game name labels too
     });
 
     // Change your display name — works in the lobby AND mid-game.
@@ -247,13 +291,13 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
       if (socket.data.session) socket.data.session.name = p.name;
       if (room.game && room.game.names && room.players.has(socket.data.playerId)) room.game.names[socket.data.playerId] = p.name;
       broadcast(room);
-      if (room.game) engine.resync(io, room); // refresh in-game name labels
+      if (room.game) engineFor(room).resync(io, room); // refresh in-game name labels
     });
 
-    // Host configures the room — before starting (all settings) and mid-game (timer/target/auto).
+    // Host configures the DUEL room — before starting (all settings) and mid-game (timer/target/auto).
     socket.on("setSettings", ({ groups, timer, target, autoAdvance } = {}) => {
       const room = rooms.get(socket.data.roomCode);
-      if (!room || room.hostId !== socket.data.playerId) return;
+      if (!room || room.mode === "race" || room.hostId !== socket.data.playerId) return; // race rooms use raceSetSettings
       const s = room.settings;
       const inGame = room.status !== "waiting";
       if (!inGame && Array.isArray(groups)) { // categories changed mid-game go through setGroups instead
@@ -268,43 +312,67 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
       if (inGame && room.game) engine.applyLiveSettings(io, room, patch); // apply to the live match
     });
 
+    // Host configures the RACE room — format/suddenDeath lock once the match starts; groups/timer stay live-adjustable.
+    socket.on("raceSetSettings", ({ groups, timer, format, suddenDeath } = {}) => {
+      const room = rooms.get(socket.data.roomCode);
+      if (!room || room.mode !== "race" || room.hostId !== socket.data.playerId) return;
+      const s = room.settings;
+      const inGame = room.status !== "waiting";
+      if (!inGame) {
+        if (Array.isArray(groups)) { const valid = groups.filter((k) => CATEGORY_GROUPS[k]); if (valid.length) s.groups = valid; }
+        if (FORMATS.includes(format)) s.format = format;
+        if (typeof suddenDeath === "boolean") s.suddenDeath = suddenDeath;
+      }
+      const patch = {};
+      if (TIMERS.includes(timer)) { s.timer = timer; patch.timer = timer; }
+      if (inGame && Array.isArray(groups)) { const valid = groups.filter((k) => CATEGORY_GROUPS[k]); if (valid.length) patch.groups = valid; }
+      broadcast(room);
+      if (inGame && room.game) raceEngine.applyLiveSettings(io, room, patch);
+    });
+
     // Host changes categories mid-match (applies next round).
     socket.on("setGroups", ({ groups } = {}) => {
       const room = rooms.get(socket.data.roomCode);
       if (!room || !room.game || room.hostId !== socket.data.playerId) return;
-      engine.setGroups(io, room, groups);
+      engineFor(room).setGroups(io, room, groups);
     });
 
     socket.on("startMatch", (_payload, ack) => {
       const room = rooms.get(socket.data.roomCode);
       if (!room) return ack?.({ ok: false, error: "You're not in a room." });
       if (room.hostId !== socket.data.playerId) return ack?.({ ok: false, error: "Only the host can start." });
-      if (room.players.size < MAX_PLAYERS) return ack?.({ ok: false, error: "Need 2 players to start." });
+      if (room.players.size < minFor(room)) return ack?.({ ok: false, error: room.mode === "race" ? "Need at least 2 players to start." : "Need 2 players to start." });
       room.status = "started";
       stats.gamesStarted++;
       for (const pl of room.players.values()) { const sk = io.sockets.sockets.get(pl.socketId); if (sk?.data?.session) sk.data.session.played = true; }
-      console.log(`▶️ room ${room.code} started`);
+      console.log(`▶️ room ${room.code} started (${room.mode})`);
       ack?.({ ok: true });
-      engine.startMatch(io, room);
+      engineFor(room).startMatch(io, room);
     });
 
     // ---------- gameplay intents (ignored while paused; engine validates the rest) ----------
     // Game actions are players-only — spectators (not in room.players) are silently ignored.
+    // Duel/race events are further gated by mode so, e.g., a stray "voteEnd" from a duel client
+    // can never reach a race room's game state (their shapes aren't compatible).
     const withGame = (fn) => (...args) => {
       const room = rooms.get(socket.data.roomCode);
       if (room && room.game && !room.game.paused && room.players.has(socket.data.playerId)) { touch(room); fn(room, ...args); }
     };
-    socket.on("open", withGame((room, { n } = {}, ack) => engine.handleOpen(io, room, socket, n, ack)));
-    socket.on("raise", withGame((room, { toN } = {}, ack) => engine.handleRaise(io, room, socket, toN, ack)));
-    socket.on("proveIt", withGame((room, _p, ack) => engine.handleProveIt(io, room, socket, ack)));
-    socket.on("answer", withGame((room, { text } = {}, ack) => engine.handleAnswer(io, room, socket, text, ack)));
-    socket.on("judge", withGame((room, { answerId, accept } = {}) => engine.handleJudge(io, room, socket, { answerId, accept })));
-    socket.on("rejectAll", withGame((room) => engine.handleRejectAll(io, room, socket)));
-    socket.on("giveUp", withGame((room) => engine.handleGiveUp(io, room, socket)));
-    socket.on("pauseRound", withGame((room) => engine.handlePauseRound(io, room, socket)));
-    socket.on("nextRound", withGame((room) => engine.handleNextRound(io, room, socket)));
-    socket.on("voteSkip", withGame((room) => engine.handleVoteSkip(io, room, socket)));
-    socket.on("voteEnd", withGame((room) => engine.handleVoteEnd(io, room, socket)));
+    const withDuelGame = (fn) => withGame((room, ...args) => { if (room.mode !== "race") fn(room, ...args); });
+    const withRaceGame = (fn) => withGame((room, ...args) => { if (room.mode === "race") fn(room, ...args); });
+    socket.on("open", withDuelGame((room, { n } = {}, ack) => engine.handleOpen(io, room, socket, n, ack)));
+    socket.on("raise", withDuelGame((room, { toN } = {}, ack) => engine.handleRaise(io, room, socket, toN, ack)));
+    socket.on("proveIt", withDuelGame((room, _p, ack) => engine.handleProveIt(io, room, socket, ack)));
+    socket.on("answer", withDuelGame((room, { text } = {}, ack) => engine.handleAnswer(io, room, socket, text, ack)));
+    socket.on("judge", withDuelGame((room, { answerId, accept } = {}) => engine.handleJudge(io, room, socket, { answerId, accept })));
+    socket.on("rejectAll", withDuelGame((room) => engine.handleRejectAll(io, room, socket)));
+    socket.on("giveUp", withDuelGame((room) => engine.handleGiveUp(io, room, socket)));
+    socket.on("pauseRound", withDuelGame((room) => engine.handlePauseRound(io, room, socket)));
+    socket.on("nextRound", withDuelGame((room) => engine.handleNextRound(io, room, socket)));
+    socket.on("voteSkip", withDuelGame((room) => engine.handleVoteSkip(io, room, socket)));
+    socket.on("voteEnd", withDuelGame((room) => engine.handleVoteEnd(io, room, socket)));
+    socket.on("raceAnswer", withRaceGame((room, { text } = {}, ack) => raceEngine.handleAnswer(io, room, socket, text, ack)));
+    socket.on("raceVoteEnd", withRaceGame((room) => raceEngine.handleVoteEnd(io, room, socket)));
 
     // Chat — works any time you're in a room (lightly rate-limited; rendered separately from game messages).
     socket.on("chat", ({ text } = {}) => {
@@ -331,7 +399,7 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
     });
     socket.on("rematch", (_p, ack) => {
       const room = rooms.get(socket.data.roomCode);
-      if (room) engine.handleRematch(io, room, socket, ack);
+      if (room) engineFor(room).handleRematch(io, room, socket, ack);
     });
 
     socket.on("leaveRoom", () => leaveCurrentRoom(socket));
@@ -339,6 +407,7 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
     // Disconnect ≠ leave: hold the slot, pause the game, give them GRACE_MS to return.
     socket.on("disconnect", (reason) => {
       console.log(`👋 disconnected: ${socket.id} (${reason})`);
+      matchmaking.leave(socket); // no-op if they weren't queued
       if (!socket.data.ghostUncounted) { online = Math.max(0, online - 1); broadcastPresence(); } // ghosts were already uncounted
       const sess = socket.data.session; // log the whole visit (records nothing if persistence is off)
       if (sess) { const end = Date.now(); analytics.recordSession({ connected_at: sess.connectedAt, disconnected_at: end, duration_ms: end - sess.connectedAt, device: sess.device, played: sess.played, joined: sess.joined, spectated: sess.spectated, name: sess.name, reason, singleplayer: sess.singleplayer, ip: sess.ip, visitor_id: sess.visitor_id, tz: sess.tz, locale: sess.locale, geo: sess.geo }); }
@@ -350,7 +419,7 @@ function createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS })
       const p = room.players.get(pid);
       if (!p || p.socketId !== socket.id) return; // stale socket, ignore
       p.connected = false; p.socketId = null;
-      if (room.game) engine.pauseGame(io, room);
+      if (room.game) engineFor(room).pauseGame(io, room);
       io.to(code).emit("opponentStatus", { connected: false, name: p.name, graceMs: GRACE_MS });
       broadcast(room);
       if (room.graceTimeout) clearTimeout(room.graceTimeout);

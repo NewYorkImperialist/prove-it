@@ -6,6 +6,7 @@ const http = require("http");
 const express = require("express");
 const { Server } = require("socket.io");
 const engine = require("./game-engine");
+const raceEngine = require("./race-engine"); // the live "Challenge Race" mode (see rooms.js's room.mode branch)
 const analytics = require("./stats"); // persistent game history (Turso); separate from the in-memory `stats` counters
 const SITE = require("./site-config"); // single source of truth for titles/meta tags/credit link — see that file
 const { CATEGORY_GROUPS, DEFAULT_GROUPS } = require("./lib/category-data.js");
@@ -25,7 +26,7 @@ const costGuard = createCostGuard({ analytics, SITE, ownerOk });
 app.use(costGuard.egressMiddleware); // tally bytes sent per response, for the admin cost projection
 
 const { rooms, stats, serverStartedAt, getOnline, isLockdown, setLockdown, closeRoom, closeAllRooms } =
-  createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS });
+  createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS });
 
 // When the cost cap is tripped, serve a tiny "paused for the month" page instead of the heavy
 // HTML/JS bundle — see lib/cost-guard.js. Small API responses and /admin keep working.
@@ -52,10 +53,36 @@ engine.setReporter((room, type, extra) => {
         p2_id: b, p2_name: g.names[b], p2_score: g.scores[b] || 0,
         winner_id: extra.winnerId || null, winner_name: extra.winnerId ? g.names[extra.winnerId] : null,
         groups: (g.groups || []).join(","), timer: g.timer, target: g.target === Infinity ? "endless" : String(g.target),
-        rounds: g.round, reason: extra.reason || "win",
+        rounds: g.round, reason: extra.reason || "win", mode: "mp",
         started_at: g.startedAt || null, ended_at: Date.now(), duration_ms: g.startedAt ? Date.now() - g.startedAt : null, gid: g.gid || null });
     }
   } catch (e) { console.error("reporter:", e.message); }
+});
+
+// Same idea, for Challenge Race matches (room.mode === "race") — see race-engine.js.
+raceEngine.setReporter((room, type, extra) => {
+  try {
+    const gid = room.game?.gid || null;
+    if (type === "round") {
+      analytics.recordRound({ code: room.code, category: extra.category, grp: extra.grp,
+        winner_id: extra.winnerId, winner_name: extra.winnerName, claim: extra.claim, proven: extra.proven, at: Date.now(), gid, mode: "race",
+        tie: extra.tie, tiebreaker: extra.tiebreaker });
+    } else if (type === "answer") {
+      analytics.recordAnswer({ code: room.code, category: extra.category, grp: extra.grp, display: extra.display, offList: false, at: Date.now(), gid, player: extra.player, mode: "race" });
+    } else if (type === "event") {
+      analytics.recordEvent(extra.type, room.code, extra.detail, "race", gid);
+    } else if (type === "end") {
+      const g = room.game; if (!g) return;
+      analytics.recordGame({ code: room.code,
+        winner_id: extra.winnerId || null, winner_name: extra.winnerId ? g.names[extra.winnerId] : null,
+        groups: (g.groups || []).join(","), timer: g.timer, format: g.format == null ? "endless" : `bo${g.format}`,
+        sudden_death: g.suddenDeath ? 1 : 0, player_count: g.order.length,
+        rounds: g.round, reason: extra.reason || "win", mode: "race",
+        started_at: g.startedAt || null, ended_at: Date.now(), duration_ms: g.startedAt ? Date.now() - g.startedAt : null, gid: g.gid || null });
+      const ranked = [...g.order].sort((a, b) => (g.roundWins[b] || 0) - (g.roundWins[a] || 0));
+      analytics.recordRacePlayers(g.gid, g.order.map((id) => ({ id, name: g.names[id], roundWins: g.roundWins[id] || 0, finalRank: ranked.indexOf(id) + 1 })));
+    }
+  } catch (e) { console.error("race reporter:", e.message); }
 });
 
 // Single-page app: multiplayer + solo share one document (index.html). Templated (not sendFile)

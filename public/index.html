@@ -65,6 +65,11 @@
   button:disabled { opacity:.4; cursor:not-allowed; }
   .primary { width:100%; margin-top:20px; background:var(--accent2); color:#08130d; }
   .secondary { background:var(--panel2); color:var(--text); border:1px solid var(--line); }
+  /* draws the eye to a freshly-shipped feature without shouting — a quiet accent border/tint
+     plus a small text badge, no icon/emoji needed. */
+  .secondary.highlight { border-color:var(--accent); background:var(--acc-dim); }
+  .new-tag { display:inline-block; margin-left:8px; vertical-align:2px; font-size:10px; font-weight:800;
+    text-transform:uppercase; letter-spacing:.5px; padding:3px 7px; border-radius:6px; background:var(--accent); color:var(--markfg); }
   .ghost { background:transparent; color:var(--muted); border:1px solid var(--line); }
   .divider { display:flex; align-items:center; gap:12px; color:var(--muted); font-size:11px; text-transform:uppercase; letter-spacing:1.2px; margin:22px 0 16px; }
   .divider::before, .divider::after { content:""; flex:1; height:1px; background:var(--line2); }
@@ -542,19 +547,19 @@
     <button class="primary" id="soloBtn" style="margin-top:0">Play Solo</button>
     <button class="secondary" id="dailyBtn" style="width:100%;margin-top:10px;padding:13px">Daily Challenge</button>
     <button class="secondary" id="mpBtn" style="width:100%;margin-top:10px;padding:13px">Live Multiplayer</button>
-    <button class="secondary" id="raceBtn" style="width:100%;margin-top:10px;padding:13px">🏁 Challenge Race</button>
+    <button class="secondary highlight" id="raceBtn" style="width:100%;margin-top:10px;padding:13px">Challenge Race <span class="new-tag">New</span></button>
     <p class="credit">Created by <a href="{{CREDIT_URL}}" target="_blank" rel="noopener">{{CREDIT_NAME}}</a></p>
   </div>
 
   <!-- Challenge Race setup (its own card, like solo/multiplayer) -->
   <div class="card hidden" id="racesetup">
     <button class="backbtn" id="raceBack">← Back</button>
-    <h1 style="margin:2px 0 4px">🏁 Challenge Race</h1>
+    <h1 style="margin:2px 0 4px">Challenge Race</h1>
     <p class="sub">Everyone races the same category and clock — most correct wins the round.</p>
     <label for="raceNameInput">Your name</label>
     <input id="raceNameInput" maxlength="20" placeholder="e.g. Jayden" autocomplete="off">
     <button class="primary" id="raceCreateBtn">Create a room</button>
-    <button class="secondary" id="quickMatchBtn" style="width:100%;margin-top:10px">⚡ Quick Match</button>
+    <button class="secondary" id="quickMatchBtn" style="width:100%;margin-top:10px">Quick Match</button>
     <div class="status hidden" id="quickMatchStatus"></div>
     <div class="divider">or join a room</div>
     <label for="raceJoinCode">Room code</label>
@@ -628,7 +633,7 @@
         <button data-format="endless">Endless</button>
       </div>
       <label class="check" id="suddenDeathCheck" style="margin-top:8px">
-        <input type="checkbox" id="suddenDeathInput"><span>🔥</span><span>Sudden death on ties</span>
+        <input type="checkbox" id="suddenDeathInput"><span>Sudden death on ties</span>
       </label>
     </div>
     <div class="lockNote hidden" id="raceLockNote">Only the host can change settings.</div>

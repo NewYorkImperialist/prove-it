@@ -381,7 +381,7 @@ function leaveQuickMatchQueue() {
   if (!inQuickMatch) return;
   socket.emit("quickMatchLeave");
   inQuickMatch = false;
-  $("quickMatchBtn").textContent = "⚡ Quick Match";
+  $("quickMatchBtn").textContent = "Quick Match";
   $("quickMatchStatus").classList.add("hidden");
 }
 $("quickMatchBtn").onclick = () => {
@@ -404,7 +404,7 @@ socket.on("quickMatchStatus", ({ waiting, startsInMs }) => {
 });
 socket.on("quickMatchFound", ({ code, you }) => {
   inQuickMatch = false;
-  $("quickMatchBtn").textContent = "⚡ Quick Match";
+  $("quickMatchBtn").textContent = "Quick Match";
   $("quickMatchStatus").classList.add("hidden");
   myId = you || myId; setRoom(code); show("room"); applyCrown();
 });
@@ -636,8 +636,8 @@ socket.on("raceReveal", (r) => {
   box.className = "msg reveal";
   const winnerNames = r.roundWinnerIds.map((id) => (r.perPlayer.find((p) => p.id === id) || {}).name).filter(Boolean).join(", ");
   const title = r.tie
-    ? (r.suddenDeathTriggered ? "🔥 Tied — sudden death! One more round to break it." : "🤝 Round tied — no one scores this one.")
-    : `🏆 ${winnerNames} won the round!`;
+    ? (r.suddenDeathTriggered ? "Tied — sudden death! One more round to break it." : "Round tied — no one scores this one.")
+    : `${winnerNames} won the round!`;
   const rows = r.perPlayer.slice().sort((a, b) => b.score - a.score)
     .map((p) => `<div class="rp"><b>${esc(p.name)}</b> — ${p.score} correct${p.got.length ? `: <span class="got">${p.got.map(esc).join(", ")}</span>` : ""}</div>`)
     .join("");
@@ -949,7 +949,7 @@ function renderRace() {
     d.className = "player" + (!p.active ? " empty" : "");
     d.innerHTML = `<div class="avatar" style="background:${AV[i % AV.length]};color:var(--markfg)">${p.name[0].toUpperCase()}</div>
       <div class="name">${p.name}${p.id === myId ? " (you)" : ""}${!p.active ? " · left" : ""}</div>
-      <div class="pts">${p.active ? (p.score ?? 0) : "—"}<span style="color:var(--muted);font-size:11px"> · ${wins}🏆</span></div>`;
+      <div class="pts">${p.active ? (p.score ?? 0) : "—"}<span style="color:var(--muted);font-size:11px"> · ${wins} win${wins === 1 ? "" : "s"}</span></div>`;
     sidePlayers.appendChild(d);
   });
   $("topScore").innerHTML = roster.map((p) =>
@@ -959,7 +959,7 @@ function renderRace() {
   // banner
   if (g.category) { $("catLabel").textContent = `${g.category.emoji} ${g.category.group}`; $("catName").textContent = g.category.name; }
   const fmtLabel = g.winsNeeded == null ? "Endless" : `Best of ${g.format}`;
-  $("claimLine").textContent = `Round ${g.round} · ${fmtLabel}${g.suddenDeath ? " · 🔥 sudden death on ties" : ""}${g.isTiebreaker ? " · TIEBREAKER!" : ""}`;
+  $("claimLine").textContent = `Round ${g.round} · ${fmtLabel}${g.suddenDeath ? " · sudden death on ties" : ""}${g.isTiebreaker ? " · Tiebreaker!" : ""}`;
 
   const promptKey = g.round + "|" + (g.category ? g.category.name : "");
   if (g.phase === "countdown" && g.category && promptKey !== lastPromptKey) { lastPromptKey = promptKey; showPrompt(g.category); }

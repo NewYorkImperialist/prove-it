@@ -191,6 +191,11 @@ describe("per-player clocks", () => {
     assert.equal(room.game.phase, "live"); // the round is still running for p1
     assert.equal(room.game.doneIds.has("p2"), true);
     assert.equal(room.game.doneIds.has("p1"), false);
+    // A spent clock is dropped, so `deadlines` only ever advertises clocks still running —
+    // which is what lets a waiting player count down to the last one standing.
+    assert.equal("p2" in room.game.deadlines, false);
+    assert.ok(room.game.deadlines.p1 > Date.now());
+    assert.equal(room.game.deadline, room.game.deadlines.p1); // the last clock standing
     assert.equal(io.lastOfType("raceReveal"), null); // ← the important one: nothing leaked
     const state = io.lastOfType("raceState");
     assert.equal(JSON.stringify(state).includes("Alpha"), false);

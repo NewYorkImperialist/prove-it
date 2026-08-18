@@ -371,6 +371,15 @@ export function useMultiplayer({ router }) {
         setInputValue("");
         return sendChat(raw);
       }
+      // My clock is spent but the round is still running for others. Don't send it as an answer
+      // (the server would refuse it) and don't quietly turn it into chat either — that would
+      // broadcast an answer to players who are still racing. Just say why nothing happened.
+      const meNow = g.liveScores.find((p) => p.id === myIdRef.current);
+      if (meNow && meNow.done) {
+        shakeInput();
+        flashStatus("You're out of time — press / to chat instead.");
+        return; // the text stays put, so they can add the "/" themselves
+      }
       setInputValue("");
       socket.emit("raceAnswer", { text: raw }, (res) => {
         if (res && res.accepted) {

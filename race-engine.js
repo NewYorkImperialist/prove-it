@@ -77,7 +77,11 @@ function sweepClocks(io, room) {
   const retired = [];
   for (const id of g.activeIds) {
     if (!stillRacing(g, id)) continue;
-    if ((g.deadlines[id] ?? 0) <= cutoff) { g.doneIds.add(id); retired.push(id); }
+    if ((g.deadlines[id] ?? 0) <= cutoff) {
+      g.doneIds.add(id);
+      delete g.deadlines[id]; // g.deadlines holds only clocks that are still running
+      retired.push(id);
+    }
   }
   // With no increment every clock expires together, so only announce the wait once we know
   // there's actually someone left to wait for.

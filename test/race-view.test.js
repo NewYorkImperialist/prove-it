@@ -105,6 +105,22 @@ describe("raceClockDeadline", () => {
   test("you count down to your own clock", () => {
     assert.equal(raceClockDeadline(base, ME), 1_700_000_005_000);
   });
+  test("once your clock is spent you count down to the last one still running", () => {
+    const spent = {
+      ...base,
+      liveScores: [{ id: ME, name: "Me", score: 4, active: true, done: true }, { id: "b", name: "Bea", score: 7, active: true, done: false }],
+      deadlines: { b: 1_700_000_010_000 }, // the server drops spent clocks
+    };
+    assert.equal(raceClockDeadline(spent, ME), 1_700_000_010_000);
+  });
+  test("a stale snapshot that still lists your dead clock can't strand the countdown at zero", () => {
+    const stale = {
+      ...base,
+      liveScores: [{ id: ME, name: "Me", score: 4, active: true, done: true }],
+      deadlines: { [ME]: 1_699_999_999_000 }, // already in the past
+    };
+    assert.equal(raceClockDeadline(stale, ME), 1_700_000_010_000); // falls back to g.deadline
+  });
   test("a spectator (or anyone with no clock of their own) follows the last one still running", () => {
     assert.equal(raceClockDeadline(base, "nobody"), 1_700_000_010_000);
   });

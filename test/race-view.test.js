@@ -93,6 +93,11 @@ describe("spectators and pauses", () => {
     assert.equal(v.enable, false);
     assert.match(v.placeholder, /you're spectating/);
   });
+  test("a watcher isn't told what they scored — they have no score", () => {
+    const v = view({}, { isSpectator: true });
+    assert.equal(/You have/.test(v.statusText), false);
+    assert.match(v.statusText, /2 still going/); // the fixture has two racers left
+  });
   test("a pause freezes everything but chat", () => {
     const v = view({ paused: true });
     assert.equal(v.frozen, true);

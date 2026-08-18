@@ -73,8 +73,9 @@ export default function SprintSection({ solo, onBack }) {
         </SoloButton>
       </div>
 
-      {/* D3 owns this node (lib/browser/geomap.js), so React must not render children into it. */}
-      <div ref={solo.mapEl} className={cx("w-full", mapMode ? "my-2 flex min-h-0 flex-1" : "hidden")} />
+      {/* D3 owns this node (lib/browser/geomap.js), so React must not render children into it.
+          A column: the map takes the free space and the island fill-in boxes sit underneath it. */}
+      <div ref={solo.mapEl} className={cx("w-full", mapMode ? "my-2 flex min-h-0 flex-1 flex-col" : "hidden")} />
 
       <input
         ref={inputRef}

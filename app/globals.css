@@ -178,7 +178,8 @@
  * Geography board (lib/browser/geomap.js) — D3 builds this SVG/grid imperatively
  * outside React, so its classes have to exist as real CSS rather than utilities.
  * ========================================================================== */
-.geomap-wrap { width: 100%; height: 100%; }
+/* Grows into whatever the box strip underneath doesn't use (the container is a flex column). */
+.geomap-wrap { width: 100%; min-height: 0; flex: 1 1 auto; }
 .geomap-svg { width: 100%; height: 100%; display: block; }
 .geomap-c {
   fill: rgba(255, 220, 170, 0.07);
@@ -196,7 +197,7 @@
 .geomap-svg.showrem .geodot:not(.lit) { fill: #5cc8ff; r: 5; }
 .geomap-msg { color: var(--color-muted); font-size: 13px; text-align: center; padding: 30px 0; }
 /* Scattered island nations that don't map well get fill-in boxes instead of shapes. */
-.geomap-boxes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 10px; }
+.geomap-boxes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 10px; flex: 0 0 auto; }
 .geobox {
   min-width: 42px;
   padding: 5px 9px;
@@ -207,6 +208,8 @@
   text-align: center;
 }
 .geobox.lit { border-style: solid; border-color: var(--color-accent); background: var(--color-accdim); color: var(--color-accent); font-weight: 700; }
+/* "Show what's left" marks the un-named shapes and dots; the boxes are part of the board too. */
+.geomap-boxes.showrem .geobox:not(.lit) { border-color: #5cc8ff; color: #5cc8ff; }
 /* Capitals fill-in grid: a list of countries/states, type the capital to fill each. */
 .geofill {
   display: grid;

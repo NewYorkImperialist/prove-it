@@ -17,7 +17,9 @@ const DUEL_COLORS = ["var(--color-accent)", "#8a9aa0"];
 // Build the roster both the header and the sidebar render from, so they can never disagree.
 function duelRoster(gs, myId) {
   const me = gs.players.find((p) => p.id === myId) || gs.players[0];
-  const opp = gs.players.find((p) => p.id !== myId) || gs.players[1];
+  // Compare against `me`, not myId: a spectator/ghost is nobody, so matching on myId would
+  // hand back `me` a second time and the other player would never be rendered.
+  const opp = gs.players.find((p) => p !== me) || null;
   const live = gs.phase !== "roundover" && gs.phase !== "matchover" && !gs.paused;
   return [me, opp].filter(Boolean).map((p, i) => ({
     id: p.id,

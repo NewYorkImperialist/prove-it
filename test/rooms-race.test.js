@@ -15,8 +15,13 @@ const { createRooms } = require("../rooms.js");
 // approach — but exercising the "race" mode (room.mode === "race") end to end.
 let httpServer, roomsApi, port;
 const clients = [];
+let realLog;
 
 before(() => {
+  // Same reason as test/rooms.test.js: rooms.js's per-connection logging interleaved with the
+  // test runner's serialized IPC stream can corrupt it and fail the whole file spuriously.
+  realLog = console.log;
+  console.log = () => {};
   return new Promise((resolve) => {
     const app = express();
     httpServer = http.createServer(app);
@@ -29,7 +34,7 @@ before(() => {
 after(() => {
   roomsApi.closeAllRooms();
   clients.forEach((c) => c.close());
-  return new Promise((resolve) => httpServer.close(resolve));
+  return new Promise((resolve) => httpServer.close(() => { console.log = realLog; resolve(); }));
 });
 
 function connect() {

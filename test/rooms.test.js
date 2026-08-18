@@ -14,8 +14,15 @@ const { createRooms } = require("../rooms.js");
 // as the manual smoke test used earlier to verify the server.js extraction, now checked in CI.
 let httpServer, roomsApi, port;
 const clients = [];
+let realLog;
 
 before(() => {
+  // rooms.js narrates every connect/join/start/disconnect to stdout. Dozens of those lines
+  // interleaved with the test runner's own serialized IPC stream is enough to corrupt it
+  // ("Unable to deserialize cloned data"), which shows up as a phantom failure of the whole
+  // file. Errors still go to console.error, so a real problem is never swallowed.
+  realLog = console.log;
+  console.log = () => {};
   return new Promise((resolve) => {
     const app = express();
     httpServer = http.createServer(app);
@@ -28,7 +35,7 @@ before(() => {
 after(() => {
   roomsApi.closeAllRooms(); // clean up any rooms/timers left behind by individual tests
   clients.forEach((c) => c.close());
-  return new Promise((resolve) => httpServer.close(resolve));
+  return new Promise((resolve) => httpServer.close(() => { console.log = realLog; resolve(); }));
 });
 
 function connect() {

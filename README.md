@@ -39,9 +39,30 @@ To play a friend specifically: open the site, hit **Create a room**, and share t
 ## Content
 **250+ categories, ~11,000 verified answers**, spanning Sports, Geography, History, Entertainment, Food, Animals, Music, Brands, Computer Science, Math, Science, Art, Mythology, Games & Puzzles, and Pop Culture (yes, including memes and Italian brainrot).
 
-Want to add your own? Edit **`public/categories.js`** — each entry is `"Name"` or `["Canonical","alias", …]` (aliases all match but count once). The header comment in that file explains the format; no code changes needed.
+Want to add your own? Edit **`data/categories.js`** — each entry is `"Name"` or `["Canonical","alias", …]` (aliases all match but count once). The header comment in that file explains the format; no code changes needed.
 
 ## Tech
-Vanilla HTML/CSS/JS on the front end. **Node + Express + Socket.IO** for realtime multiplayer, deployed on **Fly.io**, with persistent game analytics via **Turso (libSQL)**.
+**Next.js (App Router) + React + Tailwind CSS** on the front end. **Node + Express + Socket.IO** for realtime multiplayer, deployed on **Fly.io**, with persistent game analytics via **Turso (libSQL)**.
+
+One process serves both: `server.js` keeps Express for the JSON API, the owner dashboard and the crawler-facing share stub, runs the Socket.IO layer, and hands every other request to Next.
+
+```
+app/, components/, hooks/   the client (React + Tailwind)
+lib/                        shared logic, plain CommonJS, covered by node:test
+lib/browser/                browser-only client modules (sound, storage, the D3 geo board)
+data/                       game content + generated data
+game-engine.js              the multiplayer duel
+race-engine.js              the live Challenge Race
+rooms.js, matchmaking.js    lobbies, reconnection, quick match
+routes/, stats.js           JSON API, owner dashboard, analytics
+```
+
+```bash
+npm install
+npm run dev     # http://localhost:3000
+npm test        # node:test
+npm run lint
+npm run build   # the production client bundle (then `npm start`)
+```
 
 — Built by [NewYorkImperialist](https://github.com/NewYorkImperialist)

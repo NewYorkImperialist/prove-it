@@ -1,10 +1,12 @@
 {
   "name": "prove-it",
   "version": "1.0.0",
-  "description": "Prove It! — multiplayer server (serves the static game + Socket.IO realtime layer)",
+  "description": "Prove It! — multiplayer server (Next.js app + Socket.IO realtime layer on one port)",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
+    "dev": "node server.js",
+    "build": "next build",
+    "start": "NODE_ENV=production node server.js",
     "test": "node --test",
     "lint": "eslint ."
   },
@@ -12,14 +14,19 @@
   "dependencies": {
     "@libsql/client": "^0.17.4",
     "express": "^5.2.1",
+    "next": "^16.3.1",
     "obscenity": "^0.4.6",
-    "socket.io": "^4.8.3"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@tailwindcss/postcss": "^4.3.3",
     "eslint": "^10.8.0",
     "globals": "^17.8.0",
-    "socket.io-client": "^4.8.3",
-    "supertest": "^7.2.2"
+    "supertest": "^7.2.2",
+    "tailwindcss": "^4.3.3"
   }
 }

@@ -1,46 +1,53 @@
 "use strict";
 const js = require("@eslint/js");
 const globals = require("globals");
+const jsxPlugin = require("./tools/eslint-jsx.js");
 
-// server.js and friends run under Node (CommonJS); public/app.js, public/geomap.js,
-// public/capitals.js, public/categories.js are loaded straight into the browser via <script>
-// tags (no bundler, no modules) — see public/index.html.
+// Three worlds in one repo:
+//   • the Node server (CommonJS): server.js, the engines, lib/, routes/, data/
+//   • the Next.js client (ES modules + JSX): app/, components/, hooks/, lib/browser/
+//   • the tests (CommonJS, node:test)
+// lib/ is deliberately CommonJS even where the client imports it — those modules are shared
+// with the server and covered by node:test, and the bundler handles CJS imports fine.
 module.exports = [
   js.configs.recommended,
   {
-    ignores: ["archive/**", "node_modules/**"],
+    ignores: ["archive/**", "node_modules/**", ".next/**"],
   },
   {
-    files: ["server.js", "game-engine.js", "race-engine.js", "matchmaking.js", "stats.js", "site-config.js", "eslint.config.js", "rooms.js", "lib/**/*.js", "routes/**/*.js"],
+    files: [
+      "server.js", "game-engine.js", "race-engine.js", "matchmaking.js", "stats.js", "site-config.js",
+      "eslint.config.js", "next.config.js", "rooms.js", "lib/**/*.js", "routes/**/*.js", "data/**/*.js", "tools/**/*.js",
+    ],
+    ignores: ["lib/browser/**"],
     languageOptions: {
       sourceType: "commonjs",
       globals: globals.node,
     },
   },
   {
-    // Plain (non-module) <script>-loaded browser files — index.html loads
-    // categories.js/capitals.js/geomap.js/app.js in that order, so top-level
-    // bindings from one are visible as globals in the next.
-    files: ["public/app.js", "public/geomap.js", "public/capitals.js", "public/categories.js"],
+    // The browser half of lib/: ES modules that touch window/document (sound, storage, the
+    // geography board), imported only from client components.
+    files: ["lib/browser/**/*.js"],
     languageOptions: {
-      sourceType: "script",
+      sourceType: "module",
+      ecmaVersion: "latest",
       globals: globals.browser,
     },
   },
   {
-    // categories.js is dual-mode: also `require()`d by game-engine.js under
-    // Node — see its trailing module.exports guard.
-    files: ["public/categories.js"],
-    languageOptions: { globals: { module: "readonly" } },
-  },
-  {
-    files: ["public/app.js"],
+    // React components and hooks. ESLint's own parser handles JSX with this flag on; the local
+    // jsx-uses-vars rule is what keeps no-unused-vars from flagging every component import.
+    files: ["app/**/*.{js,jsx}", "components/**/*.{js,jsx}", "hooks/**/*.{js,jsx}"],
+    plugins: { jsx: jsxPlugin },
     languageOptions: {
-      globals: {
-        io: "readonly", // socket.io.js (loaded from /socket.io/socket.io.js)
-        CATEGORY_GROUPS: "readonly", // from categories.js
-        GeoMap: "readonly", // from geomap.js
-      },
+      sourceType: "module",
+      ecmaVersion: "latest",
+      parserOptions: { ecmaFeatures: { jsx: true } },
+      globals: globals.browser,
+    },
+    rules: {
+      "jsx/jsx-uses-vars": "error",
     },
   },
   {

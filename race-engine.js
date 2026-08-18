@@ -7,7 +7,7 @@
 // moment the timer runs out, though: there's a review window where other players can approve
 // each other's missed/off-list answers (see handleApproveMiss), and only finalizeRound() locks
 // in who actually won the round.
-const CATEGORY_GROUPS = require("./public/categories.js");
+const CATEGORY_GROUPS = require("./data/categories.js");
 const { norm, resolve, buildPool } = require("./lib/answer-matching.js");
 
 const COUNTDOWN_MS = 3_000;   // 3-2-1-GO before each round's timer starts

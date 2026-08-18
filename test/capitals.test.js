@@ -2,12 +2,7 @@
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 
-// capitals.js is browser-only (it assigns straight to `window.*`); stub `window` before
-// requiring so it runs unmodified under Node, then read the data back off the stub.
-global.window = {};
-require("../public/capitals.js");
-const { CAPITALS, US_CAPITALS } = global.window;
-delete global.window;
+const { CAPITALS, US_CAPITALS } = require("../data/capitals.js");
 
 function checkTable(name, table) {
   describe(name, () => {

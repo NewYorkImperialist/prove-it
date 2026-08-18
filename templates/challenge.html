@@ -4,10 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <!-- Share-link stub. The server rewrites og:title/og:description/<title> per ?id= (dynamic
-     social preview for crawlers). Real browsers are redirected into the single-page app at /?id=.
-     All values below are placeholders filled in by server.js from site-config.js — edit there. -->
+     social preview for crawlers). Real browsers are redirected into the app at /?id=.
+     All values below are placeholders filled in by routes/challenge.js from site-config.js
+     — edit there, not here. -->
 <title>{{TITLE}}</title>
-<link rel="icon" id="favicon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect x='8' y='8' width='84' height='84' rx='20' fill='%23f5a623'/><text x='50' y='50' font-size='64' text-anchor='middle' dominant-baseline='central' fill='%23241500'>◎</text></svg>">
+<link rel="icon" href="{{FAVICON}}">
 <meta name="description" content="{{DESCRIPTION}}">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="{{OG_SITE_NAME}}">

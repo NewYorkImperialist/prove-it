@@ -1,7 +1,7 @@
 "use strict";
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
-const CATEGORY_GROUPS = require("../public/categories.js");
+const CATEGORY_GROUPS = require("../data/categories.js");
 
 // Mirrors game-engine.js's norm() exactly (not exported, so duplicated here) — this is what
 // actually decides whether two aliases collide when a player types an answer.

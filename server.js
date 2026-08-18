@@ -1,9 +1,10 @@
 // Prove It! — server (Phase 4: rooms + reconnection)
-// Serves the static game files AND runs the Socket.IO realtime layer on one port.
-const path = require("path");
-const fs = require("fs");
+// Runs the Next.js app AND the Socket.IO realtime layer on one port: Express owns the JSON
+// API, the owner dashboard and the crawler-facing share stub; everything else falls through
+// to Next's request handler (which also serves public/ and the client bundle).
 const http = require("http");
 const express = require("express");
+const next = require("next");
 const { Server } = require("socket.io");
 const engine = require("./game-engine");
 const raceEngine = require("./race-engine"); // the live "Challenge Race" mode (see rooms.js's room.mode branch)
@@ -12,7 +13,6 @@ const SITE = require("./site-config"); // single source of truth for titles/meta
 const { CATEGORY_GROUPS, DEFAULT_GROUPS } = require("./lib/category-data.js");
 const { ownerOk } = require("./lib/owner-auth.js");
 const { createCostGuard } = require("./lib/cost-guard.js");
-const { render, siteVars } = require("./lib/render.js");
 const { createChallengeRouter } = require("./routes/challenge.js");
 const { createAdminRouter } = require("./routes/admin.js");
 const { createRooms } = require("./rooms.js");
@@ -85,33 +85,25 @@ raceEngine.setReporter((room, type, extra) => {
   } catch (e) { console.error("race reporter:", e.message); }
 });
 
-// Single-page app: multiplayer + solo share one document (index.html). Templated (not sendFile)
-// so its title/meta tags/credit link render from site-config.js instead of being hardcoded here.
-let indexTemplate = null;
-app.get("/", (req, res) => {
-  try {
-    if (!indexTemplate || process.env.NODE_ENV !== "production") indexTemplate = fs.readFileSync(path.join(__dirname, "public", "index.html"), "utf8");
-    const html = render(indexTemplate, { ...siteVars, TITLE: SITE.home.title, DESCRIPTION: SITE.home.description,
-      OG_TITLE: SITE.home.ogTitle, OG_DESCRIPTION: SITE.home.ogDescription, TWITTER_DESCRIPTION: SITE.home.twitterDescription });
-    res.set("content-type", "text/html").send(html);
-  } catch (e) { res.sendFile(path.join(__dirname, "public", "index.html")); }
-});
-
 // Owner-only live dashboard (gated by the OWNER_KEY secret) — see routes/admin.js.
 app.use(createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOnline, isLockdown, setLockdown, closeRoom, closeAllRooms }));
 
 // Async challenges, the daily challenge, and the /challenge.html share-link stub — see routes/challenge.js.
 app.use(createChallengeRouter({ isLockdown }));
 
-// Always revalidate HTML/JS so the inlined CSS + game logic are never served stale
-// (matters because we push UI tweaks frequently and the link is shared publicly).
-app.use(express.static(path.join(__dirname, "public"), {
-  setHeaders(res, filePath) {
-    if (/\.(html|js)$/.test(filePath)) res.setHeader("Cache-Control", "no-cache");
-  },
-}));
+// Everything else is the app itself: Next serves the pages, the client bundle and public/.
+// Its build output is content-hashed, so it manages its own cache headers.
+const dev = process.env.NODE_ENV !== "production";
+const nextApp = next({ dev });
+const handleNext = nextApp.getRequestHandler();
+app.use((req, res) => handleNext(req, res));
 
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-  console.log(`🎯 Prove It! server running at http://localhost:${PORT}`);
+nextApp.prepare().then(() => {
+  server.listen(PORT, () => {
+    console.log(`🎯 Prove It! server running at http://localhost:${PORT}`);
+  });
+}).catch((e) => {
+  console.error("next: failed to start:", e);
+  process.exit(1);
 });

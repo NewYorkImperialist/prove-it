@@ -1,0 +1,230 @@
+@import "tailwindcss";
+
+/* ============================================================================
+ * Design tokens — the amber palette the vanilla build carried in :root.
+ * Exposed to Tailwind through @theme, so every colour is reachable as a utility
+ * (bg-panel, text-muted, border-line2, …) and as a raw var(--color-*) for the
+ * few places that still need hand-written CSS (see the bottom of this file).
+ * ========================================================================== */
+@theme {
+  --color-bg: #0c0a07;
+  --color-panel: #14110c;
+  --color-panel2: #1a1610;
+  --color-line: rgba(255, 220, 170, 0.1);
+  --color-line2: rgba(255, 220, 170, 0.18);
+  --color-accent: #f5a623;
+  --color-accent2: #f5a623; /* was the green theme's second accent; amber-only now */
+  --color-bad: #ff6b5e;
+  --color-gold: #f5a623;
+  --color-ink: #efe6d6; /* body text */
+  --color-muted: #9d8c72;
+  --color-accdim: rgba(245, 166, 35, 0.14);
+  --color-markfg: #241500; /* text on top of an amber fill */
+  --color-onaccent2: #08130d; /* dark ink the primary buttons have always used */
+
+  /* The vanilla build stacked the game screen below 641px; `desk:` keeps that exact line. */
+  --breakpoint-desk: 641px;
+
+  --font-ui: var(--font-inter), system-ui, sans-serif;
+  --font-display: var(--font-display-grotesk), var(--font-inter), sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+
+  --animate-view-enter: view-enter 0.3s cubic-bezier(0.2, 0.7, 0.3, 1) both;
+  --animate-view-leave: view-leave 0.2s ease both;
+  --animate-shake: shake 0.4s;
+  --animate-cshake: cshake 0.3s;
+  --animate-bubble: bubble 0.14s ease;
+  --animate-chip: chip 0.14s ease;
+  --animate-typing: typing-blink 1.4s infinite both;
+  --animate-slide-down: slide-down 0.3s ease;
+  --animate-daily-glow: daily-glow 1.9s ease-in-out infinite;
+  --animate-logo-party: logo-party 0.9s ease;
+  --animate-crown-party: crown-party 1.1s ease;
+  --animate-prompt-pop: prompt-pop 5s ease forwards;
+  --animate-countdown: countdown-pop 0.8s ease forwards;
+}
+
+@keyframes view-enter {
+  from { opacity: 0; transform: translateY(16px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes view-leave {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(-14px) scale(0.97); }
+}
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+@keyframes cshake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-6px); }
+  75% { transform: translateX(6px); }
+}
+@keyframes bubble {
+  from { transform: translateY(4px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes chip {
+  from { transform: scale(0.6); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+@keyframes typing-blink {
+  0%, 60%, 100% { opacity: 0.2; }
+  30% { opacity: 1; }
+}
+@keyframes slide-down {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+@keyframes daily-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(245, 166, 35, 0.45); }
+  50% { box-shadow: 0 0 18px 3px rgba(245, 166, 35, 0.6); }
+}
+/* 🎯 easter egg: the logo grows + shakes when someone answers "Prove It!" */
+@keyframes logo-party {
+  0% { transform: scale(1) rotate(0); }
+  12% { transform: scale(1.7) rotate(-8deg); }
+  28% { transform: scale(1.7) rotate(8deg); }
+  44% { transform: scale(1.75) rotate(-6deg); }
+  60% { transform: scale(1.6) rotate(6deg); }
+  76% { transform: scale(1.4) rotate(-4deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes crown-party {
+  0% { transform: scale(1) rotate(0); }
+  20% { transform: scale(1.9) rotate(-12deg); }
+  40% { transform: scale(1.7) rotate(12deg); }
+  55% { transform: scale(2) rotate(-8deg); }
+  70% { transform: scale(1.7) rotate(8deg); }
+  85% { transform: scale(1.85) rotate(-4deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+@keyframes prompt-pop {
+  0% { opacity: 0; transform: scale(0.86); }
+  9% { opacity: 1; transform: scale(1); }
+  78% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.06); }
+}
+@keyframes countdown-pop {
+  0% { transform: scale(0.45); opacity: 0; }
+  22% { transform: scale(1); opacity: 1; }
+  75% { opacity: 1; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+@keyframes oil-fall {
+  0% { transform: translateY(-10vh) rotate(0); }
+  100% { transform: translateY(120vh) rotate(540deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-view-enter,
+  .animate-view-leave,
+  .animate-daily-glow,
+  .animate-prompt-pop { animation: none; }
+}
+
+/* `justify-content: safe center` has no utility in Tailwind v4, and solo's card column needs
+   it: centred when it fits, top-aligned instead of clipped when it doesn't. */
+@utility justify-safe-center {
+  justify-content: safe center;
+}
+
+@layer base {
+  html { background: var(--color-bg); }
+  body {
+    min-height: 100vh;
+    font-family: var(--font-ui);
+    background: var(--color-bg);
+    color: var(--color-ink);
+    display: grid;
+    place-items: center;
+    padding: 16px;
+  }
+  /* Tabular numerals everywhere a score/clock can change width mid-render. */
+  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+  /* Native control resets the old inline stylesheet carried. */
+  select {
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%239d8c72' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' fill='none'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+  }
+  input[type="number"] { -moz-appearance: textfield; }
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+}
+
+/* Falling 🛢️ for the "oil" easter egg — spawned outside React's tree (see components/fx). */
+.oil-drop {
+  position: fixed;
+  top: -8vh;
+  z-index: 9999;
+  pointer-events: none;
+  will-change: transform;
+  user-select: none;
+}
+
+/* ============================================================================
+ * Geography board (lib/browser/geomap.js) — D3 builds this SVG/grid imperatively
+ * outside React, so its classes have to exist as real CSS rather than utilities.
+ * ========================================================================== */
+.geomap-wrap { width: 100%; height: 100%; }
+.geomap-svg { width: 100%; height: 100%; display: block; }
+.geomap-c {
+  fill: rgba(255, 220, 170, 0.07);
+  stroke: rgba(255, 214, 150, 0.62);
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+  transition: fill 0.2s ease;
+}
+.geomap-c.lit { fill: var(--color-accent); stroke: #fff3dc; }
+.geodot { fill: #fff; stroke: rgba(0, 0, 0, 0.45); stroke-width: 0.4; } /* microstate marker */
+.geodot.lit { fill: var(--color-accent); stroke: #fff3dc; }
+/* "show what's left" — highlight everything not yet named */
+.geomap-svg.showrem .geomap-c:not(.lit) { stroke: #5cc8ff; stroke-width: 1.7; fill: rgba(92, 200, 255, 0.14); }
+.geomap-svg.showrem .geodot:not(.lit) { fill: #5cc8ff; r: 5; }
+.geomap-msg { color: var(--color-muted); font-size: 13px; text-align: center; padding: 30px 0; }
+/* Scattered island nations that don't map well get fill-in boxes instead of shapes. */
+.geomap-boxes { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 10px; }
+.geobox {
+  min-width: 42px;
+  padding: 5px 9px;
+  border: 1px dashed var(--color-line2);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--color-muted);
+  text-align: center;
+}
+.geobox.lit { border-style: solid; border-color: var(--color-accent); background: var(--color-accdim); color: var(--color-accent); font-weight: 700; }
+/* Capitals fill-in grid: a list of countries/states, type the capital to fill each. */
+.geofill {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+}
+.geofill-cell {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--color-line2);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.geofill-cell .gf-p { color: var(--color-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.geofill-cell .gf-a { color: var(--color-line2); font-weight: 700; flex: 0 0 auto; }
+.geofill-cell.lit { border-color: var(--color-accent); background: var(--color-accdim); }
+.geofill-cell.lit .gf-p { color: var(--color-ink); }
+.geofill-cell.lit .gf-a { color: var(--color-accent); }

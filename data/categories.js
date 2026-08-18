@@ -2,8 +2,8 @@
  * Prove It! — game content
  * ----------------------------------------------------------------------------
  * This is the ONLY file you edit to add categories & answers. No code changes
- * needed. It's loaded as a plain <script> (works when you just open index.html
- * — no server required).
+ * needed. It's a plain CommonJS module, read by the game engines on the server and
+ * by the solo catalogue (lib/solo-catalog.js) in the browser bundle.
  *
  * STRUCTURE:  group → categories → items
  *
@@ -3651,5 +3651,4 @@ const CATEGORY_GROUPS = {
   ]},
 };
 
-// Allow the Node server to load this same data (harmless/ignored in the browser).
-if (typeof module !== "undefined" && module.exports) module.exports = CATEGORY_GROUPS;
+module.exports = CATEGORY_GROUPS;

@@ -186,7 +186,7 @@ function createChallengeRouter({ isLockdown }) {
       }
     }
     let template;
-    try { template = fs.readFileSync(path.join(__dirname, "..", "public", "challenge.html"), "utf8"); } catch (e) { return next(); }
+    try { template = fs.readFileSync(path.join(__dirname, "..", "templates", "challenge.html"), "utf8"); } catch (e) { return next(); }
     res.set("content-type", "text/html").set("cache-control", "no-cache").send(render(template, vars));
   });
 

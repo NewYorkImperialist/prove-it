@@ -8,11 +8,14 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      NEXT_TELEMETRY_DISABLED: "1"
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "20" # matches the Dockerfile's node:20-alpine
+          node-version: "22" # matches the Dockerfile's node:22-alpine
       - run: npm ci
       - run: npm run lint
       - run: npm test
+      - run: npm run build # the client bundle has to compile too

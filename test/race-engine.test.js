@@ -45,6 +45,10 @@ function liveRoom({ players = ["p1", "p2"], format = 3, suddenDeath = false, tim
     timer, increment, roundWins: Object.fromEntries(players.map((id) => [id, 0])),
     round: 1, isTiebreaker: false, usedNames: [], lastCatName: null,
     current: testCategory(), phase: "live", deadline: Date.now() + timer * 1000,
+    // Clocks are per player: everyone starts the round with the same deadline, and the
+    // increment only ever moves the answerer's own.
+    deadlines: Object.fromEntries(players.map((id) => [id, Date.now() + timer * 1000])),
+    doneIds: new Set(), pausedClocks: null,
     timerFn, timeout: setTimeout(timerFn, 999999), // a real (mocked) armed timer, like a live round actually has
     answers: Object.fromEntries(players.map((id) => [id, new Map()])),
     liveScores: Object.fromEntries(players.map((id) => [id, 0])),
@@ -88,26 +92,38 @@ describe("handleAnswer", () => {
     assert.equal(room.game.liveScores.p1, 1);
   });
 
-  test("a correct answer extends the shared round clock by the configured time increment", () => {
+  test("a correct answer extends only the answerer's own clock, never an opponent's", () => {
     const io = makeIO(); const room = liveRoom({ increment: 5 });
-    const before = room.game.deadline;
+    const mine = room.game.deadlines.p1, theirs = room.game.deadlines.p2;
     engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
-    assert.ok(room.game.deadline >= before + 4900 && room.game.deadline <= before + 5100);
+    assert.ok(room.game.deadlines.p1 >= mine + 4900 && room.game.deadlines.p1 <= mine + 5100);
+    assert.equal(room.game.deadlines.p2, theirs); // untouched
   });
 
-  test("increment of 0 (the default) never touches the shared clock", () => {
+  test("increment of 0 (the default) never touches any clock", () => {
     const io = makeIO(); const room = liveRoom({ increment: 0 });
-    const before = room.game.deadline;
+    const mine = room.game.deadlines.p1, theirs = room.game.deadlines.p2;
     engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
-    assert.equal(room.game.deadline, before);
+    assert.equal(room.game.deadlines.p1, mine);
+    assert.equal(room.game.deadlines.p2, theirs);
   });
 
-  test("a duplicate answer doesn't extend the clock again", () => {
+  test("a duplicate answer doesn't extend your clock again", () => {
     const io = makeIO(); const room = liveRoom({ increment: 5 });
     engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
-    const before = room.game.deadline;
+    const before = room.game.deadlines.p1;
     engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
-    assert.equal(room.game.deadline, before);
+    assert.equal(room.game.deadlines.p1, before);
+  });
+
+  test("each player's increments accumulate on their own clock independently", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 5 });
+    const base = room.game.deadlines.p1;
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    engine.handleAnswer(io, room, sock("p1"), "beta", () => {});
+    engine.handleAnswer(io, room, sock("p2"), "alpha", () => {});
+    assert.ok(room.game.deadlines.p1 >= base + 9900); // two answers → +10s
+    assert.ok(room.game.deadlines.p2 >= base + 4900 && room.game.deadlines.p2 <= base + 5100);
   });
 
   test("answers are rejected once the round isn't 'live' anymore", () => {
@@ -117,11 +133,23 @@ describe("handleAnswer", () => {
     assert.equal(room.game.liveScores.p1, 0);
   });
 
-  test("answers submitted past the server deadline are rejected even if phase is still 'live'", () => {
-    const io = makeIO(); const room = liveRoom(); room.game.deadline = Date.now() - 5;
+  test("answers past your own deadline are rejected even while the round is still 'live'", () => {
+    const io = makeIO(); const room = liveRoom();
+    room.game.deadlines.p1 = Date.now() - 5; // my clock is gone; p2 is still racing
     let ack; engine.handleAnswer(io, room, sock("p1"), "alpha", (r) => (ack = r));
     assert.equal(ack.accepted, false);
+    assert.equal(ack.outOfTime, true);
     assert.equal(room.game.liveScores.p1, 0);
+  });
+
+  test("a player whose clock already ran out is locked out, while the others keep scoring", () => {
+    const io = makeIO(); const room = liveRoom();
+    room.game.doneIds.add("p1");
+    let ack; engine.handleAnswer(io, room, sock("p1"), "alpha", (r) => (ack = r));
+    assert.equal(ack.outOfTime, true);
+    assert.equal(room.game.liveScores.p1, 0);
+    engine.handleAnswer(io, room, sock("p2"), "alpha", () => {}); // p2's clock is still running
+    assert.equal(room.game.liveScores.p2, 1);
   });
 
   test("a player who already left can't submit answers", () => {
@@ -136,6 +164,111 @@ describe("handleAnswer", () => {
     engine.handleAnswer(io, room, sock("p1"), "nowray", () => {}); // same normalized text — shouldn't duplicate
     assert.equal(room.game.misses.p1.length, 1);
     assert.equal(room.game.misses.p1[0].text, "Nowray");
+  });
+});
+
+// The user-visible contract of per-player clocks: a fast player keeps going, a spent player
+// waits, and NOBODY sees an opponent's answers until every clock is done.
+describe("per-player clocks", () => {
+  test("startLiveRound deals every active player the same clock", () => {
+    const io = makeIO(); const room = liveRoom({ timer: 30 });
+    room.game.deadlines = {}; room.game.phase = "countdown";
+    engine.startLiveRound(io, room);
+    assert.equal(room.game.phase, "live");
+    assert.equal(room.game.deadlines.p1, room.game.deadlines.p2);
+    assert.ok(room.game.deadlines.p1 > Date.now() + 29000);
+    assert.equal(room.game.doneIds.size, 0);
+  });
+
+  test("the round does NOT end — and no answers are revealed — while someone is still racing", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 5 });
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {}); // p1 buys 5 more seconds
+    engine.handleAnswer(io, room, sock("p2"), "beta", () => {});
+    room.game.deadlines.p2 = Date.now() - 1; // p2's clock is spent, p1 still has time
+
+    engine.sweepClocks(io, room);
+
+    assert.equal(room.game.phase, "live"); // the round is still running for p1
+    assert.equal(room.game.doneIds.has("p2"), true);
+    assert.equal(room.game.doneIds.has("p1"), false);
+    assert.equal(io.lastOfType("raceReveal"), null); // ← the important one: nothing leaked
+    const state = io.lastOfType("raceState");
+    assert.equal(JSON.stringify(state).includes("Alpha"), false);
+    assert.equal(state.racing, 1);
+    assert.equal(state.liveScores.find((p) => p.id === "p2").done, true);
+    assert.equal(state.liveScores.find((p) => p.id === "p1").done, false);
+  });
+
+  test("the reveal only lands once the last clock is spent", () => {
+    const io = makeIO(); const room = liveRoom();
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    room.game.deadlines.p2 = Date.now() - 1;
+    engine.sweepClocks(io, room);
+    assert.equal(io.lastOfType("raceReveal"), null);
+
+    room.game.deadlines.p1 = Date.now() - 1; // now p1 is out too
+    engine.sweepClocks(io, room);
+
+    assert.equal(room.game.phase, "roundover");
+    const reveal = io.lastOfType("raceReveal");
+    assert.ok(reveal, "expected a reveal once every clock was spent");
+    assert.equal(reveal.perPlayer.find((p) => p.id === "p1").got.join(","), "Alpha");
+  });
+
+  test("a player waiting on the others is told so, without leaking anyone's score", () => {
+    const io = makeIO(); const room = liveRoom();
+    room.game.deadlines.p2 = Date.now() - 1;
+    engine.sweepClocks(io, room);
+    const logs = io.allOfType("raceLog").map((l) => l.text);
+    assert.ok(logs.some((t) => /P2.*time is up/.test(t)), `expected a waiting notice, got ${JSON.stringify(logs)}`);
+    assert.equal(logs.some((t) => /\d/.test(t.replace("P2", ""))), false); // no score in the notice
+  });
+
+  test("when every clock expires together there's no spurious 'waiting for the rest'", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 0 });
+    const gone = Date.now() - 1;
+    room.game.deadlines.p1 = gone; room.game.deadlines.p2 = gone;
+    engine.sweepClocks(io, room);
+    assert.equal(room.game.phase, "roundover");
+    assert.equal(io.allOfType("raceLog").some((l) => /time is up/.test(l.text)), false);
+  });
+
+  test("the last racer leaving ends the round instead of stranding the waiters", () => {
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2", "p3"] });
+    room.game.deadlines.p1 = Date.now() - 1;
+    room.game.deadlines.p2 = Date.now() - 1;
+    engine.sweepClocks(io, room); // p1 and p2 are waiting on p3
+    assert.equal(room.game.phase, "live");
+
+    engine.playerLeftMatch(io, room, "p3");
+
+    assert.equal(room.game.phase, "roundover");
+    assert.ok(io.lastOfType("raceReveal"));
+  });
+
+  test("a pause banks each clock separately and resume gives the time back", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 5 });
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {}); // p1 is 5s ahead
+    const gap = room.game.deadlines.p1 - room.game.deadlines.p2;
+
+    engine.pauseGame(io, room);
+    assert.equal(room.game.paused, true);
+    assert.equal(room.game.deadline, null);
+    assert.ok(room.game.pausedClocks.p1 > room.game.pausedClocks.p2);
+
+    engine.resumeGame(io, room);
+    assert.equal(room.game.paused, false);
+    const gapAfter = room.game.deadlines.p1 - room.game.deadlines.p2;
+    assert.ok(Math.abs(gapAfter - gap) < 60, `clock gap should survive a pause (${gap} → ${gapAfter})`);
+  });
+
+  test("endLiveRound retires every clock, so a late answer can't sneak in", () => {
+    const io = makeIO(); const room = liveRoom();
+    engine.endLiveRound(io, room);
+    room.game.phase = "live"; // pretend a stray packet arrives as the phase flips
+    let ack; engine.handleAnswer(io, room, sock("p1"), "alpha", (r) => (ack = r));
+    assert.equal(ack.accepted, false);
+    assert.equal(ack.outOfTime, true);
   });
 });
 

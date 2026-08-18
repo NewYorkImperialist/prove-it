@@ -33,14 +33,16 @@ function duelRoster(gs, myId) {
 }
 
 function raceRosterRows(g, myId) {
+  const live = g.phase === "live";
   return raceRoster(g, myId).map((p, i) => ({
     id: p.id,
     name: p.name,
     crown: false,
-    suffix: (p.id === myId ? " (you)" : "") + (p.active ? "" : " · left"),
+    // Clocks are personal, so mark who has already run out and is waiting on the rest.
+    suffix: (p.id === myId ? " (you)" : "") + (!p.active ? " · left" : live && p.done ? " · done" : ""),
     color: AVATARS[i % AVATARS.length],
     points: p.active ? (p.score ?? 0) : "—",
-    turn: false,
+    turn: live && p.active && !p.done, // highlight whoever is still racing
     wins: (g.roundWins.find((r) => r.id === p.id) || {}).wins || 0,
     inactive: !p.active,
   }));
@@ -103,6 +105,7 @@ export default function GameScreen({ mp, onLeaveIntent }) {
         skipLabel={view.skipLabel}
         onLeaveIntent={onLeaveIntent}
       />
+
 
       <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
         <div

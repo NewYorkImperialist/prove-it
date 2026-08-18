@@ -12,7 +12,8 @@ export const WINS = [
   { value: 10, label: "10" },
   { value: null, label: "∞" }, // endless
 ];
-// Bonus seconds added to the clock per correct answer — a chess-clock style increment.
+// Bonus seconds a correct answer adds to the clock. In a duel that's the shared round clock; in
+// a race every player has their own, so it only ever extends the answerer's (see race-engine.js).
 export const INCREMENTS = [
   { value: 0, label: "0" },
   { value: 2, label: "+2s" },
@@ -98,6 +99,9 @@ export function RaceSettings({ settings, iAmHost, onChange }) {
         <GroupTitle>Time increment per correct answer</GroupTitle>
         <Seg options={INCREMENTS} value={s.increment || 0} onChange={(increment) => onChange({ increment })} />
         <Stepper value={s.increment || 0} onChange={(increment) => onChange({ increment })} ariaLess="less increment" ariaMore="more increment" />
+        <div className="mt-2 text-xs text-muted">
+          Each racer has their own clock: this only extends the clock of whoever answered. Everyone else waits for the round to finish.
+        </div>
         <GroupTitle>Match format</GroupTitle>
         <Seg options={FORMATS} value={s.format == null ? null : s.format} onChange={(format) => onChange({ format })} />
         <CheckTile

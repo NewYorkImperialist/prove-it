@@ -5,6 +5,8 @@ import { useStateRef } from "@/hooks/useStateRef";
 import { sfx, setMuted as setSfxMuted } from "@/lib/browser/sfx";
 import { emojify } from "@/lib/emoji";
 import { duelAutoMode } from "@/lib/duel-view";
+import { raceClockDeadline } from "@/lib/race-view";
+import { PROMPT_MS } from "@/components/mp/PromptPop";
 import * as store from "@/lib/browser/storage";
 
 let feedSeq = 0;
@@ -441,7 +443,7 @@ export function useMultiplayer({ router }) {
   const showPrompt = useCallback((cat) => {
     setPrompt({ label: `${cat.emoji} ${cat.group}`, name: cat.name, key: nextId() });
     clearTimeout(promptTimer.current);
-    promptTimer.current = setTimeout(() => setPrompt(null), 5000);
+    promptTimer.current = setTimeout(() => setPrompt(null), PROMPT_MS);
   }, []);
 
   useEffect(() => {
@@ -712,13 +714,17 @@ export function useMultiplayer({ router }) {
   const lastTickSec = useRef(null);
   useEffect(() => {
     const iv = setInterval(() => {
-      const state = modeRef.current === "race" ? raceGsRef.current : gsRef.current;
-      if (!state || !state.deadline || state.paused) {
+      const isRace = modeRef.current === "race";
+      const state = isRace ? raceGsRef.current : gsRef.current;
+      // A race gives every player their own clock, so count down to mine (a spectator, or
+      // anyone whose clock is already spent, follows the last one still running).
+      const deadline = state ? (isRace ? raceClockDeadline(state, myIdRef.current) : state.deadline) : null;
+      if (!state || !deadline || state.paused) {
         lastTickSec.current = null;
         return setClock((c) => (c.left == null ? c : { left: null, danger: false }));
       }
-      const left = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
-      const danger = modeRef.current === "race" ? left <= 5 : state.phase === "proving" ? left <= 10 : left <= 3;
+      const left = Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
+      const danger = isRace ? left <= 5 : state.phase === "proving" ? left <= 10 : left <= 3;
       setClock((c) => (c.left === left && c.danger === danger ? c : { left, danger }));
       // Tick the final 5 seconds, hotter in the last 3.
       if (left <= 5 && left >= 1 && left !== lastTickSec.current) {

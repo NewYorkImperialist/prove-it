@@ -40,7 +40,8 @@
   --animate-daily-glow: daily-glow 1.9s ease-in-out infinite;
   --animate-logo-party: logo-party 0.9s ease;
   --animate-crown-party: crown-party 1.1s ease;
-  --animate-prompt-pop: prompt-pop 5s ease forwards;
+  /* Duration must match PROMPT_MS in components/mp/PromptPop.jsx — that timer unmounts the node. */
+  --animate-prompt-pop: prompt-pop 2.4s ease forwards;
   --animate-countdown: countdown-pop 0.8s ease forwards;
 }
 
@@ -103,11 +104,13 @@
   85% { transform: scale(1.85) rotate(-4deg); }
   100% { transform: scale(1) rotate(0); }
 }
+/* Retimed against a 2.4s window: ~190ms in, ~1.4s hold, then a ~770ms tail so the reveal visibly
+   dissolves off the feed instead of snapping out from under the player. */
 @keyframes prompt-pop {
-  0% { opacity: 0; transform: scale(0.86); }
-  9% { opacity: 1; transform: scale(1); }
-  78% { opacity: 1; transform: scale(1); }
-  100% { opacity: 0; transform: scale(1.06); }
+  0% { opacity: 0; transform: scale(0.92); }
+  8% { opacity: 1; transform: scale(1); }
+  68% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(1.04); }
 }
 @keyframes countdown-pop {
   0% { transform: scale(0.45); opacity: 0; }

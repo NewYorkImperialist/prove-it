@@ -1,7 +1,7 @@
 "use strict";
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
-const { raceView, raceFormatLine, raceRoster } = require("../lib/race-view.js");
+const { raceView, raceFormatLine, raceRoster, raceClockDeadline } = require("../lib/race-view.js");
 
 const ME = "me";
 const base = {
@@ -14,10 +14,13 @@ const base = {
   isTiebreaker: false,
   category: { name: "Countries", group: "Geography", emoji: "🌍" },
   liveScores: [
-    { id: ME, name: "Me", score: 4, active: true },
-    { id: "b", name: "Bea", score: 7, active: true },
-    { id: "c", name: "Cy", score: 1, active: false },
+    { id: ME, name: "Me", score: 4, active: true, done: false },
+    { id: "b", name: "Bea", score: 7, active: true, done: false },
+    { id: "c", name: "Cy", score: 1, active: false, done: false },
   ],
+  racing: 2,
+  deadline: 1_700_000_010_000,
+  deadlines: { [ME]: 1_700_000_005_000, b: 1_700_000_010_000 },
   roundWins: [{ id: ME, wins: 1 }, { id: "b", wins: 0 }],
 };
 const view = (over = {}, ctx = {}) => raceView({ ...base, ...over }, { myId: ME, isSpectator: false, isGhost: false, iAmHost: false, reviewOpen: false, ...ctx });
@@ -34,6 +37,22 @@ describe("the race screen", () => {
     const v = view({ liveScores: [{ id: ME, name: "Me", score: 4, active: false }] });
     assert.equal(v.enable, false);
   });
+  test("once your own clock is spent you're locked out and told who you're waiting on", () => {
+    const v = view({
+      liveScores: [{ id: ME, name: "Me", score: 4, active: true, done: true }, { id: "b", name: "Bea", score: 7, active: true, done: false }],
+      racing: 1,
+    });
+    assert.equal(v.enable, false); // can't answer any more
+    assert.match(v.placeholder, /Out of time/);
+    assert.match(v.statusText, /Time's up — you got 4/);
+    assert.match(v.statusText, /Waiting for 1 still racing/);
+  });
+
+  test("a spent clock still leaves chat open", () => {
+    const v = view({ liveScores: [{ id: ME, name: "Me", score: 4, active: true, done: true }], racing: 0 });
+    assert.equal(v.frozen, false); // not a pause — the input stays usable for chat
+  });
+
   test("the countdown just says to get ready", () => {
     assert.equal(view({ phase: "countdown" }).statusText, "Get ready…");
     assert.match(view({ phase: "countdown", isTiebreaker: true }).statusText, /Sudden death/);
@@ -82,6 +101,18 @@ describe("spectators and pauses", () => {
   });
 });
 
+describe("raceClockDeadline", () => {
+  test("you count down to your own clock", () => {
+    assert.equal(raceClockDeadline(base, ME), 1_700_000_005_000);
+  });
+  test("a spectator (or anyone with no clock of their own) follows the last one still running", () => {
+    assert.equal(raceClockDeadline(base, "nobody"), 1_700_000_010_000);
+  });
+  test("no clocks at all reads as no countdown", () => {
+    assert.equal(raceClockDeadline({ deadlines: {}, deadline: null }, ME), null);
+  });
+});
+
 describe("raceFormatLine", () => {
   test("shows the round and the match format", () => {
     assert.equal(raceFormatLine(base), "Round 2 · Best of 3");
@@ -92,7 +123,7 @@ describe("raceFormatLine", () => {
   test("appends every modifier in play", () => {
     assert.equal(
       raceFormatLine({ ...base, increment: 5, suddenDeath: true, isTiebreaker: true }),
-      "Round 2 · Best of 3 · +5s per answer · sudden death on ties · Tiebreaker!",
+      "Round 2 · Best of 3 · +5s to your own clock per answer · sudden death on ties · Tiebreaker!",
     );
   });
 });

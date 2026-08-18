@@ -1,12 +1,19 @@
 // Prove It! · server-side "Challenge Race" engine
-// 2+ players get the same category + timer at once (a live version of solo/daily challenge).
-// The server is authoritative: it owns the round clock and answer validation. Live state
-// broadcasts to the room ONLY ever exposes each player's running COUNT (never their actual
-// answers) — the full per-player answer/miss list only ever goes out via "raceReveal", starting
-// once the round's timer ends (never while phase === "live"). A round's result isn't final the
-// moment the timer runs out, though: there's a review window where other players can approve
-// each other's missed/off-list answers (see handleApproveMiss), and only finalizeRound() locks
-// in who actually won the round.
+// 2+ players get the same category at once (a live version of solo/daily challenge).
+//
+// CLOCKS ARE PER PLAYER. Everyone starts a round with the same `timer`, but the increment is a
+// personal chess clock: a correct answer extends only the answerer's own clock, so a player on a
+// hot streak keeps going while the others' clocks run down. When your clock expires you're done
+// for the round and you wait — the round itself only ends once EVERY active player's clock has
+// expired (see sweepClocks/allClocksDone).
+//
+// The server is authoritative: it owns those clocks and all answer validation. Live state
+// broadcasts to the room ONLY ever expose each player's running COUNT (never their actual
+// answers) — the full per-player answer/miss list only goes out via "raceReveal", which cannot
+// fire until every clock is done, so nobody can read an opponent's answers while still racing.
+// A round's result isn't final the moment the last clock runs out, though: there's a review
+// window where players can approve each other's missed/off-list answers (see handleApproveMiss),
+// and only finalizeRound() locks in who actually won the round.
 const CATEGORY_GROUPS = require("./data/categories.js");
 const { norm, resolve, buildPool } = require("./lib/answer-matching.js");
 
@@ -32,22 +39,71 @@ function setTimer(room, ms, fn, { deadline = true } = {}) {
   g.timeout = setTimeout(() => { g.timeout = null; fn(); }, ms);
   if (g.timeout.unref) g.timeout.unref();
 }
-// Chess-clock-style bonus: adds `ms` to the round's shared clock, reusing whatever's currently
-// scheduled (only meaningful during "live" — the countdown/reveal/result timers aren't extended).
-function extendTimer(room, ms) {
+// ---------- per-player round clocks ----------
+// Each active player has their own deadline in g.deadlines. One timeout is armed at a time, for
+// whichever still-racing clock expires next; sweepClocks() then retires the players it finds
+// expired and re-arms for the next one.
+const stillRacing = (g, id) => g.activeIds.has(id) && !g.doneIds.has(id);
+const allClocksDone = (g) => ![...g.activeIds].some((id) => !g.doneIds.has(id));
+// The last clock standing — what spectators (and anyone whose own clock is gone) count down to.
+function latestDeadline(g) {
+  let latest = null;
+  for (const id of g.activeIds) {
+    const dl = g.deadlines[id];
+    if (dl != null && (latest == null || dl > latest)) latest = dl;
+  }
+  return latest;
+}
+
+function armRoundClock(io, room) {
   const g = room.game;
-  if (!g.timeout || g.deadline == null) return;
-  setTimer(room, Math.max(0, g.deadline - Date.now()) + ms, g.timerFn);
+  if (g.phase !== "live" || g.paused) return;
+  let next = null;
+  for (const id of g.activeIds) {
+    if (!stillRacing(g, id)) continue;
+    const dl = g.deadlines[id];
+    if (dl != null && (next == null || dl < next)) next = dl;
+  }
+  if (next == null) return endLiveRound(io, room); // nobody is still racing
+  setTimer(room, Math.max(0, next - Date.now()), () => sweepClocks(io, room), { deadline: false });
+  g.deadline = latestDeadline(g); // set after setTimer, which clears it when deadline:false
+}
+
+// Retire every player whose clock has run out, then either end the round or wait for the rest.
+function sweepClocks(io, room) {
+  const g = room.game;
+  if (!g || g.phase !== "live") return;
+  const cutoff = Date.now() + 50; // a few ms of slack so a clock doesn't need a second pass
+  const retired = [];
+  for (const id of g.activeIds) {
+    if (!stillRacing(g, id)) continue;
+    if ((g.deadlines[id] ?? 0) <= cutoff) { g.doneIds.add(id); retired.push(id); }
+  }
+  // With no increment every clock expires together, so only announce the wait once we know
+  // there's actually someone left to wait for.
+  if (allClocksDone(g)) return endLiveRound(io, room);
+  // Says who the room is now waiting on — no scores, no answers.
+  for (const id of retired) log(io, room, "system", null, `${g.names[id]}'s time is up · waiting for the rest.`);
+  if (retired.length) emit(io, room);
+  armRoundClock(io, room);
 }
 function pauseGame(io, room) {
   const g = room.game;
   if (!g || g.paused) return;
-  if (g.timeout) {
+  if (g.phase === "live") {
+    // Freeze every clock individually, so nobody loses (or gains) time over the outage.
+    g.pausedClocks = {};
+    for (const id of g.activeIds) {
+      if (!stillRacing(g, id)) continue;
+      g.pausedClocks[id] = Math.max(500, (g.deadlines[id] ?? 0) - Date.now());
+    }
+    g.pausedRemaining = null;
+  } else if (g.timeout) {
     g.pausedRemaining = g.deadline ? Math.max(500, g.deadline - Date.now()) : g.timerMs;
-    clearTimeout(g.timeout); g.timeout = null;
   } else {
     g.pausedRemaining = null;
   }
+  if (g.timeout) { clearTimeout(g.timeout); g.timeout = null; }
   g.deadline = null; g.paused = true;
   emit(io, room);
 }
@@ -56,6 +112,13 @@ function resumeGame(io, room) {
   if (!g) return;
   if (g.paused) {
     g.paused = false;
+    if (g.phase === "live") {
+      const now = Date.now();
+      for (const [id, ms] of Object.entries(g.pausedClocks || {})) g.deadlines[id] = now + ms;
+      g.pausedClocks = null;
+      armRoundClock(io, room);
+      return emit(io, room);
+    }
     if (g.timerFn) setTimer(room, g.pausedRemaining ?? g.timerMs ?? 2000, g.timerFn, { deadline: g.timerDeadline !== false });
   }
   emit(io, room);
@@ -67,12 +130,17 @@ function snapshot(room) {
   return {
     phase: g.phase, round: g.round,
     category: g.current ? { name: g.current.name, group: g.current.group, emoji: g.current.emoji, size: g.current.entries.length } : null,
-    deadline: g.deadline || null, timer: g.timer, increment: g.increment || 0,
+    // deadline = the LAST clock still running (what a spectator counts down to); each player
+    // reads their own out of `deadlines`. Same information the running counts already carry.
+    deadline: g.deadline || null, deadlines: { ...g.deadlines }, timer: g.timer, increment: g.increment || 0,
     format: g.format, winsNeeded: g.winsNeeded, suddenDeath: !!g.suddenDeath, isTiebreaker: !!g.isTiebreaker,
     roundWins: g.order.map((id) => ({ id, name: g.names[id], wins: g.roundWins[id] || 0, active: g.activeIds.has(id) })),
     // score-only: a running count per player, NEVER the actual items they've named — that's
     // only ever sent once, in the "raceReveal" event, after the round's timer has ended.
-    liveScores: g.order.map((id) => ({ id, name: g.names[id], score: g.activeIds.has(id) ? (g.liveScores[id] || 0) : null, active: g.activeIds.has(id) })),
+    liveScores: g.order.map((id) => ({ id, name: g.names[id], score: g.activeIds.has(id) ? (g.liveScores[id] || 0) : null,
+      active: g.activeIds.has(id), done: g.doneIds.has(id) })),
+    // Whose clock has already expired this round — the rest of the room is waiting on the others.
+    racing: [...g.activeIds].filter((id) => !g.doneIds.has(id)).length,
     matchWinnerId: g.matchWinnerId || null,
     paused: !!g.paused,
     endVotes: g.endVotes ? g.endVotes.size : 0,
@@ -98,6 +166,7 @@ function startMatch(io, room) {
     roundWins: Object.fromEntries(order.map((id) => [id, 0])),
     round: 0, isTiebreaker: false, usedNames: [], lastCatName: null,
     current: null, phase: "starting", deadline: null, timeout: null,
+    deadlines: {}, doneIds: new Set(), pausedClocks: null, // per-player round clocks
     answers: {}, liveScores: {}, misses: {}, missSeq: 0, lastReveal: null, matchWinnerId: null,
     paused: false, endVotes: new Set(),
     startedAt: Date.now(),
@@ -118,6 +187,7 @@ function beginRound(io, room, opts = {}) {
   g.usedNames.push(c.name); g.lastCatName = c.name; g.current = c;
   g.answers = {}; g.liveScores = {}; g.misses = {}; g.missSeq = 0;
   g.endVotes = new Set(); // votes are a per-round intent check, not sticky across rounds
+  g.deadlines = {}; g.doneIds = new Set(); g.pausedClocks = null;
   for (const id of g.activeIds) { g.answers[id] = new Map(); g.liveScores[id] = 0; g.misses[id] = []; }
   g.phase = "countdown";
   log(io, room, "system", null, g.isTiebreaker ? `Sudden death! Round ${g.round} · ${c.group}: ${c.name}` : `Round ${g.round} · ${c.group}: ${c.name}`);
@@ -128,7 +198,10 @@ function beginRound(io, room, opts = {}) {
 function startLiveRound(io, room) {
   const g = room.game;
   g.phase = "live";
-  setTimer(room, g.timer * 1000, () => endLiveRound(io, room));
+  const start = Date.now() + g.timer * 1000;
+  g.doneIds = new Set();
+  g.deadlines = Object.fromEntries([...g.activeIds].map((id) => [id, start])); // same start for all
+  armRoundClock(io, room);
   emit(io, room);
 }
 
@@ -153,6 +226,9 @@ function currentPerPlayer(room) {
 function endLiveRound(io, room) {
   clearTimer(room);
   const g = room.game;
+  // Every clock is spent, so this is the first moment anyone's answers may leave the server.
+  for (const id of g.activeIds) g.doneIds.add(id);
+  g.deadlines = {};
   g.lastReveal = {
     round: g.round, category: { name: g.current.name, group: g.current.group, emoji: g.current.emoji },
     perPlayer: currentPerPlayer(room), final: false, roundWinnerIds: [], tie: false, suddenDeathTriggered: false,
@@ -240,7 +316,9 @@ function handleAnswer(io, room, socket, text, ack) {
   const g = room.game;
   const pid = socket.data.playerId;
   if (!g || g.phase !== "live" || !g.activeIds.has(pid)) return ack?.({ ok: true, accepted: false });
-  if (g.deadline && Date.now() > g.deadline) return ack?.({ ok: true, accepted: false }); // race lost to the clock
+  // Your own clock is what gates you — the others may still be racing long after yours is gone.
+  if (g.doneIds.has(pid)) return ack?.({ ok: true, accepted: false, outOfTime: true });
+  if ((g.deadlines[pid] ?? 0) < Date.now()) return ack?.({ ok: true, accepted: false, outOfTime: true });
   const entry = resolve(g.current, text);
   if (!entry) {
     // Not recognized — logged as a miss so it can be approved by someone else after the round
@@ -258,7 +336,11 @@ function handleAnswer(io, room, socket, text, ack) {
   mine.set(entry.id, { display: entry.display, at: Date.now() });
   g.liveScores[pid] = (g.liveScores[pid] || 0) + 1;
   report(room, "answer", { category: g.current.name, grp: g.current.group, display: entry.display, offList: false, player: g.names[pid] });
-  if (g.increment) extendTimer(room, g.increment * 1000); // chess-clock bonus, extends the whole room's shared clock
+  // Personal chess-clock bonus: extends only the answerer's own clock, never anyone else's.
+  if (g.increment) {
+    g.deadlines[pid] = (g.deadlines[pid] || Date.now()) + g.increment * 1000;
+    armRoundClock(io, room); // the next expiry (and the last one) may have moved
+  }
   ack?.({ ok: true, accepted: true, display: entry.display });
   emit(io, room); // score-only broadcast — the matched item's name never leaves the server here
 }
@@ -319,6 +401,11 @@ function playerLeftMatch(io, room, leaverId) {
     clearTimer(room);
     return matchOver(io, room, [...g.activeIds][0] || null, "forfeit");
   }
+  // They may have been the last clock the others were waiting on.
+  if (g.phase === "live" && !g.paused) {
+    if (allClocksDone(g)) return endLiveRound(io, room);
+    armRoundClock(io, room);
+  }
   emit(io, room);
 }
 
@@ -355,7 +442,8 @@ function handleRematch(io, room, socket, ack) {
 }
 
 module.exports = {
-  startMatch, beginRound, endLiveRound, finalizeRound, handleAnswer, handleApproveMiss, handleVoteEnd, playerLeftMatch,
+  startMatch, beginRound, startLiveRound, endLiveRound, sweepClocks, finalizeRound,
+  handleAnswer, handleApproveMiss, handleVoteEnd, playerLeftMatch,
   pauseGame, resumeGame, applyLiveSettings, setGroups, setReporter, handleRematch,
   resync: (io, room) => { if (room.game) emit(io, room); },
 };

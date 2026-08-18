@@ -56,8 +56,11 @@ export default function TopBar({ mp, roster, roomLabel, canSkip, skipLabel, onLe
   useDismiss(menuOpen, () => setMenuOpen(false), [menuBtn, menu]);
 
   const gs = mp.gs;
+  const raceGs = mp.raceGs;
   const isRace = mp.mode === "race";
-  const groups = (gs && gs.groups) || [];
+  // Whichever mode is live publishes its category groups on its own snapshot; the mid-match
+  // "setGroups" event is mode-agnostic on the server, so both modes change them the same way.
+  const groups = ((isRace ? raceGs : gs)?.groups) || [];
 
   // Keep the rename field in step with the server, but never while it has focus.
   const meName = roster.find((p) => p.id === mp.myId)?.name;
@@ -94,8 +97,8 @@ export default function TopBar({ mp, roster, roomLabel, canSkip, skipLabel, onLe
 
       <span className="flex-1" />
 
-      {/* Host-only mid-game category switch; a race locks its categories in at the start. */}
-      {mp.iAmHost && !isRace ? (
+      {/* Host-only mid-game category switch — both modes apply it from the next round. */}
+      {mp.iAmHost ? (
         <button
           ref={catBtn}
           type="button"
@@ -151,6 +154,19 @@ export default function TopBar({ mp, roster, roomLabel, canSkip, skipLabel, onLe
               👑 Crown
             </MenuButton>
           ) : null}
+          {/* The dedicated Categories pill is desktop-only, so the host reaches the same panel
+              from here on a phone. */}
+          {mp.iAmHost ? (
+            <MenuButton
+              title="Change the categories (applies next round)"
+              onClick={() => {
+                setMenuOpen(false);
+                setCatOpen(true);
+              }}
+            >
+              Categories…
+            </MenuButton>
+          ) : null}
           <MenuButton onClick={mp.leaveRoom} className="last:mb-0 hover:border-bad hover:bg-bad hover:text-white">
             Leave game
           </MenuButton>
@@ -171,7 +187,7 @@ export default function TopBar({ mp, roster, roomLabel, canSkip, skipLabel, onLe
             </button>
           </div>
 
-          {/* Timer / win-at / next-round are duel-only: a race's format is fixed once it starts. */}
+          {/* Duel: everything is live-adjustable. */}
           {gs && mp.iAmHost ? (
             <>
               <GroupTitle>Timer</GroupTitle>
@@ -182,6 +198,18 @@ export default function TopBar({ mp, roster, roomLabel, canSkip, skipLabel, onLe
               <Seg options={WINS} value={gs.target == null ? null : gs.target} onChange={(target) => mp.setSettings({ target })} />
               <GroupTitle>Next round</GroupTitle>
               <Seg options={ADVANCE} value={gs.autoAdvance !== false} onChange={(autoAdvance) => mp.setSettings({ autoAdvance })} />
+            </>
+          ) : null}
+
+          {/* Race: the timer and increment stay adjustable mid-match; the match format and
+              sudden-death are locked once the first round is dealt, so they aren't offered. */}
+          {raceGs && isRace && mp.iAmHost ? (
+            <>
+              <GroupTitle>Timer per round</GroupTitle>
+              <Seg options={TIMERS} value={raceGs.timer} onChange={(timer) => mp.setRaceSettings({ timer })} />
+              <GroupTitle>Increment</GroupTitle>
+              <Seg options={INCREMENTS} value={raceGs.increment || 0} onChange={(increment) => mp.setRaceSettings({ increment })} />
+              <div className="mt-2.5 text-xs text-muted">Applies from the next round. Match format is locked for this match.</div>
             </>
           ) : null}
         </div>

@@ -60,7 +60,11 @@ export default function GameScreen({ mp, onLeaveIntent }) {
   const wasOpening = useRef(false);
 
   const ctx = { myId: mp.myId, isSpectator: mp.isSpectator, isGhost: mp.isGhost, iAmHost: mp.iAmHost };
-  const view = state ? (isRace ? raceView(state, { ...ctx, reviewOpen: mp.reviewOpen }) : duelView(state, ctx)) : { enable: false, placeholder: "…", statusText: "", actions: [] };
+  const view = state
+    ? isRace
+      ? raceView(state, { ...ctx, reviewOpen: mp.reviewOpen })
+      : duelView(state, ctx)
+    : { enable: false, placeholder: "…", statusText: "", actions: [], canSkip: false };
 
   // Unmissable cue for whoever's opening: a red glow on the box, and a shake the moment it
   // becomes their turn.
@@ -103,7 +107,7 @@ export default function GameScreen({ mp, onLeaveIntent }) {
         mp={mp}
         roster={roster}
         roomLabel={(mp.myRoom ? "Room " + mp.myRoom : "") + watching}
-        canSkip={!isRace && !!view.canSkip}
+        canSkip={!!view.canSkip}
         skipLabel={view.skipLabel}
         onLeaveIntent={onLeaveIntent}
       />

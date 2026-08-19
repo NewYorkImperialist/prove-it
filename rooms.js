@@ -374,7 +374,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     socket.on("giveUp", withDuelGame((room) => engine.handleGiveUp(io, room, socket)));
     socket.on("pauseRound", withDuelGame((room) => engine.handlePauseRound(io, room, socket)));
     socket.on("nextRound", withDuelGame((room) => engine.handleNextRound(io, room, socket)));
-    socket.on("voteSkip", withDuelGame((room) => engine.handleVoteSkip(io, room, socket)));
+    socket.on("voteSkip", withGame((room) => engineFor(room).handleVoteSkip(io, room, socket))); // both modes
     socket.on("voteEnd", withDuelGame((room) => engine.handleVoteEnd(io, room, socket)));
     socket.on("raceAnswer", withRaceGame((room, { text } = {}, ack) => raceEngine.handleAnswer(io, room, socket, text, ack)));
     socket.on("raceApproveMiss", withRaceGame((room, { targetId, missId } = {}) => raceEngine.handleApproveMiss(io, room, socket, targetId, missId)));

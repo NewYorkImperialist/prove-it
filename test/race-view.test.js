@@ -19,6 +19,7 @@ const base = {
     { id: "c", name: "Cy", score: 1, active: false, done: false },
   ],
   racing: 2,
+  skipVotes: 0,
   deadline: 1_700_000_010_000,
   deadlines: { [ME]: 1_700_000_005_000, b: 1_700_000_010_000 },
   roundWins: [{ id: ME, wins: 1 }, { id: "b", wins: 0 }],
@@ -51,6 +52,25 @@ describe("the race screen", () => {
   test("a spent clock still leaves chat open", () => {
     const v = view({ liveScores: [{ id: ME, name: "Me", score: 4, active: true, done: true }], racing: 0 });
     assert.equal(v.frozen, false); // not a pause — the input stays usable for chat
+  });
+
+  test("skipping the category is offered from the countdown through the whole round", () => {
+    assert.equal(view({ phase: "countdown" }).canSkip, true);
+    assert.equal(view({ phase: "live" }).canSkip, true);
+    // Still offered once your own clock is spent — a skip needs everyone, including you.
+    assert.equal(view({ liveScores: [{ id: ME, name: "Me", score: 0, active: true, done: true }], racing: 1 }).canSkip, true);
+  });
+
+  test("skipping is not offered once the round is decided, or to a watcher, or while paused", () => {
+    assert.equal(view({ phase: "roundover" }).canSkip, false);
+    assert.equal(view({ phase: "matchover" }).canSkip, false);
+    assert.equal(view({}, { isSpectator: true }).canSkip, false);
+    assert.equal(view({ paused: true }).canSkip, false);
+  });
+
+  test("the skip label carries the tally against the number still in the round", () => {
+    assert.equal(view().skipLabel, "Skip category");
+    assert.equal(view({ skipVotes: 1 }).skipLabel, "Skip category (1/2)");
   });
 
   test("the countdown just says to get ready", () => {

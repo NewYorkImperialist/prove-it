@@ -148,6 +148,7 @@ function snapshot(room) {
     matchWinnerId: g.matchWinnerId || null,
     paused: !!g.paused,
     endVotes: g.endVotes ? g.endVotes.size : 0,
+    skipVotes: g.skipVotes ? g.skipVotes.size : 0,
     groups: g.groups || [],
     spectators: room.spectators ? room.spectators.size : 0,
   };
@@ -172,7 +173,7 @@ function startMatch(io, room) {
     current: null, phase: "starting", deadline: null, timeout: null,
     deadlines: {}, doneIds: new Set(), pausedClocks: null, // per-player round clocks
     answers: {}, liveScores: {}, misses: {}, missSeq: 0, lastReveal: null, matchWinnerId: null,
-    paused: false, endVotes: new Set(),
+    paused: false, endVotes: new Set(), skipVotes: new Set(),
     startedAt: Date.now(),
     gid: "r-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7),
   };
@@ -191,6 +192,7 @@ function beginRound(io, room, opts = {}) {
   g.usedNames.push(c.name); g.lastCatName = c.name; g.current = c;
   g.answers = {}; g.liveScores = {}; g.misses = {}; g.missSeq = 0;
   g.endVotes = new Set(); // votes are a per-round intent check, not sticky across rounds
+  g.skipVotes = new Set();
   g.deadlines = {}; g.doneIds = new Set(); g.pausedClocks = null;
   for (const id of g.activeIds) { g.answers[id] = new Map(); g.liveScores[id] = 0; g.misses[id] = []; }
   g.phase = "countdown";
@@ -349,6 +351,33 @@ function handleAnswer(io, room, socket, text, ack) {
   emit(io, room); // score-only broadcast — the matched item's name never leaves the server here
 }
 
+// Vote to throw this round's category away and deal another. Unlike the duel — where a skip is
+// only offered before anyone has answered — a race can skip during the countdown OR mid-round,
+// because a bad category (a troll list, or one nobody knows) is often only obvious once you're
+// staring at it. It needs EVERY active player, including anyone whose clock has already run out,
+// so there's no way to use it to dodge a round you're losing.
+function handleVoteSkip(io, room, socket) {
+  const g = room.game;
+  if (!g || (g.phase !== "countdown" && g.phase !== "live")) return;
+  const pid = socket.data.playerId;
+  if (!g.activeIds.has(pid)) return; // players only — not spectators, not anyone who left
+  if (!g.skipVotes) g.skipVotes = new Set();
+  if (g.skipVotes.has(pid)) return; // one vote each
+  g.skipVotes.add(pid);
+
+  if (g.skipVotes.size >= g.activeIds.size) {
+    clearTimer(room);
+    log(io, room, "system", null, `Everyone skipped ${g.current.name} · new category.`);
+    report(room, "event", { type: "categorySkipped", detail: g.current.name });
+    // The skipped round never happened: rewind the counter so the replacement keeps its number
+    // and a best-of-N match isn't quietly shortened.
+    g.round--;
+    return beginRound(io, room, { tiebreaker: g.isTiebreaker });
+  }
+  log(io, room, "system", null, `${g.names[pid]} wants to skip this category (${g.skipVotes.size}/${g.activeIds.size}).`);
+  emit(io, room);
+}
+
 // Vote to end an endless-format match early · needs every active player to agree.
 function handleVoteEnd(io, room, socket) {
   const g = room.game;
@@ -447,7 +476,7 @@ function handleRematch(io, room, socket, ack) {
 
 module.exports = {
   startMatch, beginRound, startLiveRound, endLiveRound, sweepClocks, finalizeRound,
-  handleAnswer, handleApproveMiss, handleVoteEnd, playerLeftMatch,
+  handleAnswer, handleApproveMiss, handleVoteEnd, handleVoteSkip, playerLeftMatch,
   pauseGame, resumeGame, applyLiveSettings, setGroups, setReporter, handleRematch,
   resync: (io, room) => { if (room.game) emit(io, room); },
 };

@@ -48,7 +48,7 @@ function liveRoom({ players = ["p1", "p2"], format = 3, suddenDeath = false, tim
     // Clocks are per player: everyone starts the round with the same deadline, and the
     // increment only ever moves the answerer's own.
     deadlines: Object.fromEntries(players.map((id) => [id, Date.now() + timer * 1000])),
-    doneIds: new Set(), pausedClocks: null,
+    doneIds: new Set(), pausedClocks: null, skipVotes: new Set(),
     timerFn, timeout: setTimeout(timerFn, 999999), // a real (mocked) armed timer, like a live round actually has
     answers: Object.fromEntries(players.map((id) => [id, new Map()])),
     liveScores: Object.fromEntries(players.map((id) => [id, 0])),
@@ -347,6 +347,81 @@ describe("match format → win condition", () => {
     assert.ok(over);
     assert.equal(over.winnerId, "p1");
     assert.equal(room.game.phase, "matchover");
+  });
+});
+
+// Skipping a bad category. Deliberately stricter than the duel's version: it stays available
+// mid-round (you often only realise the list is unplayable once you're in it) but needs
+// unanimity, so it can't be used to bail out of a round you're losing.
+describe("handleVoteSkip", () => {
+  test("one vote of two doesn't skip; it just reports the tally", () => {
+    const io = makeIO(); const room = liveRoom();
+    engine.handleVoteSkip(io, room, sock("p1"));
+    assert.equal(room.game.skipVotes.size, 1);
+    assert.equal(room.game.round, 1); // still the same round
+    assert.match(io.allOfType("raceLog").at(-1).text, /wants to skip this category \(1\/2\)/);
+  });
+
+  test("a second vote from the same player is ignored", () => {
+    const io = makeIO(); const room = liveRoom();
+    engine.handleVoteSkip(io, room, sock("p1"));
+    engine.handleVoteSkip(io, room, sock("p1"));
+    assert.equal(room.game.skipVotes.size, 1);
+    assert.equal(room.game.round, 1);
+  });
+
+  test("everyone voting deals a new category and keeps the round number", () => {
+    const io = makeIO(); const room = liveRoom();
+    const firstCat = room.game.current.name;
+    room.game.pool = [testCategory(), testCategory({ name: "Second Cat" })];
+    engine.handleVoteSkip(io, room, sock("p1"));
+    engine.handleVoteSkip(io, room, sock("p2"));
+    assert.equal(room.game.round, 1, "the skipped round must not burn a round number");
+    assert.equal(room.game.phase, "countdown"); // a fresh round is being dealt
+    assert.equal(room.game.skipVotes.size, 0); // reset for the replacement round
+    assert.match(io.allOfType("raceLog").map((l) => l.text).join(" "), new RegExp(`Everyone skipped ${firstCat}`));
+  });
+
+  test("a player whose clock already ran out still gets a vote", () => {
+    const io = makeIO(); const room = liveRoom();
+    room.game.doneIds.add("p1"); // out of time, but still in the round
+    engine.handleVoteSkip(io, room, sock("p1"));
+    engine.handleVoteSkip(io, room, sock("p2"));
+    assert.equal(room.game.phase, "countdown"); // the skip went through
+  });
+
+  test("a player who left can't vote, and doesn't count toward unanimity", () => {
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2", "p3"] });
+    room.game.activeIds.delete("p3");
+    engine.handleVoteSkip(io, room, sock("p3")); // gone — ignored
+    assert.equal(room.game.skipVotes.size, 0);
+    engine.handleVoteSkip(io, room, sock("p1"));
+    engine.handleVoteSkip(io, room, sock("p2"));
+    assert.equal(room.game.phase, "countdown"); // two of two remaining players is unanimous
+  });
+
+  test("it works during the countdown, before anyone has typed anything", () => {
+    const io = makeIO(); const room = liveRoom();
+    room.game.phase = "countdown";
+    engine.handleVoteSkip(io, room, sock("p1"));
+    engine.handleVoteSkip(io, room, sock("p2"));
+    assert.equal(room.game.round, 1);
+    assert.equal(room.game.phase, "countdown");
+  });
+
+  test("it's refused once the round is over — the result is already in", () => {
+    const io = makeIO(); const room = liveRoom();
+    room.game.phase = "roundover";
+    engine.handleVoteSkip(io, room, sock("p1"));
+    engine.handleVoteSkip(io, room, sock("p2"));
+    assert.equal(room.game.skipVotes.size, 0);
+    assert.equal(room.game.phase, "roundover");
+  });
+
+  test("the tally is published on the score broadcast", () => {
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2", "p3"] });
+    engine.handleVoteSkip(io, room, sock("p1"));
+    assert.equal(io.lastOfType("raceState").skipVotes, 1);
   });
 });
 

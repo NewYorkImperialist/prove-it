@@ -389,7 +389,9 @@ export function useMultiplayer({ router }) {
           sfx.ding();
           const round = raceGsRef.current?.round ?? 0;
           setRaceMine((m) => (m.round === round ? { round, got: [...m.got, res.display] } : { round, got: [res.display] }));
-          pushFeed({ type: "msg", side: "me", text: `${res.display} ✓`, kind: "ok" });
+          // clockMaxed: the answer counted but the round's clock ceiling ate the bonus, so say so
+          // once rather than letting the timer look stuck.
+          pushFeed({ type: "msg", side: "me", text: res.clockMaxed ? `${res.display} ✓ · clock maxed` : `${res.display} ✓`, kind: "ok" });
         } else if (res && res.alreadyHad) {
           pushFeed({ type: "msg", side: "me", text: `already got ${res.display}`, kind: "bad" });
         }

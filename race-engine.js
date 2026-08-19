@@ -5,7 +5,8 @@
 // personal chess clock: a correct answer extends only the answerer's own clock, so a player on a
 // hot streak keeps going while the others' clocks run down. When your clock expires you're done
 // for the round and you wait — the round itself only ends once EVERY active player's clock has
-// expired (see sweepClocks/allClocksDone).
+// expired (see sweepClocks/allClocksDone). Every clock is capped, though (MAX_CLOCK_FACTOR), so
+// one hot streak can't leave the rest of the room waiting for minutes.
 //
 // The server is authoritative: it owns those clocks and all answer validation. Live state
 // broadcasts to the room ONLY ever expose each player's running COUNT (never their actual
@@ -21,6 +22,7 @@ const COUNTDOWN_MS = 3_000;   // 3-2-1-GO before each round's timer starts
 const REVIEW_MS = 15_000;     // window to approve missed/off-list answers, only when there's something to review
 const RESULT_MS = 5_000;      // pause showing the round's final result before the next round starts
 const MAX_MISSES = 25;        // per player per round — anti-spam cap on tracked wrong answers
+const MAX_CLOCK_FACTOR = 2;   // a round clock can never grow past this × the room's base timer
 const DEFAULTS = { timer: 45, format: 5, suddenDeath: false, increment: 0 }; // format: 3|5|null(endless); increment: bonus seconds per correct answer
 
 // Optional analytics hook · server.js sets this to persist match/round events. No-op by default.
@@ -53,6 +55,20 @@ function latestDeadline(g) {
     if (dl != null && (latest == null || dl > latest)) latest = dl;
   }
   return latest;
+}
+
+// Pay the increment onto one player's clock. The bonus is personal but not unlimited: left
+// unbounded, a strong player on a 200-item category at +5s an answer adds a quarter of an hour to
+// their own clock while everyone else sits watching a spent timer, and vote-skip can't rescue
+// them because it needs the runaway player's own vote too. So a clock can never be pushed past
+// g.clockCeiling (MAX_CLOCK_FACTOR × the base timer, measured from the round's start), which caps
+// the whole round — and therefore the longest anyone has to wait — at a knowable length.
+// Returns true when the ceiling swallowed some or all of the bonus.
+function extendClock(g, id) {
+  const wanted = (g.deadlines[id] || Date.now()) + g.increment * 1000;
+  if (g.clockCeiling == null) { g.deadlines[id] = wanted; return false; } // pre-ceiling state (or a test fixture)
+  g.deadlines[id] = Math.min(wanted, g.clockCeiling);
+  return g.deadlines[id] < wanted;
 }
 
 function armRoundClock(io, room) {
@@ -101,6 +117,9 @@ function pauseGame(io, room) {
       if (!stillRacing(g, id)) continue;
       g.pausedClocks[id] = Math.max(500, (g.deadlines[id] ?? 0) - Date.now());
     }
+    // The ceiling is an absolute time too, so it has to ride out the outage with the clocks it
+    // caps — otherwise a long pause silently eats everyone's remaining bonus.
+    g.pausedCeiling = g.clockCeiling == null ? null : Math.max(0, g.clockCeiling - Date.now());
     g.pausedRemaining = null;
   } else if (g.timeout) {
     g.pausedRemaining = g.deadline ? Math.max(500, g.deadline - Date.now()) : g.timerMs;
@@ -119,7 +138,8 @@ function resumeGame(io, room) {
     if (g.phase === "live") {
       const now = Date.now();
       for (const [id, ms] of Object.entries(g.pausedClocks || {})) g.deadlines[id] = now + ms;
-      g.pausedClocks = null;
+      if (g.pausedCeiling != null) g.clockCeiling = now + g.pausedCeiling;
+      g.pausedClocks = null; g.pausedCeiling = null;
       armRoundClock(io, room);
       return emit(io, room);
     }
@@ -137,6 +157,7 @@ function snapshot(room) {
     // deadline = the LAST clock still running (what a spectator counts down to); each player
     // reads their own out of `deadlines`. Same information the running counts already carry.
     deadline: g.deadline || null, deadlines: { ...g.deadlines }, timer: g.timer, increment: g.increment || 0,
+    clockCap: g.timer * MAX_CLOCK_FACTOR, // longest a single clock (so, a whole round) can run
     format: g.format, winsNeeded: g.winsNeeded, suddenDeath: !!g.suddenDeath, isTiebreaker: !!g.isTiebreaker,
     roundWins: g.order.map((id) => ({ id, name: g.names[id], wins: g.roundWins[id] || 0, active: g.activeIds.has(id) })),
     // score-only: a running count per player, NEVER the actual items they've named — that's
@@ -172,6 +193,7 @@ function startMatch(io, room) {
     round: 0, isTiebreaker: false, usedNames: [], lastCatName: null,
     current: null, phase: "starting", deadline: null, timeout: null,
     deadlines: {}, doneIds: new Set(), pausedClocks: null, // per-player round clocks
+    clockCeiling: null, pausedCeiling: null, // set per round in startLiveRound; caps the increment
     answers: {}, liveScores: {}, misses: {}, missSeq: 0, lastReveal: null, matchWinnerId: null,
     paused: false, endVotes: new Set(), skipVotes: new Set(),
     startedAt: Date.now(),
@@ -194,6 +216,7 @@ function beginRound(io, room, opts = {}) {
   g.endVotes = new Set(); // votes are a per-round intent check, not sticky across rounds
   g.skipVotes = new Set();
   g.deadlines = {}; g.doneIds = new Set(); g.pausedClocks = null;
+  g.clockCeiling = null; g.pausedCeiling = null;
   for (const id of g.activeIds) { g.answers[id] = new Map(); g.liveScores[id] = 0; g.misses[id] = []; }
   g.phase = "countdown";
   log(io, room, "system", null, g.isTiebreaker ? `Sudden death! Round ${g.round} · ${c.group}: ${c.name}` : `Round ${g.round} · ${c.group}: ${c.name}`);
@@ -204,9 +227,12 @@ function beginRound(io, room, opts = {}) {
 function startLiveRound(io, room) {
   const g = room.game;
   g.phase = "live";
-  const start = Date.now() + g.timer * 1000;
+  const now = Date.now();
+  const start = now + g.timer * 1000;
   g.doneIds = new Set();
   g.deadlines = Object.fromEntries([...g.activeIds].map((id) => [id, start])); // same start for all
+  g.clockCeiling = now + g.timer * 1000 * MAX_CLOCK_FACTOR; // no increment may push a clock past this
+  g.pausedCeiling = null;
   armRoundClock(io, room);
   emit(io, room);
 }
@@ -234,7 +260,7 @@ function endLiveRound(io, room) {
   const g = room.game;
   // Every clock is spent, so this is the first moment anyone's answers may leave the server.
   for (const id of g.activeIds) g.doneIds.add(id);
-  g.deadlines = {};
+  g.deadlines = {}; g.clockCeiling = null; g.pausedCeiling = null;
   g.lastReveal = {
     round: g.round, category: { name: g.current.name, group: g.current.group, emoji: g.current.emoji },
     perPlayer: currentPerPlayer(room), final: false, roundWinnerIds: [], tie: false, suddenDeathTriggered: false,
@@ -342,12 +368,16 @@ function handleAnswer(io, room, socket, text, ack) {
   mine.set(entry.id, { display: entry.display, at: Date.now() });
   g.liveScores[pid] = (g.liveScores[pid] || 0) + 1;
   report(room, "answer", { category: g.current.name, grp: g.current.group, display: entry.display, offList: false, player: g.names[pid] });
-  // Personal chess-clock bonus: extends only the answerer's own clock, never anyone else's.
+  // Personal chess-clock bonus: extends only the answerer's own clock, never anyone else's, and
+  // never past this round's ceiling. Hitting the ceiling is told to the answerer alone (in the
+  // ack) rather than logged to the room — how fast someone is scoring isn't the room's business
+  // until the reveal.
+  let clockMaxed = false;
   if (g.increment) {
-    g.deadlines[pid] = (g.deadlines[pid] || Date.now()) + g.increment * 1000;
+    clockMaxed = extendClock(g, pid);
     armRoundClock(io, room); // the next expiry (and the last one) may have moved
   }
-  ack?.({ ok: true, accepted: true, display: entry.display });
+  ack?.({ ok: true, accepted: true, display: entry.display, clockMaxed });
   emit(io, room); // score-only broadcast — the matched item's name never leaves the server here
 }
 

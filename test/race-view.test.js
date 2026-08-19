@@ -167,6 +167,15 @@ describe("raceFormatLine", () => {
       "Round 2 · Best of 3 · +5s to your own clock per answer · sudden death on ties · Tiebreaker!",
     );
   });
+  test("spells out the clock ceiling when the server advertises one", () => {
+    assert.equal(
+      raceFormatLine({ ...base, increment: 5, clockCap: 90 }),
+      "Round 2 · Best of 3 · +5s to your own clock per answer (max 1:30 a round)",
+    );
+  });
+  test("a cap is only mentioned alongside an increment that could reach it", () => {
+    assert.equal(raceFormatLine({ ...base, increment: 0, clockCap: 90 }), "Round 2 · Best of 3");
+  });
 });
 
 describe("raceRoster", () => {

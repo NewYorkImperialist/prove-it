@@ -48,7 +48,9 @@ function liveRoom({ players = ["p1", "p2"], format = 3, suddenDeath = false, tim
     // Clocks are per player: everyone starts the round with the same deadline, and the
     // increment only ever moves the answerer's own.
     deadlines: Object.fromEntries(players.map((id) => [id, Date.now() + timer * 1000])),
-    doneIds: new Set(), pausedClocks: null, skipVotes: new Set(),
+    // ...and no clock may be extended past twice the timer, so a hot streak can't strand the room.
+    clockCeiling: Date.now() + timer * 2000,
+    doneIds: new Set(), pausedClocks: null, pausedCeiling: null, skipVotes: new Set(),
     timerFn, timeout: setTimeout(timerFn, 999999), // a real (mocked) armed timer, like a live round actually has
     answers: Object.fromEntries(players.map((id) => [id, new Map()])),
     liveScores: Object.fromEntries(players.map((id) => [id, 0])),
@@ -126,6 +128,47 @@ describe("handleAnswer", () => {
     assert.ok(room.game.deadlines.p2 >= base + 4900 && room.game.deadlines.p2 <= base + 5100);
   });
 
+  test("the increment can't push a clock past the round's ceiling", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 5 });
+    const ceiling = room.game.deadlines.p1 + 2000; // only 2s of headroom left
+    room.game.clockCeiling = ceiling;
+
+    let ack; engine.handleAnswer(io, room, sock("p1"), "alpha", (r) => (ack = r));
+
+    assert.equal(ack.accepted, true); // the answer still counts…
+    assert.equal(room.game.liveScores.p1, 1);
+    assert.equal(room.game.deadlines.p1, ceiling); // …but only 2s of the 5s bonus was payable
+    assert.equal(ack.clockMaxed, true); // told to the answerer, so the clock doesn't look stuck
+  });
+
+  test("once a clock is at the ceiling, later answers score but buy no time at all", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 5 });
+    room.game.clockCeiling = room.game.deadlines.p1; // already maxed
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    let ack; engine.handleAnswer(io, room, sock("p1"), "beta", (r) => (ack = r));
+    assert.equal(room.game.liveScores.p1, 2);
+    assert.equal(room.game.deadlines.p1, room.game.clockCeiling);
+    assert.equal(ack.clockMaxed, true);
+  });
+
+  test("a bonus that fits under the ceiling is paid in full and isn't flagged as maxed", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 5, timer: 30 });
+    const before = room.game.deadlines.p1;
+    let ack; engine.handleAnswer(io, room, sock("p1"), "alpha", (r) => (ack = r));
+    assert.ok(room.game.deadlines.p1 >= before + 4900);
+    assert.equal(ack.clockMaxed, false);
+  });
+
+  test("the ceiling is per player — maxing yours out doesn't cap an opponent's", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 5 });
+    room.game.deadlines.p1 = room.game.clockCeiling; // p1 has already banked the maximum
+    const theirs = room.game.deadlines.p2;
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    let ack; engine.handleAnswer(io, room, sock("p2"), "alpha", (r) => (ack = r));
+    assert.ok(room.game.deadlines.p2 >= theirs + 4900); // p2 still has headroom of their own
+    assert.equal(ack.clockMaxed, false);
+  });
+
   test("answers are rejected once the round isn't 'live' anymore", () => {
     const io = makeIO(); const room = liveRoom(); room.game.phase = "roundover";
     let ack; engine.handleAnswer(io, room, sock("p1"), "alpha", (r) => (ack = r));
@@ -178,6 +221,35 @@ describe("per-player clocks", () => {
     assert.equal(room.game.deadlines.p1, room.game.deadlines.p2);
     assert.ok(room.game.deadlines.p1 > Date.now() + 29000);
     assert.equal(room.game.doneIds.size, 0);
+  });
+
+  test("startLiveRound caps the round at twice the timer, and publishes that cap", () => {
+    const io = makeIO(); const room = liveRoom({ timer: 30 });
+    room.game.deadlines = {}; room.game.clockCeiling = null; room.game.phase = "countdown";
+    engine.startLiveRound(io, room);
+    // 30s of clock plus at most 30s of bought time: nobody waits longer than a minute on a round.
+    assert.ok(room.game.clockCeiling >= room.game.deadlines.p1 + 29000);
+    assert.ok(room.game.clockCeiling <= room.game.deadlines.p1 + 31000);
+    assert.equal(io.lastOfType("raceState").clockCap, 60); // seconds, for the banner to explain
+  });
+
+  // The case the ceiling exists for: a big category, a generous increment, and one player who
+  // knows the whole list. Without a cap their clock grows by minutes and the rest of the room
+  // just sits there — and vote-skip can't save them, because it needs that player's vote too.
+  test("a long answer streak on a big category still can't stretch the round past the cap", () => {
+    const io = makeIO(); const room = liveRoom({ timer: 30, increment: 5 });
+    const entries = Array.from({ length: 60 }, (_, id) => ({ id, display: `Item ${id}`, aliases: [`item ${id}`] }));
+    room.game.current = testCategory({ entries });
+    room.game.deadlines = {}; room.game.clockCeiling = null; room.game.phase = "countdown";
+    engine.startLiveRound(io, room);
+    const ceiling = room.game.clockCeiling;
+
+    for (const e of entries) engine.handleAnswer(io, room, sock("p1"), e.aliases[0], () => {});
+
+    assert.equal(room.game.liveScores.p1, 60); // every answer counted…
+    // …but 60 × 5s of bonus collapsed to the cap: a 30s round can still only run 60s.
+    assert.equal(room.game.deadlines.p1, ceiling);
+    assert.ok(ceiling <= Date.now() + 60_000 + 500, "a 30s timer must cap at 60s, not 5 minutes");
   });
 
   test("the round does NOT end — and no answers are revealed — while someone is still racing", () => {
@@ -265,6 +337,19 @@ describe("per-player clocks", () => {
     assert.equal(room.game.paused, false);
     const gapAfter = room.game.deadlines.p1 - room.game.deadlines.p2;
     assert.ok(Math.abs(gapAfter - gap) < 60, `clock gap should survive a pause (${gap} → ${gapAfter})`);
+  });
+
+  test("a pause carries the clock ceiling with it, so an outage doesn't eat the bonus", (t) => {
+    const io = makeIO(); const room = liveRoom({ increment: 5, timer: 30 });
+    const headroom = room.game.clockCeiling - Date.now();
+
+    engine.pauseGame(io, room);
+    t.mock.timers.tick(20_000); // a long reconnect wait
+    engine.resumeGame(io, room);
+
+    const after = room.game.clockCeiling - Date.now();
+    assert.ok(Math.abs(after - headroom) < 60, `ceiling headroom should survive a pause (${headroom} → ${after})`);
+    assert.equal(room.game.pausedCeiling, null);
   });
 
   test("endLiveRound retires every clock, so a late answer can't sneak in", () => {

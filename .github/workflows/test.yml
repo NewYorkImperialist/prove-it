@@ -1,9 +1,10 @@
 name: Test
 
 on:
-  push:
-    branches: [main]
   pull_request:
+  # Called by deploy.yml before it ships, so a push to main runs these checks exactly once
+  # instead of once here and once there.
+  workflow_call:
 
 jobs:
   test:

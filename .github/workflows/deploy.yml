@@ -1,0 +1,37 @@
+name: Deploy
+
+# Ships to Fly.io. Runs automatically on every push to main, and can be run by hand from the
+# Actions tab ("Run workflow") when you want to redeploy without a new commit.
+#
+# Setup, once: create a deploy token and store it as a repository secret named FLY_API_TOKEN
+#   fly tokens create deploy          # copy the output, including the "FlyV1 " prefix
+#   → GitHub → Settings → Secrets and variables → Actions → New repository secret
+# (Note this is a *GitHub* secret, used to authenticate the deploy. The server's runtime cost
+# guard needs the same token as a *Fly* secret as well — see the note in fly.toml.)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# One deploy at a time, and never cancel one midway: a half-applied release is worse than a queue.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  # Same lint/test/build gate as a pull request gets — main is what's live, so it clears the bar
+  # before anything ships.
+  test:
+    uses: ./.github/workflows/test.yml
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      # --remote-only builds the image on Fly's builders, so this job needs no Docker setup.
+      - run: flyctl deploy --remote-only
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

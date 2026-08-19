@@ -65,4 +65,18 @@ npm run lint
 npm run build   # the production client bundle (then `npm start`)
 ```
 
+## Deploying
+Pushing to `main` deploys to Fly.io on its own (`.github/workflows/deploy.yml`) once lint, tests
+and the client build all pass. You can also trigger it by hand from the repo's **Actions** tab →
+**Deploy** → **Run workflow**, which is the easy way to redeploy without a new commit.
+
+It needs one repository secret, set once: `fly tokens create deploy`, then save the output (the
+`FlyV1 …` string) under **Settings → Secrets and variables → Actions** as **`FLY_API_TOKEN`**.
+The running server wants that same token as a *Fly* secret too — that's what lets its cost guard
+scale the machine down; see the note in `fly.toml`.
+
+```bash
+fly deploy      # or deploy straight from your machine, bypassing CI
+```
+
 — Built by [NewYorkImperialist](https://github.com/NewYorkImperialist)

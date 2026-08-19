@@ -83,7 +83,7 @@ export default function DoneSection({ solo, onExitToMenu }) {
 
       <FieldLabel>Share this link · friends play the same questions &amp; join this leaderboard</FieldLabel>
       <TextInput readOnly value={url} onClick={(e) => e.currentTarget.select()} className="font-mono text-[13px]!" />
-      <SoloButton onClick={() => copy(d.daily ? dailyInvite(store.getDailyScore(), solo.challengeId) : url)}>
+      <SoloButton onClick={() => copy(d.daily ? dailyInvite(store.getDailyScore(), solo.challengeId, name) : url)}>
         {copied ? (d.daily ? "Copied — send it to a friend!" : "Copied! Paste it to a friend") : d.daily ? "Copy invite + my score" : "Copy challenge link"}
       </SoloButton>
 

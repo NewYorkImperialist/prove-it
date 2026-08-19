@@ -5,6 +5,7 @@ import { SoloButton, SoloCard, SoloTitle, SoloSub } from "./SoloBits";
 import ChallengeBoard from "@/components/leaderboard/ChallengeBoard";
 import { useCopied } from "@/hooks/useCopied";
 import { dailyLinkUrl } from "@/lib/browser/daily";
+import * as store from "@/lib/browser/storage";
 
 // The beat before the clock starts: share the link, then go. The daily also lets you peek at
 // today's standings first.
@@ -30,7 +31,7 @@ export default function ReadySection({ solo, onBack }) {
       <SoloTitle>{title}</SoloTitle>
       <SoloSub>{sub}</SoloSub>
 
-      <SoloButton variant="ghost" onClick={() => copy(solo.isDaily ? dailyLinkUrl(solo.challengeId) : solo.challengeUrl())}>
+      <SoloButton variant="ghost" onClick={() => copy(solo.isDaily ? dailyLinkUrl(solo.challengeId, store.getSoloName()) : solo.challengeUrl())}>
         {copied ? "Link copied!" : solo.isDaily ? "Copy today's daily link" : "Copy link to challenge a friend"}
       </SoloButton>
       <SoloButton disabled={loading || !cats.length} onClick={() => solo.runCountdown(() => solo.startRound(0))}>

@@ -167,7 +167,12 @@ function createChallengeRouter({ isLockdown }) {
       const c = await analytics.getChallenge(id).catch(() => null);
       if (c) {
         const results = await analytics.getChallengeResults(id).catch(() => []);
-        const by = c.by_name || "A friend";
+        // The daily has no single "creator" (it's the same puzzle for everyone, auto-created by
+        // whoever plays first each day, hence by_name === "Daily") — so whoever is SHARING it can
+        // pass their own name (?by=), and that's who "says" the challenge in the link preview.
+        const rawBy = String(req.query.by || "").trim().slice(0, 24);
+        const sharedBy = id.startsWith("d-") && rawBy ? cleanName(rawBy) : "";
+        const by = sharedBy || c.by_name || "A friend";
         const rounds = c.rounds || [];
         const nRounds = rounds.length;
         const what = c.type === "genre" && c.genre ? `${nRounds} rounds of ${c.genre}` : `${nRounds} rounds`;

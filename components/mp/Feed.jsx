@@ -45,9 +45,16 @@ function ChatLine({ entry }) {
 }
 
 // The scrolling transcript: game events, chat, and (in a race) the round-end reveal cards.
-export default function Feed({ feed, scrollRef, myId, onApproveMiss }) {
+// `compact` gives up the free space (for a geography board) and keeps only a scrolling strip.
+export default function Feed({ feed, scrollRef, myId, onApproveMiss, compact }) {
   return (
-    <div ref={scrollRef} className="flex min-h-0 flex-1 flex-col gap-[7px] overflow-y-auto px-3 py-[9px] desk:gap-[9px] desk:px-5 desk:py-4">
+    <div
+      ref={scrollRef}
+      className={cx(
+        "flex min-h-0 flex-col gap-[7px] overflow-y-auto px-3 py-[9px] desk:gap-[9px] desk:px-5 desk:py-4",
+        compact ? "max-h-[24vh] shrink-0" : "flex-1",
+      )}
+    >
       {feed.map((entry) =>
         entry.type === "chat" ? (
           <ChatLine key={entry.id} entry={entry} />

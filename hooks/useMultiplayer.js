@@ -42,6 +42,9 @@ export function useMultiplayer({ router }) {
   const [feed, setFeed] = useState([]);
   const [typingBy, setTypingBy] = useState(null);
   const [reviewOpen, setReviewOpen] = useState(false);
+  // What *I* have named this race round, for the geography board. Opponents' answers never
+  // arrive until the reveal, so this can only ever be my own.
+  const [raceMine, setRaceMine, raceMineRef] = useStateRef({ round: 0, got: [] });
 
   /* ---------------- transient UI ---------------- */
   const [errors, setErrors] = useState({ home: "", race: "", room: "" });
@@ -384,6 +387,8 @@ export function useMultiplayer({ router }) {
       socket.emit("raceAnswer", { text: raw }, (res) => {
         if (res && res.accepted) {
           sfx.ding();
+          const round = raceGsRef.current?.round ?? 0;
+          setRaceMine((m) => (m.round === round ? { round, got: [...m.got, res.display] } : { round, got: [res.display] }));
           pushFeed({ type: "msg", side: "me", text: `${res.display} ✓`, kind: "ok" });
         } else if (res && res.alreadyHad) {
           pushFeed({ type: "msg", side: "me", text: `already got ${res.display}`, kind: "bad" });
@@ -517,6 +522,8 @@ export function useMultiplayer({ router }) {
     };
 
     const onRaceState = (state) => {
+      // A new round wipes my answer list, so the board starts empty rather than carrying over.
+      if (raceMineRef.current.round !== state.round) setRaceMine({ round: state.round, got: [] });
       setRaceGs(state);
       setFlash(null);
       const key = state.round + "|" + (state.category ? state.category.name : "");
@@ -776,7 +783,7 @@ export function useMultiplayer({ router }) {
     // identity + session
     playerId, myId: myIdRef.current, myRoom, isSpectator, isGhost,
     // state
-    room, gs, raceGs, mode, iAmHost, feed, typingBy, reviewOpen, clock, prompt, fx,
+    room, gs, raceGs, mode, iAmHost, feed, typingBy, reviewOpen, clock, prompt, fx, raceMine,
     errors, flash, quickMatch, muted, crown,
     // names + codes bound to the setup cards
     mpName, setMpName, raceName, setRaceName, joinCode, setJoinCode, raceJoinCode, setRaceJoinCode,

@@ -1,7 +1,7 @@
 "use strict";
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
-const { raceView, raceFormatLine, raceRoster, raceClockDeadline } = require("../lib/race-view.js");
+const { raceView, raceFormatLine, raceRoster, raceClockDeadline, raceBoardMode } = require("../lib/race-view.js");
 
 const ME = "me";
 const base = {
@@ -175,5 +175,29 @@ describe("raceRoster", () => {
   });
   test("survives a roster that doesn't include you (a spectator's view)", () => {
     assert.deepEqual(raceRoster(base, "nobody").map((p) => p.name), ["Bea", "Me", "Cy"]);
+  });
+});
+
+describe("raceBoardMode", () => {
+  const g = (over) => ({ ...base, ...over });
+  test("a map category draws the outline board while the round is being played", () => {
+    assert.equal(raceBoardMode(g({ category: { name: "Countries in Europe" } })), "map");
+    assert.equal(raceBoardMode(g({ phase: "countdown", category: { name: "US States" } })), "map");
+  });
+  test("a capitals category draws the fill-in grid", () => {
+    assert.equal(raceBoardMode(g({ category: { name: "World Capitals" } })), "fill");
+  });
+  test("geography without a board, and every non-geography category, get nothing", () => {
+    assert.equal(raceBoardMode(g({ category: { name: "Rivers of the World" } })), null);
+    assert.equal(raceBoardMode(g({ category: { name: "NBA Teams" } })), null);
+  });
+  test("the board gives the space back once the round is decided — the reveal needs it", () => {
+    for (const phase of ["starting", "roundover", "matchover"]) {
+      assert.equal(raceBoardMode(g({ phase, category: { name: "US States" } })), null);
+    }
+  });
+  test("a round with no category yet has no board", () => {
+    assert.equal(raceBoardMode(g({ category: null })), null);
+    assert.equal(raceBoardMode(null), null);
   });
 });

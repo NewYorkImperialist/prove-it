@@ -2,7 +2,7 @@
 import { useEffect, useRef } from "react";
 import { useSocketCtx } from "@/components/SocketProvider";
 import { duelView } from "@/lib/duel-view";
-import { raceView, raceFormatLine, raceRoster } from "@/lib/race-view";
+import { raceView, raceFormatLine, raceRoster, raceBoardMode } from "@/lib/race-view";
 import { cx } from "@/lib/browser/cx";
 import TopBar from "./TopBar";
 import Sidebar from "./Sidebar";
@@ -10,6 +10,7 @@ import Feed from "./Feed";
 import PendingPanel from "./PendingPanel";
 import InputBar from "./InputBar";
 import PromptPop from "./PromptPop";
+import RaceGeoBoard from "./RaceGeoBoard";
 import { AVATARS } from "./WaitingRoom";
 
 const DUEL_COLORS = ["var(--color-accent)", "#8a9aa0"];
@@ -90,6 +91,10 @@ export default function GameScreen({ mp, onLeaveIntent }) {
   if (!state) return null;
 
   const roster = isRace ? raceRosterRows(state, mp.myId) : duelRoster(state, mp.myId);
+  // Geography rounds in a race get solo's board. It only ever shows my own answers — the server
+  // withholds everyone else's until every clock is spent — and it needs most of the screen, so
+  // the feed shrinks to a strip while it's up.
+  const boardMode = isRace ? raceBoardMode(state) : null;
   const watching = state.spectators ? `  ·  ${state.spectators} watching` : "";
   const category = state.category;
   const claimLine = isRace
@@ -125,7 +130,9 @@ export default function GameScreen({ mp, onLeaveIntent }) {
           <div className="mt-[3px] min-h-[18px] text-xs text-gold desk:mt-1.5 desk:text-sm">{claimLine}</div>
         </div>
 
-        <Feed feed={mp.feed} scrollRef={feedRef} myId={mp.myId} onApproveMiss={mp.approveMiss} />
+        {boardMode ? <RaceGeoBoard catName={state.category.name} mode={boardMode} round={state.round} mine={mp.raceMine.got} /> : null}
+
+        <Feed feed={mp.feed} scrollRef={feedRef} myId={mp.myId} onApproveMiss={mp.approveMiss} compact={!!boardMode} />
 
         {!isRace && !view.frozen ? (
           <PendingPanel gs={state} myId={mp.myId} onJudge={mp.judge} onRejectAll={mp.rejectAll} onRevoke={mp.revokeGrant} />

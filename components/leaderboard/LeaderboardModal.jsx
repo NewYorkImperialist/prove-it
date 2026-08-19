@@ -37,6 +37,14 @@ export default function LeaderboardModal({ onClose, visitorId }) {
   const played = playedDailyToday();
   const geoCats = useMemo(() => geoBoardCats(), []);
 
+  // Escape closes it, like the backdrop and the × do. Without this the modal was a dead end for
+  // anyone who reaches for the key first.
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   // The daily tab needs today's id; asking /daily also makes sure the puzzle exists.
   useEffect(() => {
     if (tab !== "today" || today) return;

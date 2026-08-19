@@ -574,8 +574,12 @@ export function useMultiplayer({ router }) {
       setGs(null);
       setRaceGs(null);
       rememberRoom(null);
-      router.go("home");
-      setErr("home", "This room was closed.");
+      // Land on the setup card that actually renders this error, not the menu — errors.home only
+      // shows on the multiplayer card and errors.race only on the race card, so sending someone
+      // to "home" means the explanation is never seen.
+      const race = modeRef.current === "race";
+      router.go(race ? "racesetup" : "mpsetup");
+      setErr(race ? "race" : "home", "This room was closed.");
     };
 
     const onOpponentStatus = ({ connected, name }) => { if (connected) flashStatus(`${name} reconnected.`); };
@@ -623,7 +627,9 @@ export function useMultiplayer({ router }) {
       if (url.ghost) {
         socket.emit("ghostWatch", { code: url.ghost, key: url.ghostKey }, (res) => {
           if (!res?.ok) {
-            router.go("home");
+            // The multiplayer card is where errors.home renders, and it has the room-code field
+            // they'd want next — a deep link can be for either mode, so it's the honest landing.
+            router.go("mpsetup");
             return setErr("home", res?.error || "Could not ghost-watch.");
           }
           setIsGhost(true);
@@ -655,7 +661,7 @@ export function useMultiplayer({ router }) {
       } else if (url.spectate) {
         socket.emit("spectateRoom", { code: url.spectate, name: store.getMpName(), playerId }, (res) => {
           if (!res?.ok) {
-            router.go("home");
+            router.go("mpsetup");
             return setErr("home", res?.error || "Could not spectate.");
           }
           myIdRef.current = res.you;

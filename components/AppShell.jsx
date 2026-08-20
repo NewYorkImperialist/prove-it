@@ -98,12 +98,14 @@ export default function AppShell() {
     solo.initCreate();
     router.leaveTo("geo");
   };
-  const playGeoBoard = (catName) => {
+  const playGeoBoard = async (catName) => {
     enteredSolo();
-    // The solo screens live under the "solo" view, and startGeoChallenge lands on the ready
-    // screen — so the router has to move with it, or the run starts behind the Geography card.
-    router.go("solo");
-    solo.startGeoChallenge(catName);
+    // Await the start and move only if it worked. Navigating first meant any failure — no
+    // persistence, maintenance lockdown, a blocked name — put its error on the solo builder,
+    // a screen the player never asked for, and even a successful start flashed that builder
+    // (282-category dropdown and all) for the length of the round-trip.
+    const started = await solo.startGeoChallenge(catName);
+    if (started) router.go("solo");
   };
   const openDaily = () => {
     if (playedDailyToday()) return setLbOpen(true); // played → leaderboard only, no replay

@@ -95,16 +95,27 @@ export default function SprintSection({ solo, onBack }) {
           is what the round is played on, so it wins the argument over the header. */}
       <div ref={solo.mapEl} className={cx("w-full", solo.geoMode ? "my-2 flex min-h-[150px] flex-1 flex-col short:my-1" : "hidden")} />
 
-      {/* The atlases are fetched from a CDN at runtime, so this round can lose its board even
-          though the round itself is fine. Saying so beats the map, the total and "Show what's
-          left" all vanishing at once with no explanation. */}
-      {solo.geoErr ? <p className="my-1.5 text-[13px] text-gold">{solo.geoErr}</p> : null}
+      {/* The atlases and the flag images come off a CDN at runtime, so this round can lose its
+          board while the round itself is fine. `fatal` marks the case where the board WAS the
+          question (a Borders or Flags quiz): there's nothing left to name, so the only honest
+          thing to offer is the way out rather than "keep typing". */}
+      {solo.geoErr ? (
+        <div className={cx("my-1.5", solo.geoErr.fatal && "rounded-xl border border-bad bg-[rgba(255,107,94,.1)] p-3")}>
+          <p className={cx("m-0 text-[13px]", solo.geoErr.fatal ? "text-bad" : "text-gold")}>{solo.geoErr.text}</p>
+          {solo.geoErr.fatal ? (
+            <SoloButton variant="ghost" className="mt-2!" onClick={solo.giveUp}>
+              Skip this round
+            </SoloButton>
+          ) : null}
+        </div>
+      ) : null}
 
       {flagMode ? (
         <FlagBoard
           entries={cat.entries}
           selected={solo.flagSel}
           namedIds={solo.namedIds}
+          onUnavailable={solo.reportFlagsUnavailable}
           onSelect={(i) => {
             solo.selectFlag(i);
             setValue("");

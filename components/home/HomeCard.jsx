@@ -44,8 +44,8 @@ export default function HomeCard({ leaving, dailyPlayed, onSolo, onDaily, onGeog
       {/* Geography is its own mode, not a category: 27 boards across maps, flags, borders and
           capitals, each with its own leaderboard. It used to be a dropdown on the solo builder,
           directly under the one that already listed all 282 categories. */}
-      <Button variant="secondary" className={FULL} onClick={onGeography}>
-        🌍 Geography
+      <Button variant="secondary" highlight className={FULL} onClick={onGeography}>
+        Geography <NewTag />
       </Button>
 
       <Button variant="secondary" className={FULL} onClick={onMultiplayer}>

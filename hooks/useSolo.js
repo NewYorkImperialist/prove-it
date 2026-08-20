@@ -94,7 +94,15 @@ export function useSolo({ onExitToMenu }) {
   const [showTotal, setShowTotal] = useState(false);
   // Set when the geography board can't be drawn (the atlases come off a CDN at runtime), so the
   // round can say why the map, the running total and "Show what's left" all just went away.
-  const [geoErr, setGeoErr] = useState("");
+  // { text, fatal } — fatal means the board WAS the question (a Borders or Flags quiz), so the
+  // round can't be scored without it. Null when the board is fine.
+  const [geoErr, setGeoErr] = useState(null);
+  // A Flags quiz draws <img> tags straight from flagcdn, nowhere near the geomap effect below, so
+  // it reports its own failure: with no images there is no question on screen at all, and every
+  // guess comes back "that's on the list, but not this one" against an invisible target.
+  const reportFlagsUnavailable = useCallback(() => {
+    setGeoErr({ text: "The flag images didn't load, so there's nothing to identify. Skip to the next round.", fatal: true });
+  }, []);
   const [remOn, setRemOn] = useState(false);
   const [fillProgress, setFillProgress] = useState({ filled: 0, total: 0 });
   const [geoRound, setGeoRound] = useState(null); // { cat, mode, key } — set when a round needs a board
@@ -365,7 +373,7 @@ export function useSolo({ onExitToMenu }) {
   useEffect(() => {
     if (!geoRound || !mapEl.current) return undefined;
     let cancelled = false;
-    setGeoErr(""); // a new round gets a clean slate — last round's CDN failure isn't this one's
+    setGeoErr(null); // a new round gets a clean slate — last round's CDN failure isn't this one's
     (async () => {
       try {
         const mod = await import("@/lib/browser/geomap");
@@ -380,13 +388,23 @@ export function useSolo({ onExitToMenu }) {
         // wherever a resume left off).
         if (geoRound.cat.isBorderQuiz) mod.GeoMap.highlight(geoRound.cat.entries[flagSelRef.current]?.id ?? null);
       } catch {
-        // Any failure (CDN down, no shapes for this list) falls back to the plain chip list —
-        // but says so. Silently dropping the map, the total and "Show what's left" mid-round
-        // looked like the round itself had broken, with nothing to tell you to keep typing.
+        // Any failure (CDN down, no shapes for this list) drops the board — but says so, because
+        // silently losing the map, the total and "Show what's left" mid-round looked like the
+        // round itself had broken.
+        //
+        // What it says depends on whether the board IS the question. In a plain map round the
+        // shapes are an aid: every country is still a valid answer, so "keep typing" is true. In
+        // a Borders quiz only the ONE highlighted country counts (see submit()), and the highlight
+        // lives on the map that just failed — so there is nothing left to answer, and telling
+        // someone their answers still count is a lie that leaves them typing into a round they
+        // cannot score in.
         if (cancelled) return;
+        const needsBoard = !!geoRound.cat.isBorderQuiz;
         setGeoMode(null);
         setShowTotal(false);
-        setGeoErr("Couldn't load the map for this round — your answers still count, so keep typing.");
+        setGeoErr(needsBoard
+          ? { text: "This quiz needs its map, and the map didn't load — there's nothing to name without it. Skip to the next round.", fatal: true }
+          : { text: "Couldn't load the map for this round — your answers still count, so keep typing.", fatal: false });
         mapActive.current = false;
         if (mapEl.current) mapEl.current.innerHTML = "";
       }
@@ -702,7 +720,7 @@ export function useSolo({ onExitToMenu }) {
       playOrigin.current = "solo";
       isGeoChallenge.current = geo;
       const by = byName.trim().slice(0, 20);
-      if (!by) return setCreateErr("Enter your name first.");
+      if (!by) { setCreateErr("Enter your name first."); return false; }
       if (seconds != null) clampPerRound(seconds);
       setBusy("starting");
       // Pre-check the name here (routes/challenge.js's /name-check) instead of letting the
@@ -710,17 +728,23 @@ export function useSolo({ onExitToMenu }) {
       // leaderboard says "Anon (you)".
       if (await isNameBlocked(by)) {
         setBusy("");
-        return setCreateErr(BLOCKED_NAME);
+        setCreateErr(BLOCKED_NAME);
+        return false;
       }
       store.setSoloName(by);
       const res = await postJSON("/challenge", { type: "custom", genre: "", rounds, by, timer: seconds != null ? seconds : perRoundRef.current });
       setBusy("");
-      if (!res.ok) return setCreateErr(res.error || "Could not start.");
+      // Returns a boolean because the caller may need to navigate ONLY on success: the Geography
+      // screen used to route to the solo view first and start the run afterwards, so every failure
+      // here (no persistence, lockdown, a blocked name) surfaced createErr on a builder the player
+      // never asked for — and a slow round-trip flashed that builder on the way through.
+      if (!res.ok) { setCreateErr(res.error || "Could not start."); return false; }
       setChallengeId(res.id);
       setDef({ id: res.id, rounds, by, type: "custom", timer: seconds != null ? seconds : perRoundRef.current });
       markOwnRun(res.id);
       window.history.replaceState({}, "", "?id=" + res.id);
       startPlaying(by);
+      return true;
     },
     [byName, clampPerRound, perRoundRef, setChallengeId, setDef, startPlaying],
   );
@@ -735,8 +759,8 @@ export function useSolo({ onExitToMenu }) {
     // holds the plain typing lists (Major Rivers, Deserts, Seas and Oceans), so a random
     // "Geography Challenge" could land on a round with nothing to draw at all.
     const cat = catName || shuffle(geoChallengeCats())[0];
-    if (!cat) return setCreateErr("No geography boards available right now.");
-    startSolo([cat], recommendedTime(cat), true);
+    if (!cat) { setCreateErr("No geography boards available right now."); return false; }
+    return startSolo([cat], recommendedTime(cat), true);
   }, [startSolo]);
 
   const createChallenge = useCallback(async () => {
@@ -913,7 +937,7 @@ export function useSolo({ onExitToMenu }) {
     challengeId, def, isDaily, daily, dailyDate, roundCats, cur, visitorId,
     // round
     count, countLabel, chips, timeLeft, clock: fmtClock(Math.max(0, timeLeft)), wpm, cmsg, shakeTick,
-    geoMode, geoErr, remOn, mapEl, missed, missedOpen, setMissedOpen, between, done, countdown,
+    geoMode, geoErr, reportFlagsUnavailable, remOn, mapEl, missed, missedOpen, setMissedOpen, between, done, countdown,
     joinInfo, joinName, setJoinName, joinErr, setJoinErr,
     saveErr, retryPendingResult,
     resumeInfo, resumeRun, dismissResume,

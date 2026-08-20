@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import { GENRES, GENRE_EMOJI, recommendedTime, CATS, nonSprint, shuffle, pickGenreRounds, geoChallengeCats, flagQuizCats } from "@/lib/solo-catalog";
+import { GENRES, GENRE_EMOJI, recommendedTime, CATS, nonSprint, shuffle, pickGenreRounds, geoChallengeCats } from "@/lib/solo-catalog";
 import { BackButton } from "@/components/ui/Button";
 import TextInput, { FieldLabel, Select } from "@/components/ui/Field";
 import { Divider } from "@/components/ui/Card";
@@ -25,7 +25,6 @@ const MODES = [
 // "Advanced settings".
 export default function CreateSection({ solo, onBack }) {
   const [geoCat, setGeoCat] = useState(() => pickGenreRounds("Geography", 1)[0] || "");
-  const [flagCat, setFlagCat] = useState(() => flagQuizCats()[0] || "");
 
   const quickPlay = () => {
     const c = shuffle(CATS.filter((x) => !nonSprint(x)))[0] || CATS[0];
@@ -78,8 +77,9 @@ export default function CreateSection({ solo, onBack }) {
 
       <Divider>or</Divider>
 
-      {/* Defaults to a random geography category at its own recommended time — no setup beyond
-          picking one, and it lands straight on that category's leaderboard. */}
+      {/* Defaults to a random geography category (country lists, capitals, or a flags quiz) at
+          its own recommended time — no setup beyond picking one, and it lands straight on that
+          category's leaderboard. */}
       <FieldLabel htmlFor="geoSel">Geography challenge</FieldLabel>
       <div className="flex items-stretch gap-2.5">
         <Select id="geoSel" value={geoCat} onChange={(e) => setGeoCat(e.target.value)} className="min-w-0 flex-1">
@@ -94,25 +94,6 @@ export default function CreateSection({ solo, onBack }) {
           onClick={() => geoCat && solo.startGeoChallenge(geoCat)}
         >
           {solo.busy === "starting" ? "…" : "Play"}
-        </SoloButton>
-      </div>
-
-      <Divider>or</Divider>
-
-      <FieldLabel htmlFor="flagSel">Flags quiz</FieldLabel>
-      <div className="flex items-stretch gap-2.5">
-        <Select id="flagSel" value={flagCat} onChange={(e) => setFlagCat(e.target.value)} className="min-w-0 flex-1">
-          {flagQuizCats().map((n) => (
-            <option key={n} value={n}>{n === "Flags of the World" ? "World" : n.replace("Flags of ", "")}</option>
-          ))}
-        </Select>
-        <SoloButton
-          variant="ghost"
-          className="mt-0! w-auto! shrink-0 px-6"
-          disabled={!!solo.busy}
-          onClick={() => flagCat && solo.startFlagQuiz(flagCat)}
-        >
-          Play
         </SoloButton>
       </div>
 

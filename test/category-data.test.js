@@ -6,6 +6,8 @@ const {
   ALL_ROUND_NAMES,
 } = require("../lib/category-data.js");
 const { FLAG_SOURCE } = require("../lib/flags.js");
+const { SILHOUETTE_SOURCE, NO_POLYGON } = require("../lib/silhouettes.js");
+const { norm } = require("../lib/solo-matching.js");
 
 describe("category-data derivation", () => {
   test("ALL_GROUPS lists every group key", () => {
@@ -46,11 +48,27 @@ describe("category-data derivation", () => {
     }
   });
 
-  test("a Flags quiz mirrors its base category's size, items and gets the Flags group", () => {
+  test("a Flags quiz mirrors its base category's size, items and gets the Geography group", () => {
     for (const [baseName, flagName] of FLAG_SOURCE) {
       assert.equal(CAT_SIZES[flagName], CAT_SIZES[baseName]);
       assert.deepEqual(CAT_ITEMS[flagName], CAT_ITEMS[baseName]);
-      assert.equal(CAT_GROUP[flagName], "Flags");
+      assert.equal(CAT_GROUP[flagName], "Geography");
+    }
+  });
+
+  test("ALL_ROUND_NAMES additionally recognizes every Silhouette quiz name", () => {
+    for (const [, silName] of SILHOUETTE_SOURCE) {
+      assert.equal(ALL_CAT_NAMES.has(silName), false, `${silName} shouldn't be a real categories.js entry`);
+      assert.equal(ALL_ROUND_NAMES.has(silName), true, `${silName} should still be an acceptable round name`);
+    }
+  });
+
+  test("a Silhouette quiz mirrors its base category's items minus the ones with no drawable polygon, and gets the Geography group", () => {
+    for (const [baseName, silName] of SILHOUETTE_SOURCE) {
+      const expectedItems = CAT_ITEMS[baseName].filter((it) => !NO_POLYGON.has(norm(it)));
+      assert.deepEqual(CAT_ITEMS[silName], expectedItems, silName);
+      assert.equal(CAT_SIZES[silName], expectedItems.length, silName);
+      assert.equal(CAT_GROUP[silName], "Geography");
     }
   });
 });

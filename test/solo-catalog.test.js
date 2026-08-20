@@ -4,13 +4,13 @@ const assert = require("node:assert/strict");
 const CATEGORY_GROUPS = require("../data/categories.js");
 const {
   CATS, GENRES, GEO_MISC, findCat, nonSprint, recommendedTime, pickGenreRounds, geoBoardCats, buildCat,
-  flagQuizCats,
+  FLAG_CATS, SILHOUETTE_CATS,
 } = require("../lib/solo-catalog.js");
 
 describe("the solo catalogue", () => {
-  test("flattens every non-hidden category into { name, group, emoji, entries }", () => {
+  test("flattens every non-hidden category into { name, group, emoji, entries }, plus the Flags/Silhouette quizzes", () => {
     const expected = Object.values(CATEGORY_GROUPS).filter((g) => !g.defaultOff).reduce((n, g) => n + g.cats.length, 0);
-    assert.equal(CATS.length, expected);
+    assert.equal(CATS.length, expected + FLAG_CATS.length + SILHOUETTE_CATS.length);
     for (const c of CATS) {
       assert.ok(c.name && c.group && c.emoji, `${c.name} is missing a field`);
       assert.ok(c.entries.length > 0, `${c.name} has no entries`);
@@ -72,7 +72,7 @@ describe("recommendedTime", () => {
 
 describe("Flags quizzes", () => {
   test("World plus one per continent, in that order", () => {
-    assert.deepEqual(flagQuizCats(), [
+    assert.deepEqual(FLAG_CATS.map((c) => c.name), [
       "Flags of the World", "Flags of Africa", "Flags of Asia", "Flags of Europe",
       "Flags of North America", "Flags of South America", "Flags of Oceania",
     ]);
@@ -90,22 +90,64 @@ describe("Flags quizzes", () => {
     }
   });
 
-  test("stay out of CATS entirely — never shown in the generic picker or genre pools", () => {
-    for (const name of flagQuizCats()) assert.equal(CATS.some((c) => c.name === name), false);
-    assert.equal(CATS.some((c) => c.group === "Flags"), false);
+  test("are folded into the Geography group — the generic picker, genre pool, and Geography Challenge all see them", () => {
+    for (const c of FLAG_CATS) {
+      assert.equal(CATS.includes(c), true, `${c.name} should be the exact same object in CATS`);
+      assert.equal(c.group, "Geography");
+      assert.equal(nonSprint(c), false);
+    }
   });
 
   test("still resolve via findCat, so a saved run's rounds replay correctly", () => {
-    assert.equal(findCat("Flags of Europe").group, "Flags");
+    assert.equal(findCat("Flags of Europe").group, "Geography");
   });
 
   test("get their own leaderboard alongside the geography boards", () => {
-    for (const name of flagQuizCats()) assert.ok(geoBoardCats().includes(name), name);
+    for (const c of FLAG_CATS) assert.ok(geoBoardCats().includes(c.name), c.name);
   });
 
   test("mirror their Countries counterpart's recommended time", () => {
     assert.equal(recommendedTime("Flags of the World"), recommendedTime("Countries of the World"));
     assert.equal(recommendedTime("Flags of Oceania"), recommendedTime("Countries in Oceania"));
+  });
+});
+
+describe("Silhouette quizzes", () => {
+  test("World plus one per continent, in that order", () => {
+    assert.deepEqual(SILHOUETTE_CATS.map((c) => c.name), [
+      "Silhouettes of the World", "Silhouettes of Africa", "Silhouettes of Asia", "Silhouettes of Europe",
+      "Silhouettes of North America", "Silhouettes of South America", "Silhouettes of Oceania",
+    ]);
+  });
+
+  test("share entries with their Countries counterpart, minus the couple with no drawable polygon", () => {
+    const pairs = [
+      ["Silhouettes of the World", "Countries of the World", 1], // Tuvalu
+      ["Silhouettes of Africa", "Countries in Africa", 0],
+      ["Silhouettes of South America", "Countries in South America", 1], // French Guiana
+      ["Silhouettes of Oceania", "Countries in Oceania", 1], // Tuvalu
+    ];
+    for (const [silName, countryName, excluded] of pairs) {
+      assert.equal(findCat(silName).entries.length, findCat(countryName).entries.length - excluded, silName);
+    }
+  });
+
+  test("are folded into the Geography group, same as the Flags quizzes", () => {
+    for (const c of SILHOUETTE_CATS) {
+      assert.equal(CATS.includes(c), true, `${c.name} should be the exact same object in CATS`);
+      assert.equal(c.group, "Geography");
+      assert.equal(c.isSilhouetteQuiz, true);
+      assert.equal(nonSprint(c), false);
+    }
+  });
+
+  test("get their own leaderboard alongside the geography and Flags boards", () => {
+    for (const c of SILHOUETTE_CATS) assert.ok(geoBoardCats().includes(c.name), c.name);
+  });
+
+  test("mirror their Countries counterpart's recommended time", () => {
+    assert.equal(recommendedTime("Silhouettes of the World"), recommendedTime("Countries of the World"));
+    assert.equal(recommendedTime("Silhouettes of Oceania"), recommendedTime("Countries in Oceania"));
   });
 });
 

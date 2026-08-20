@@ -3,19 +3,23 @@ import { useEffect, useRef, useState } from "react";
 import { BackButton } from "@/components/ui/Button";
 import { SoloButton } from "./SoloBits";
 import FlagBoard from "./FlagBoard";
+import SilhouetteBoard from "./SilhouetteBoard";
 import { useReplay } from "@/hooks/useReplay";
 import { cx } from "@/lib/browser/cx";
 
-// The round itself: the clock, the count, the geography board or flag grid when there is one,
-// and the box you type into. Geography and flags rounds go full-screen (see SoloApp's mapmode)
-// so the board has room to breathe.
+// The round itself: the clock, the count, the geography board or picture-quiz grid when there
+// is one, and the box you type into. Geography and picture-quiz rounds go full-screen (see
+// SoloApp's mapmode) so the board has room to breathe.
 export default function SprintSection({ solo, onBack }) {
   const [value, setValue] = useState("");
   const inputRef = useRef(null);
   const [shaking, endShake] = useReplay(solo.shakeTick);
   const cat = solo.roundCats[solo.cur];
   const flagMode = !!(cat && cat.isFlagQuiz);
-  const mapMode = !!solo.geoMode || flagMode;
+  const silhouetteMode = !!(cat && cat.isSilhouetteQuiz);
+  const pictureMode = flagMode || silhouetteMode;
+  const PictureBoard = silhouetteMode ? SilhouetteBoard : FlagBoard;
+  const mapMode = !!solo.geoMode || pictureMode;
 
   // Focus the box (and clear the last round's text) whenever a new round starts.
   useEffect(() => {
@@ -79,8 +83,8 @@ export default function SprintSection({ solo, onBack }) {
           A column: the map takes the free space and the island fill-in boxes sit underneath it. */}
       <div ref={solo.mapEl} className={cx("w-full", solo.geoMode ? "my-2 flex min-h-0 flex-1 flex-col" : "hidden")} />
 
-      {flagMode ? (
-        <FlagBoard
+      {pictureMode ? (
+        <PictureBoard
           entries={cat.entries}
           selected={solo.flagSel}
           namedIds={solo.namedIds}
@@ -99,12 +103,12 @@ export default function SprintSection({ solo, onBack }) {
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck="false"
-        placeholder={flagMode ? "Type this flag's country…" : "Type a name and hit Enter…"}
+        placeholder={silhouetteMode ? "Type this country's name…" : flagMode ? "Type this flag's country…" : "Type a name and hit Enter…"}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") return submit();
-          if (!flagMode) return;
+          if (!pictureMode) return;
           if (e.key === "ArrowRight" || e.key === "ArrowDown") {
             e.preventDefault();
             solo.moveFlagSel(1);
@@ -134,7 +138,7 @@ export default function SprintSection({ solo, onBack }) {
       />
       <div className="mt-2 min-h-[18px] text-[13px] text-muted">{solo.cmsg}</div>
 
-      {solo.geoMode !== "fill" && !flagMode ? (
+      {solo.geoMode !== "fill" && !pictureMode ? (
         <div className={cx("mt-3 flex flex-wrap gap-1.5 overflow-y-auto", mapMode ? "max-h-[11vh]" : "max-h-[24vh] desk:max-h-[30vh]")}>
           {solo.chips.map((c, i) => (
             <span key={`${c}-${i}`} className="animate-chip rounded-lg border border-line2 bg-accdim px-[9px] py-[5px] text-[13px] text-ink">

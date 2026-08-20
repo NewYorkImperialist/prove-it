@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CATS, GENRES, findCat, nonSprint, recommendedTime, shuffle, pickGenreRounds, flagQuizCats } from "@/lib/solo-catalog";
+import { CATS, GENRES, findCat, nonSprint, recommendedTime, shuffle, pickGenreRounds } from "@/lib/solo-catalog";
 import { norm, nearMiss, findEntry } from "@/lib/solo-matching";
 import { hasGeoBoard, geoMode as geoModeOf } from "@/lib/geo-cats";
 import { fmtClock, todayEastern, prevDate } from "@/lib/format";
@@ -177,9 +177,10 @@ export function useSolo({ onExitToMenu }) {
         guesses: guesses.current,
       });
     }
-    // After a geography round, list what you missed so you can study it for next time.
+    // After a geography round, list what you missed so you can study it for next time. Flags
+    // and Silhouette quizzes are folded into the Geography group, so this already covers them.
     let items = [];
-    if (cat && (/^Geography/.test(cat.group) || cat.isFlagQuiz)) {
+    if (cat && /^Geography/.test(cat.group)) {
       if (geoModeRef.current === "fill" && geoRef.current) items = geoRef.current.missedFill().map((m) => ({ q: m.q, a: m.a }));
       else items = cat.entries.filter((e) => !named.current.has(e.id)).map((e) => ({ q: e.display }));
     }
@@ -256,7 +257,7 @@ export function useSolo({ onExitToMenu }) {
       const gm = hasGeoBoard(cat.name) ? geoModeOf(cat.name) : null;
       mapActive.current = false;
       setGeoMode(gm);
-      setShowTotal(!!gm || !!cat.isFlagQuiz); // "/ total" for the enumerations and flag quizzes
+      setShowTotal(!!gm || !!cat.isFlagQuiz || !!cat.isSilhouetteQuiz); // "/ total" for the enumerations and picture quizzes
       setFillProgress({ filled: 0, total: 0 });
 
       // Per-round time: the recommended-per-round sentinel (timer 0) uses each category's length.
@@ -321,23 +322,25 @@ export function useSolo({ onExitToMenu }) {
     setTimeLeft((t) => t + incrementRef.current);
   }, [incrementRef, setTimeLeft]);
 
-  // Flags quiz: unlike every other round, an answer only counts against the ONE highlighted
-  // flag — naming a real country from the list that isn't this flag is still a miss, just a
-  // more informative one. Correct advances the highlight to the next unsolved flag.
-  const nextUnsolvedFlag = (cat, fromIdx) => {
+  // Picture quizzes (Flags, Silhouettes): unlike every other round, an answer only counts
+  // against the ONE highlighted tile — naming a real country from the list that isn't this one
+  // is still a miss, just a more informative one. Correct advances the highlight to the next
+  // unsolved tile.
+  const nextUnsolvedTile = (cat, fromIdx) => {
     for (let step = 1; step <= cat.entries.length; step++) {
       const i = (fromIdx + step) % cat.entries.length;
       if (!named.current.has(cat.entries[i].id)) return i;
     }
-    return fromIdx; // every flag is solved — finishRoundEarly() is about to fire anyway
+    return fromIdx; // everything's solved — finishRoundEarly() is about to fire anyway
   };
 
-  // Moves the highlighted flag left/right (also used for up/down — the grid reflows by screen
-  // width, so there's no reliable row math to do arrow-key-accurate 2D navigation with).
+  // Moves the highlighted tile left/right (also used for up/down — the grid reflows by screen
+  // width, so there's no reliable row math to do arrow-key-accurate 2D navigation with). Shared
+  // by both picture quizzes (Flags, Silhouettes) — same grid, same highlight, different image.
   const moveFlagSel = useCallback(
     (delta) => {
       const cat = roundCatsRef.current[curRef.current];
-      if (!cat || !cat.isFlagQuiz) return;
+      if (!cat || (!cat.isFlagQuiz && !cat.isSilhouetteQuiz)) return;
       setFlagSel((i) => Math.max(0, Math.min(cat.entries.length - 1, i + delta)));
     },
     [roundCatsRef, curRef, setFlagSel],
@@ -351,7 +354,7 @@ export function useSolo({ onExitToMenu }) {
       setWpm(liveWpm());
 
       const cat0 = roundCatsRef.current[curRef.current];
-      if (cat0.isFlagQuiz) {
+      if (cat0.isFlagQuiz || cat0.isSilhouetteQuiz) {
         const entry = cat0.entries[flagSelRef.current];
         const nq = norm(q);
         if (entry.aliases.includes(nq)) {
@@ -364,14 +367,14 @@ export function useSolo({ onExitToMenu }) {
           setCmsg("");
           guesses.current.push({ display: entry.display, verdict: "ok", at: Date.now() });
           bumpTimer();
-          setFlagSel(nextUnsolvedFlag(cat0, flagSelRef.current));
+          setFlagSel(nextUnsolvedTile(cat0, flagSelRef.current));
           snapshotRun();
           if (named.current.size >= cat0.entries.length) finishRoundEarly(); // got them all
           return false;
         }
         const other = findEntry(cat0, nq);
         if (other) {
-          flash(named.current.has(other.id) ? "that one's already done, and not this flag anyway" : "that's on the list, but not this flag");
+          flash(named.current.has(other.id) ? "that one's already done, and not this one anyway" : "that's on the list, but not this one");
           return false;
         }
         const near = nearMiss(nq, { entries: [entry] });
@@ -613,18 +616,6 @@ export function useSolo({ onExitToMenu }) {
     startSolo([cat], recommendedTime(cat), true);
   }, [startSolo]);
 
-  // World, or one continent — the flag-grid quizzes. Not a "geography challenge" run (no random
-  // pick, no "play a different geography?" CTA); it just reuses startSolo's plumbing as-is.
-  const startFlagQuiz = useCallback(
-    (catName) => {
-      setCreateErr("");
-      const cat = catName || flagQuizCats()[0];
-      if (!cat) return setCreateErr("No flags quiz available right now.");
-      startSolo([cat], recommendedTime(cat));
-    },
-    [startSolo],
-  );
-
   const createChallenge = useCallback(async () => {
     setCreateErr("");
     isGeoChallenge.current = false;
@@ -763,7 +754,7 @@ export function useSolo({ onExitToMenu }) {
     resumeInfo, resumeRun, dismissResume,
     flagSel, selectFlag: setFlagSel, moveFlagSel, namedIds: named.current,
     // actions
-    initCreate, initJoin, initDaily, createChallenge, startSolo, startGeoChallenge, startFlagQuiz, startPlaying, runCountdown,
+    initCreate, initJoin, initDaily, createChallenge, startSolo, startGeoChallenge, startPlaying, runCountdown,
     startRound, submit, giveUp, nextRound, toggleRemaining, backToStart, leaveRun, challengeUrl, submitDaily,
     todayEastern,
   };

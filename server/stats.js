@@ -409,14 +409,23 @@ async function categoryLeaderboard(catName, limit = 50) {
 async function geoGoat(limit = 50) {
   const CATEGORY_GROUPS = require("../data/categories.js");
   const { FLAG_CAT_NAMES, FLAG_SOURCE } = require("../lib/flags.js");
+  const { SILHOUETTE_CAT_NAMES, SILHOUETTE_SOURCE, NO_POLYGON } = require("../lib/silhouettes.js");
   const { RECOMMENDED_TIME } = require("../lib/solo-catalog.js");
+  const { norm } = require("../lib/solo-matching.js");
   const geoCats = new Map(); // geography category name → total item count
   if (CATEGORY_GROUPS.Geography) for (const c of CATEGORY_GROUPS.Geography.cats) geoCats.set(c.name, (c.items || []).length);
-  // Flags quizzes aren't real categories.js entries (see lib/flags.js), but they're geography
-  // knowledge same as the rest of this board, so they count toward it too — same item count as
-  // the "Countries in ..." category they share entries with.
+  // Flags/Silhouette quizzes aren't real categories.js entries (see lib/flags.js,
+  // lib/silhouettes.js), but they're geography knowledge same as the rest of this board, so they
+  // count toward it too — same item count as the "Countries in ..." category they share entries
+  // with (minus the couple of countries a Silhouette quiz has no drawable shape for).
   for (const [baseName, flagName] of FLAG_SOURCE) if (geoCats.has(baseName)) geoCats.set(flagName, geoCats.get(baseName));
-  for (const name of FLAG_CAT_NAMES) if (!geoCats.has(name)) geoCats.set(name, 0); // shouldn't happen, but never divide by zero below
+  for (const [baseName, silName] of SILHOUETTE_SOURCE) {
+    if (!geoCats.has(baseName)) continue;
+    const base = CATEGORY_GROUPS.Geography.cats.find((c) => c.name === baseName);
+    const n = (base.items || []).filter((it) => !NO_POLYGON.has(norm(Array.isArray(it) ? it[0] : it))).length;
+    geoCats.set(silName, n);
+  }
+  for (const name of [...FLAG_CAT_NAMES, ...SILHOUETTE_CAT_NAMES]) if (!geoCats.has(name)) geoCats.set(name, 0); // never divide by zero below
   const refPaceFor = (cat) => (RECOMMENDED_TIME[cat] || 45) / (geoCats.get(cat) || 1); // seconds/answer at a plain full clear
   const chs = await q(`SELECT id, rounds, timer FROM challenges`);
   const roundsById = {}, timerById = {};

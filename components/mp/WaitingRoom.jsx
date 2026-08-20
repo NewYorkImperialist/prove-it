@@ -1,11 +1,12 @@
 "use client";
 import { useEffect, useState } from "react";
-import Card, { CardTitle, CardSub, StatusLine } from "@/components/ui/Card";
+import Card, { CardTitle, CardSub, StatusLine, ErrorLine } from "@/components/ui/Card";
 import Button from "@/components/ui/Button";
 import TextInput from "@/components/ui/Field";
 import { Crown } from "@/components/ui/Logo";
-import { useCopied } from "@/hooks/useCopied";
-import { copyText } from "@/lib/browser/clipboard";
+import { useCopied, useShareOrCopy } from "@/hooks/useCopied";
+import SITE from "@/lib/site-config";
+import { cx } from "@/lib/browser/cx";
 import { DuelSettings, RaceSettings } from "./LobbySettings";
 
 // Avatar tints, in join order.
@@ -46,8 +47,10 @@ function EmptySlot({ label }) {
 export default function WaitingRoom({ leaving, mp }) {
   const room = mp.room;
   const isRace = mp.mode === "race";
-  const [codeHint, setCodeHint] = useState("tap the code to copy");
-  const [inviteCopied, copyInvite] = useCopied(1500);
+  // The bare four-character code stays a clipboard copy and nothing else: a room code is not a
+  // share payload — handed to an OS sheet it arrives as a text message reading "7K2P".
+  const [codeCopied, copyCode, codeState] = useCopied(1400);
+  const { done: invited, shared: inviteShared, failed: inviteFailed, native, run: sendInvite } = useShareOrCopy(1500);
   const [lobbyName, setLobbyName] = useState("");
 
   const me = room?.players.find((p) => p.id === mp.myId);
@@ -70,11 +73,16 @@ export default function WaitingRoom({ leaving, mp }) {
           : "Waiting for a second player…"
       : "Waiting for the host to start…";
 
-  const tapCode = async () => {
-    if (!mp.myRoom) return;
-    await copyText(mp.myRoom);
-    setCodeHint("✓ Code copied!");
-    setTimeout(() => setCodeHint("tap the code to copy"), 1400);
+  const tapCode = () => {
+    if (mp.myRoom) copyCode(mp.myRoom);
+  };
+
+  // The link, not just the code: this is the one thing on the screen worth handing to a share
+  // sheet, and the sheet wants the URL as its own field rather than buried in the message. The
+  // clipboard still gets the bare URL, which is exactly what "Copy invite link" always gave.
+  const invite = () => {
+    const url = `${window.location.origin}${window.location.pathname}?room=${mp.myRoom}`;
+    return { title: SITE.siteName, text: `Join my ${SITE.siteName} room — code ${mp.myRoom}.`, url, copy: url };
   };
 
   return (
@@ -90,16 +98,20 @@ export default function WaitingRoom({ leaving, mp }) {
         >
           {room?.code || "----"}
         </div>
-        <div className="text-xs text-muted">{codeHint}</div>
+        {/* The hint doubles as the confirmation, so a refused clipboard has somewhere to be said
+            without adding a row to a card that is already the tallest in the lobby. It used to
+            claim "✓ Code copied!" whatever the browser actually did with the write. */}
+        <div className={cx("text-xs", codeState.failed ? "text-bad" : "text-muted")}>
+          {codeState.failed ? "couldn't copy — read it out instead" : codeCopied ? "✓ Code copied!" : "tap the code to copy"}
+        </div>
       </div>
 
-      <Button
-        variant="secondary"
-        className="mb-3.5 w-full p-[11px]! text-sm!"
-        onClick={() => copyInvite(`${window.location.origin}${window.location.pathname}?room=${mp.myRoom}`)}
-      >
-        {inviteCopied ? "✓ Invite link copied!" : "Copy invite link"}
+      <Button variant="secondary" className={cx("w-full p-[11px]! text-sm!", inviteFailed ? "mb-0!" : "mb-3.5")} onClick={() => sendInvite(invite())}>
+        {invited ? (inviteShared ? "✓ Invite sent!" : "✓ Invite link copied!") : native ? "Share invite link" : "Copy invite link"}
       </Button>
+      {/* Conditional and tight: ErrorLine reserves a line even when empty, and this card already
+          runs past the fold on a landscape phone before the settings block. */}
+      {inviteFailed ? <ErrorLine className="mt-1 mb-2.5">Couldn&apos;t copy the link — share the code above instead.</ErrorLine> : null}
 
       <div className="my-2 mb-[18px] flex flex-col gap-2">
         {players.map((p, i) => (

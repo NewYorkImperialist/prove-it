@@ -5,9 +5,10 @@ import { LogoBadge } from "@/components/ui/Logo";
 import { SoloButton, SoloCard, SoloSub, SoloErr, BigNumber } from "./SoloBits";
 import ChallengeBoard from "@/components/leaderboard/ChallengeBoard";
 import CategoryBoard from "@/components/leaderboard/CategoryBoard";
-import { useCopied } from "@/hooks/useCopied";
+import { useShareOrCopy } from "@/hooks/useCopied";
 import { useReplay } from "@/hooks/useReplay";
-import { dailyInvite } from "@/lib/browser/daily";
+import { dailyInviteParts } from "@/lib/browser/daily";
+import SITE from "@/lib/site-config";
 import { geoChallengeCats } from "@/lib/solo-catalog";
 import * as store from "@/lib/browser/storage";
 import { cx } from "@/lib/browser/cx";
@@ -21,7 +22,7 @@ export default function DoneSection({ solo, onExitToMenu }) {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [reload, setReload] = useState(0);
-  const [copied, copy] = useCopied(2200);
+  const { done: sent, shared, failed: sendFailed, native, run: sendChallenge } = useShareOrCopy(2200);
   const [shakeTick, setShakeTick] = useState(0);
   const [shaking, endShake] = useReplay(shakeTick);
   const [nextGeoCat, setNextGeoCat] = useState(() => geoChallengeCats()[0] || "");
@@ -29,6 +30,32 @@ export default function DoneSection({ solo, onExitToMenu }) {
 
   if (!d) return null;
   const url = solo.challengeUrl();
+
+  // The daily's wording lives in lib/browser/daily.js, because the leaderboard modal shares the
+  // same brag. A plain run has no equivalent elsewhere, so its own boast is built here: the score
+  // is worth saying out loud, and `url` stays exactly what the clipboard gets so the copy path is
+  // byte-for-byte what it has always been.
+  const invite = () =>
+    d.daily
+      ? dailyInviteParts(store.getDailyScore(), solo.challengeId, name)
+      : { title: SITE.siteName, text: `I named ${d.total} on this ${SITE.siteName} challenge. Same rounds, same clock — think you can beat me?`, url, copy: url };
+
+  // One button, and the copy path's labels are untouched: they're what everyone without a share
+  // sheet still reads. Confirming a share with "Copied!" would be a plain lie — nothing went on
+  // the clipboard — so the confirmation follows whichever route the send actually took.
+  const sendLabel = sent
+    ? shared
+      ? "Shared!"
+      : d.daily
+        ? "Copied — send it to a friend!"
+        : "Copied! Paste it to a friend"
+    : native
+      ? d.daily
+        ? "Share my score + invite"
+        : "Share this challenge"
+      : d.daily
+        ? "Copy invite + my score"
+        : "Copy challenge link";
 
   const addMe = async () => {
     setNameErr("");
@@ -119,9 +146,14 @@ export default function DoneSection({ solo, onExitToMenu }) {
 
         <FieldLabel>Share this link · friends play the same rounds &amp; join this leaderboard</FieldLabel>
         <TextInput readOnly value={url} onClick={(e) => e.currentTarget.select()} className="font-mono text-[13px]!" />
-        <SoloButton onClick={() => copy(d.daily ? dailyInvite(store.getDailyScore(), solo.challengeId, name) : url)}>
-          {copied ? (d.daily ? "Copied — send it to a friend!" : "Copied! Paste it to a friend") : d.daily ? "Copy invite + my score" : "Copy challenge link"}
-        </SoloButton>
+        <SoloButton onClick={() => sendChallenge(invite())}>{sendLabel}</SoloButton>
+        {/* Only rendered when there's something to say: SoloErr reserves a line even when empty,
+            and in landscape a permanently blank row here is a row of leaderboard given away. The
+            message can only appear at all because useCopied stopped discarding copyText's
+            boolean — a blocked clipboard used to answer "Copied!" and leave the player pasting
+            nothing into a chat. The link is in the read-only box directly above, so there is a
+            real way out of it. */}
+        {sendFailed ? <SoloErr>Couldn&apos;t copy — your browser blocked the clipboard. Select the link above and copy it by hand.</SoloErr> : null}
 
         {d.geoChallenge ? (
           <div>

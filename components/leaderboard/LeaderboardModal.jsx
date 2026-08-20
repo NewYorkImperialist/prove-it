@@ -5,9 +5,9 @@ import TextInput from "@/components/ui/Field";
 import { ErrorLine } from "@/components/ui/Card";
 import { getJSON } from "@/lib/browser/api";
 import { geoBoardCats } from "@/lib/solo-catalog";
-import { dailyInvite, playedDailyToday, submitDailyResult } from "@/lib/browser/daily";
+import { dailyInviteParts, playedDailyToday, submitDailyResult } from "@/lib/browser/daily";
 import * as store from "@/lib/browser/storage";
-import { useCopied } from "@/hooks/useCopied";
+import { useShareOrCopy } from "@/hooks/useCopied";
 import { cx } from "@/lib/browser/cx";
 import ChallengeBoard from "./ChallengeBoard";
 import CategoryBoard from "./CategoryBoard";
@@ -32,7 +32,7 @@ export default function LeaderboardModal({ onClose, visitorId }) {
   const [nameErr, setNameErr] = useState("");
   const [saving, setSaving] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [copied, copy] = useCopied(2200);
+  const { done: sent, shared, failed: sendFailed, run: sendScore } = useShareOrCopy(2200);
 
   const played = playedDailyToday();
   const geoCats = useMemo(() => geoBoardCats(), []);
@@ -171,10 +171,21 @@ export default function LeaderboardModal({ onClose, visitorId }) {
           </div>
         ) : null}
 
+        {/* This button always said "Share", and on a phone it now means it: the same tap opens the
+            OS share sheet where there is one and falls back to the clipboard where there isn't,
+            so the resting label needs no `native` variant. Only the confirmation has to differ —
+            "Copied!" after the sheet posted to WhatsApp would be describing something that never
+            happened. */}
         {tab === "today" && played ? (
-          <Button variant="primary" onClick={() => copy(dailyInvite(store.getDailyScore(), today?.id))}>
-            {copied ? "Copied — send it to a friend!" : "Share your score & invite friends"}
-          </Button>
+          <>
+            <Button variant="primary" onClick={() => sendScore(dailyInviteParts(store.getDailyScore(), today?.id))}>
+              {sent ? (shared ? "Shared!" : "Copied — send it to a friend!") : "Share your score & invite friends"}
+            </Button>
+            {/* Rendered only on a failure, because ErrorLine holds a line open even when empty and
+                this sits at the very bottom of a scrolling modal. Before the hook reported the
+                clipboard's own answer, a browser that refused the write still said "Copied". */}
+            {sendFailed ? <ErrorLine>Couldn&apos;t copy your invite — your browser blocked the clipboard.</ErrorLine> : null}
+          </>
         ) : null}
         </div>
       </div>

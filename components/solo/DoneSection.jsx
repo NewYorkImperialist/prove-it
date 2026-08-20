@@ -66,7 +66,11 @@ export default function DoneSection({ solo, onExitToMenu }) {
       </button>
 
       <SoloCard>
-        <p className="m-0 mb-3 text-[17px] font-bold text-accent">{d.verdict}</p>
+        {/* "Your run is in!" over the top of a "couldn't save your run" banner is a straight
+            contradiction, and the banner is the half that's true — so the headline gives way. */}
+        <p className={cx("m-0 mb-3 text-[17px] font-bold", !d.daily && solo.saveErr ? "text-bad" : "text-accent")}>
+          {!d.daily && solo.saveErr ? "Run finished — not saved yet." : d.verdict}
+        </p>
         <BigNumber>{d.total}</BigNumber>
         <SoloSub>{d.sub}</SoloSub>
 

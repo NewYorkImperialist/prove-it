@@ -109,7 +109,12 @@ function createChallengeRouter({ isLockdown }) {
     const gid = String(b.gid || "").slice(0, 40); // links this run to its captured guesses
     // play origin — keeps the solo-map geography boards separate from daily/shared-link plays.
     const mode = id.startsWith("d-") ? "daily" : (["solo", "link"].includes(b.mode) ? b.mode : "solo");
-    await analytics.addChallengeResult({ challenge_id: id, name: cleanName(String(b.name || "Anon").slice(0, 24)), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, times, crown, gid, mode });
+    // Report what the write actually did. Hardcoding ok:true here made the client's whole
+    // retry-and-keep-it-on-the-device path (hooks/useSolo.js trySaveResult) unreachable for the
+    // one failure it was built for: addChallengeResult returns false on a DB error rather than
+    // throwing, so a run that never reached the leaderboard was still announced as saved.
+    const saved = await analytics.addChallengeResult({ challenge_id: id, name: cleanName(String(b.name || "Anon").slice(0, 24)), visitor_id: String(b.visitorId || "").slice(0, 40), scores, total, wpms, times, crown, gid, mode }).catch(() => false);
+    if (!saved) return res.status(503).json({ ok: false, error: "Could not save your run — try again in a moment." });
     res.json({ ok: true });
   });
   // Rename a player's leaderboard entries everywhere (all challenges/days). Owner key → also renames

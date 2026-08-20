@@ -589,8 +589,9 @@ export function useSolo({ onExitToMenu }) {
       total,
       avgWpm,
       rounds,
-      // A failed write isn't reported here any more: trySaveResult keeps retrying and surfaces
-      // solo.saveErr on the result screen, which is a better answer than a one-shot verdict.
+      // A failed write isn't reported here: trySaveResult keeps retrying and surfaces
+      // solo.saveErr on the result screen, which replaces this headline (DoneSection) rather
+      // than sitting under a contradicting "Your run is in!".
       verdict: "Your run is in!",
       sub: savedSub,
       board: single ? { kind: "category", name: single.name } : { kind: "challenge", id: challengeIdRef.current },

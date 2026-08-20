@@ -30,6 +30,47 @@ describe("routes/challenge.js", () => {
     assert.match(res.body.error, /persistence/);
   });
 
+  // The result route used to answer ok:true whatever the write did, which made the client's
+  // retry-and-keep-it-on-the-device path (hooks/useSolo.js trySaveResult) unreachable for the
+  // exact failure it exists for: addChallengeResult returns false on a DB error, it doesn't throw.
+  // analytics is a plain module object the router reads properties off, so patching it in place is
+  // enough to drive both outcomes.
+  describe("POST /challenge/:id/result reports what the write actually did", () => {
+    const analytics = require("../server/stats.js");
+    function withAnalytics(addChallengeResult, run) {
+      const saved = { enabled: analytics.enabled, getChallenge: analytics.getChallenge, addChallengeResult: analytics.addChallengeResult };
+      analytics.enabled = () => true;
+      analytics.getChallenge = async () => ({ id: "abc", rounds: ["Countries of the World"], timer: 45 });
+      analytics.addChallengeResult = addChallengeResult;
+      return Promise.resolve(run()).finally(() => Object.assign(analytics, saved));
+    }
+    const post = (app) => request(app).post("/challenge/abc/result").send({ name: "Jayden", scores: [12], wpms: [40], times: [30] });
+
+    test("a successful insert answers ok", async () => {
+      await withAnalytics(async () => true, async () => {
+        const res = await post(buildApp(() => false));
+        assert.equal(res.body.ok, true);
+      });
+    });
+
+    test("a failed insert is reported as a failure, not as a saved run", async () => {
+      await withAnalytics(async () => false, async () => {
+        const res = await post(buildApp(() => false));
+        assert.equal(res.body.ok, false);
+        assert.match(res.body.error, /save/i);
+        assert.equal(res.statusCode, 503);
+      });
+    });
+
+    test("a write that rejects outright is reported too, not turned into a 500", async () => {
+      await withAnalytics(async () => { throw new Error("connection reset"); }, async () => {
+        const res = await post(buildApp(() => false));
+        assert.equal(res.body.ok, false);
+        assert.equal(res.statusCode, 503);
+      });
+    });
+  });
+
   test("GET /name-check flags a blocked name and passes a clean one, without needing persistence", async () => {
     const app = buildApp(() => false);
     const bad = await request(app).get("/name-check").query({ name: "n1gg4" });

@@ -38,8 +38,14 @@ function Message({ entry }) {
 function ChatLine({ entry }) {
   return (
     <div className="self-stretch rounded-md bg-[rgba(255,255,255,.035)] px-2 py-1 text-[13px] leading-[1.45]">
-      <span className={cx("font-bold", entry.mine ? "text-accent2" : "text-[#8ab4ff]")}>{entry.name}: </span>
-      <span>{entry.text}</span>
+      <span className={cx("font-bold", entry.mine ? "text-accent2" : entry.spectator ? "text-muted" : "text-[#8ab4ff]")}>
+        {entry.name}
+        {/* A watcher can type answers into the same channel the players read, so a spectator's
+            line has to be visibly a spectator's — otherwise feeding the prover is invisible. */}
+        {entry.spectator ? <span className="font-normal italic"> (watching)</span> : null}
+        {": "}
+      </span>
+      <span className={cx(entry.spectator && "text-muted")}>{entry.text}</span>
     </div>
   );
 }

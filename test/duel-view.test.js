@@ -166,6 +166,12 @@ describe("duelAutoMode", () => {
   });
   test("nothing to switch to while waiting on a bid", () => {
     assert.equal(duelAutoMode({ ...base, phase: "bidding", turnId: OPP }, ME), null);
-    assert.equal(duelAutoMode({ ...base, phase: "roundover", turnId: ME }, ME), null);
+  });
+  // duelView tells BOTH players "press P or tap for the next round" at roundover, and the key
+  // handler ignores P while chatting. The non-prover is auto-switched into chat while the other
+  // player proves, so leaving them there made the shortcut dead for the rest of the match.
+  test("the end of a round takes both players out of chat, so P actually works", () => {
+    assert.equal(duelAutoMode({ ...base, phase: "roundover", turnId: ME }, ME), "answer");
+    assert.equal(duelAutoMode({ ...base, phase: "roundover", turnId: OPP }, ME), "answer");
   });
 });

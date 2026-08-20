@@ -304,7 +304,12 @@ export function useMultiplayer({ router }) {
     },
     [socket, rememberName, flashStatus],
   );
-  const startMatch = useCallback(() => socket.emit("startMatch", {}, (r) => { if (!r?.ok) setErr("room", r?.error || "Could not start."); }), [socket, setErr]);
+  // Clear first: errors.room is a sticky status line, so a stale "X left the game" (or a previous
+  // refusal) would otherwise sit above a match that has since started fine.
+  const startMatch = useCallback(() => {
+    setErr("room", "");
+    socket.emit("startMatch", {}, (r) => { if (!r?.ok) setErr("room", r?.error || "Could not start."); });
+  }, [socket, setErr]);
 
   /* ---------------- in-game actions ---------------- */
   const ackErr = useCallback((r) => { if (r && !r.ok && r.error) flashStatus(r.error); }, [flashStatus]);
@@ -533,7 +538,9 @@ export function useMultiplayer({ router }) {
       if (r.status === "waiting") router.go("room");
     };
 
-    const onGameStarted = () => { clearFeed(); router.go("game"); };
+    // Also clears the lobby status line: a spectator or a non-host player never calls startMatch,
+    // so this is where a stale "X left the game" gets cleaned up for them.
+    const onGameStarted = () => { clearFeed(); setErr("room", ""); router.go("game"); };
 
     const onGameState = (state) => {
       const prev = gsRef.current;
@@ -610,17 +617,23 @@ export function useMultiplayer({ router }) {
       pushFeed({ type: "msg", side: "system", text: summary, kind: null });
     };
 
-    const onChat = ({ id, name, text }) => {
+    const onChat = ({ id, name, text, spectator }) => {
       setTypingBy(null); // they sent it → no longer typing
-      pushFeed({ type: "chat", mine: id === myIdRef.current, name, text });
+      // The server has always sent `spectator`; dropping it here made a watcher's line identical
+      // to a player's, so someone out of the game could feed the prover answers unnoticed.
+      pushFeed({ type: "chat", mine: id === myIdRef.current, name, text, spectator: !!spectator });
     };
 
     const onTyping = ({ name, typing }) => setTypingBy(typing ? name : null);
 
     const onOpponentLeft = ({ name }) => {
       setGs(null);
-      window.alert(`${name} left the game.`);
       router.go("room");
+      // A window.alert blocked the whole tab until dismissed, and the server broadcasts this to
+      // the room — so spectators got the modal too, about a game they were only watching. The
+      // lobby renders errors.room, which is where the explanation belongs (onRoomClosed below
+      // has always done it this way).
+      setErr("room", isSpectatorRef.current ? `${name} left — the match is over.` : `${name} left the game. You win by forfeit.`);
     };
 
     const onRoomClosed = () => {

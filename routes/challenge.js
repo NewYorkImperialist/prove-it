@@ -8,7 +8,7 @@ const analytics = require("../stats"); // persistent game history (Turso)
 const SITE = require("../site-config");
 const { render, siteVars } = require("../lib/render.js");
 const { easternDay } = require("../lib/html.js");
-const { CATEGORY_GROUPS, CAT_SIZES, ALL_CAT_NAMES } = require("../lib/category-data.js");
+const { CATEGORY_GROUPS, CAT_SIZES, ALL_ROUND_NAMES } = require("../lib/category-data.js");
 const { cleanName, isBlocked } = require("../lib/name-filter.js");
 
 const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char url-safe id
@@ -51,7 +51,7 @@ function createChallengeRouter({ isLockdown }) {
     if (isLockdown()) return res.json({ ok: false, error: "The game is down for maintenance — check back soon." });
     if (!analytics.enabled()) return res.json({ ok: false, error: "Challenges need persistence (not configured)." });
     const type = b.type === "custom" ? "custom" : "genre";
-    const rounds = (Array.isArray(b.rounds) ? b.rounds : []).filter((n) => ALL_CAT_NAMES.has(n)).slice(0, 10);
+    const rounds = (Array.isArray(b.rounds) ? b.rounds : []).filter((n) => ALL_ROUND_NAMES.has(n)).slice(0, 10);
     if (rounds.length < 1) return res.json({ ok: false, error: "Pick at least one valid category." });
     const tt = parseInt(b.timer, 10); const timer = tt === 0 ? 0 : ((tt >= 5 && tt <= 1800) ? tt : 45); // 0 = recommended per round; else 5s–30min
     const id = newChallengeId();
@@ -138,7 +138,7 @@ function createChallengeRouter({ isLockdown }) {
   router.get("/category-leaderboard", async (req, res) => {
     if (!analytics.enabled()) return res.json({ ok: false });
     const name = String(req.query.name || "").slice(0, 60);
-    if (!ALL_CAT_NAMES.has(name)) return res.json({ ok: false });
+    if (!ALL_ROUND_NAMES.has(name)) return res.json({ ok: false });
     const results = await analytics.categoryLeaderboard(name, 50).catch(() => []);
     res.json({ ok: true, name, results });
   });

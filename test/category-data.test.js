@@ -1,7 +1,11 @@
 "use strict";
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
-const { CATEGORY_GROUPS, ALL_GROUPS, DEFAULT_GROUPS, CAT_SIZES, CAT_ITEMS, CAT_GROUP, ALL_CAT_NAMES } = require("../lib/category-data.js");
+const {
+  CATEGORY_GROUPS, ALL_GROUPS, DEFAULT_GROUPS, CAT_SIZES, CAT_ITEMS, CAT_GROUP, ALL_CAT_NAMES,
+  ALL_ROUND_NAMES,
+} = require("../lib/category-data.js");
+const { FLAG_SOURCE } = require("../lib/flags.js");
 
 describe("category-data derivation", () => {
   test("ALL_GROUPS lists every group key", () => {
@@ -33,5 +37,20 @@ describe("category-data derivation", () => {
     const expected = new Set();
     for (const grp of Object.values(CATEGORY_GROUPS)) for (const cat of grp.cats) expected.add(cat.name);
     assert.deepEqual(ALL_CAT_NAMES, expected);
+  });
+
+  test("ALL_ROUND_NAMES additionally recognizes every Flags quiz name (regression: POST /challenge used to reject them)", () => {
+    for (const [, flagName] of FLAG_SOURCE) {
+      assert.equal(ALL_CAT_NAMES.has(flagName), false, `${flagName} shouldn't be a real categories.js entry`);
+      assert.equal(ALL_ROUND_NAMES.has(flagName), true, `${flagName} should still be an acceptable round name`);
+    }
+  });
+
+  test("a Flags quiz mirrors its base category's size, items and gets the Flags group", () => {
+    for (const [baseName, flagName] of FLAG_SOURCE) {
+      assert.equal(CAT_SIZES[flagName], CAT_SIZES[baseName]);
+      assert.deepEqual(CAT_ITEMS[flagName], CAT_ITEMS[baseName]);
+      assert.equal(CAT_GROUP[flagName], "Flags");
+    }
   });
 });

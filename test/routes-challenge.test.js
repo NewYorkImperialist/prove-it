@@ -3,6 +3,7 @@ const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 const express = require("express");
 const request = require("supertest");
+const SITE = require("../lib/site-config.js");
 const { createChallengeRouter, challengePreview } = require("../routes/challenge.js");
 
 // analytics.enabled() is false throughout (no TURSO_URL in the test environment), so these
@@ -108,6 +109,135 @@ describe("routes/challenge.js", () => {
     assert.equal(res.status, 200);
     assert.match(res.headers["content-type"], /text\/html/);
     assert.equal(res.headers["cache-control"], "no-cache");
+    // The defaults, unchanged: with nothing to say about a specific run this is still the static
+    // hand-made card and site-config.js's challenge copy.
+    assert.ok(res.text.includes(`content="${SITE.challenge.ogTitle}"`), res.text);
+    assert.ok(res.text.includes(SITE.ogImage.url), "no share shape means the static card, not a generated one");
+    assert.ok(!res.text.includes("{{"), "every token the template uses needs a default in siteVars");
+  });
+});
+
+// The stub is what a crawler reads and the ONLY thing it reads — there is no bot sniffing here,
+// /challenge.html is simply an Express path claimed ahead of the Next catch-all, and the script at
+// the bottom of the template bounces real browsers into the app carrying the same query string.
+// So every assertion below is about the meta tags: they are the entire product for this route.
+describe("GET /challenge.html · the generated share card, per link shape", () => {
+  const analytics = require("../server/stats.js");
+  // The router reads properties off the analytics module object at call time, so patching it in
+  // place is enough to stand in for Turso (analytics.enabled() is false in this environment).
+  function withAnalytics(patch, run) {
+    const saved = { enabled: analytics.enabled, getChallenge: analytics.getChallenge, getChallengeResults: analytics.getChallengeResults };
+    Object.assign(analytics, { enabled: () => true }, patch);
+    return Promise.resolve(run()).finally(() => Object.assign(analytics, saved));
+  }
+  // A card URL has several params, so its ampersands arrive HTML-escaped inside the attribute —
+  // which is correct markup and what a crawler unescapes before fetching, but it means new URL()
+  // would otherwise read the query as "amp;k=...". Only &amp; is decoded here: the hostile-input
+  // test below wants to see the other entities still in place.
+  const attr = (html, sel) => ((html.match(new RegExp(`<meta ${sel} content="([^"]*)"`)) || [])[1] || "").replace(/&amp;/g, "&");
+  const ogImage = (html) => attr(html, 'property="og:image"');
+  const metaOf = (html, kind, name) => attr(html, `${kind}="${name}"`);
+
+  test("?id= quotes the challenger's real name, best score and category from the database", async () => {
+    await withAnalytics({
+      getChallenge: async () => ({ id: "abc1234", type: "custom", genre: "", rounds: ["US States", "World Capitals"], by_name: "Jayden", timer: 45 }),
+      getChallengeResults: async () => [{ name: "Jayden", scores: [4, 17] }],
+    }, async () => {
+      const res = await request(buildApp(() => false)).get("/challenge.html?id=abc1234");
+      assert.equal(res.status, 200);
+      const url = new URL(ogImage(res.text));
+      assert.equal(url.pathname, SITE.ogCard.path);
+      assert.equal(url.searchParams.get("k"), "challenge");
+      assert.equal(url.searchParams.get("n"), "Jayden");
+      assert.equal(url.searchParams.get("s"), "17", "the best SINGLE-round score, not the total");
+      assert.equal(url.searchParams.get("c"), "World Capitals", "and the round that score came from");
+      assert.equal(url.searchParams.get("r"), "2");
+      assert.equal(url.searchParams.get("t"), "45");
+      assert.match(metaOf(res.text, "property", "og:image:alt"), /17 World Capitals/);
+      assert.match(metaOf(res.text, "property", "og:url"), /\?id=abc1234$/);
+    });
+  });
+
+  test("a daily ?id= is its own card kind and honours the sharer's ?by=", async () => {
+    await withAnalytics({
+      getChallenge: async () => ({ id: "d-20260624", type: "daily", genre: "", rounds: ["US States"], by_name: "Daily", timer: 30 }),
+      getChallengeResults: async () => [{ name: "Jayden", scores: [9] }],
+    }, async () => {
+      const res = await request(buildApp(() => false)).get("/challenge.html?id=d-20260624&by=Jayden");
+      const url = new URL(ogImage(res.text));
+      assert.equal(url.searchParams.get("k"), "daily");
+      assert.equal(url.searchParams.get("n"), "Jayden", "by_name is 'Daily' for everyone, so ?by= is who says it");
+      assert.equal(url.searchParams.get("s"), "9");
+    });
+  });
+
+  test("?id= with no database falls back to the defaults rather than inventing a score", async () => {
+    const res = await request(buildApp(() => false)).get("/challenge.html?id=abc1234");
+    assert.equal(res.status, 200);
+    assert.ok(res.text.includes(SITE.ogImage.url), "the static card, because there is no score to quote");
+    assert.ok(res.text.includes(`content="${SITE.challenge.ogTitle}"`));
+  });
+
+  test("?geo=<board> validates the board name and describes that board", async () => {
+    const res = await request(buildApp(() => false)).get("/challenge.html?geo=Countries%20of%20the%20World");
+    assert.equal(res.status, 200);
+    const url = new URL(ogImage(res.text));
+    assert.equal(url.searchParams.get("k"), "geo");
+    assert.equal(url.searchParams.get("c"), "Countries of the World");
+    assert.match(metaOf(res.text, "property", "og:title"), /Can you name all 197 Countries of the World/);
+    assert.match(metaOf(res.text, "property", "og:url"), /\?geo=Countries%20of%20the%20World$/);
+  });
+
+  test("?geo=1 — the app's own 'open the Geography screen' link — gets the generic geography card", async () => {
+    for (const q of ["geo=1", "geo=Atlantis"]) {
+      const res = await request(buildApp(() => false)).get(`/challenge.html?${q}`);
+      const url = new URL(ogImage(res.text));
+      assert.equal(url.searchParams.get("k"), "geo", q);
+      assert.equal(url.searchParams.get("c"), null, `${q} names no board, so the card names none either`);
+      assert.match(metaOf(res.text, "property", "og:title"), /geography boards/);
+    }
+  });
+
+  test("?room= normalises the code and renders a multiplayer invite", async () => {
+    const res = await request(buildApp(() => false)).get("/challenge.html?room=ab1&by=Jayden");
+    const url = new URL(ogImage(res.text));
+    assert.equal(url.searchParams.get("k"), "room");
+    assert.equal(url.searchParams.get("x"), "AB1");
+    assert.equal(url.searchParams.get("n"), "Jayden");
+    assert.match(metaOf(res.text, "property", "og:description"), /Room code AB1/);
+  });
+
+  test("every shape fills in the twitter tags and og:url, not just the og: ones", async () => {
+    // Twitter falls back to og:title/og:description; Discord's summary_large_image card does not
+    // fall back the same way, so a shape that set only the og: pair shipped a preview with the
+    // site-wide description under a run-specific title.
+    for (const q of ["geo=Flags%20of%20Europe", "room=AB12"]) {
+      const res = await request(buildApp(() => false)).get(`/challenge.html?${q}`);
+      assert.equal(res.status, 200, q);
+      assert.equal(metaOf(res.text, "name", "twitter:title"), metaOf(res.text, "property", "og:title"), q);
+      assert.equal(metaOf(res.text, "name", "twitter:description"), metaOf(res.text, "property", "og:description"), q);
+      assert.ok(metaOf(res.text, "property", "og:url").startsWith(SITE.url), q);
+      assert.ok(metaOf(res.text, "property", "og:image:alt").length > 0, q);
+      assert.ok(!res.text.includes("{{"), `${q} left a template token unfilled`);
+    }
+  });
+
+  test("a crafted ?by= never reaches the HTML raw, in a tag or in the card URL", async () => {
+    const hostile = '"><script>alert(1)</script>';
+    const res = await request(buildApp(() => false)).get(`/challenge.html?room=AB12&by=${encodeURIComponent(hostile)}`);
+    assert.equal(res.status, 200);
+    assert.ok(!res.text.includes("<script>alert(1)"), "unescaped angle brackets would close the meta tag");
+    assert.ok(!res.text.includes('"><script'), res.text);
+    // And the name still shows up, escaped, rather than being silently dropped.
+    assert.match(metaOf(res.text, "property", "og:title"), /&quot;&gt;&lt;script&gt;/);
+  });
+
+  test("a share link is never cached and never fails: the stub answers 200 with no-cache", async () => {
+    for (const q of ["", "id=nope", "geo=1", "room=!!!", "by=Jayden", "geo[]=1&room[]=AB12"]) {
+      const res = await request(buildApp(() => false)).get(`/challenge.html?${q}`);
+      assert.equal(res.status, 200, q);
+      assert.equal(res.headers["cache-control"], "no-cache", q);
+    }
   });
 });
 

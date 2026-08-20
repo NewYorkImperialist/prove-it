@@ -10,6 +10,8 @@ const { render, siteVars } = require("../lib/render.js");
 const { easternDay } = require("../lib/html.js");
 const { CATEGORY_GROUPS, CAT_SIZES, ALL_ROUND_NAMES } = require("../lib/category-data.js");
 const { cleanName, isBlocked } = require("../lib/name-filter.js");
+const { MODES, allBoards } = require("../lib/geo-boards.js");
+const { bragLine, cardUrl, cardAlt } = require("../lib/og-card.js");
 
 const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char url-safe id
 
@@ -41,30 +43,43 @@ const dailyId = (date) => "d-" + date.replace(/-/g, ""); // e.g. d-20260624 (10 
 // is a ONE-round challenge, and its link is the most-shared artifact in the game, so the singular
 // cases here are the common ones, not the edge ones: "1 rounds" and "more than 1 US States" were
 // both reachable from the button most players press first.
+// The challenger's best single-round score and which round it came from ("17 Countries in Europe").
+// Prefer the creator's own runs; fall back to everyone's if their name isn't on the board yet.
+// Split out of challengePreview because the share CARD (lib/og-card.js) needs the same two numbers
+// as pixels, and re-deriving them beside the copy is how the picture and the title drift apart.
+function bestRound(by, results) {
+  const all = results || [];
+  const mine = all.filter((r) => (r.name || "").trim().toLowerCase() === String(by).trim().toLowerCase());
+  const pool = mine.length ? mine : all;
+  let best = null; // { score, idx }
+  for (const r of pool) (r.scores || []).forEach((s, i) => { s = Number(s) || 0; if (s > 0 && (!best || s > best.score)) best = { score: s, idx: i }; });
+  return best;
+}
+
 function challengePreview({ by, type, genre, rounds, results }) {
   rounds = rounds || [];
-  results = results || [];
   const n = rounds.length;
   const roundWord = `${n} round${n === 1 ? "" : "s"}`;
   const what = type === "genre" && genre ? `${roundWord} of ${genre}` : roundWord;
-  // The challenger's best single-round score + that round's category ("17 Countries in Europe").
-  // Prefer the creator's own runs; fall back to everyone's if their name isn't on the board yet.
-  const mine = results.filter((r) => (r.name || "").trim().toLowerCase() === String(by).trim().toLowerCase());
-  const pool = mine.length ? mine : results;
-  let best = null; // { score, idx }
-  for (const r of pool) (r.scores || []).forEach((s, i) => { s = Number(s) || 0; if (s > 0 && (!best || s > best.score)) best = { score: s, idx: i }; });
-  // Category names are plural ("US States"), so a score of 1 can't be dropped straight in front of
-  // one — it needs a counted noun of its own instead.
-  const brag = best && rounds[best.idx]
-    ? (best.score === 1
-      ? `⚡ ${by} says you can't name more than 1 answer in ${rounds[best.idx]}`
-      : `⚡ ${by} says you can't name more than ${best.score} ${rounds[best.idx]}`)
-    : `⚡ ${by} challenged you on Prove It!`;
+  const best = bestRound(by, results);
   return {
-    title: brag,
+    // The ⚡ is the title's own, not the card's: a crawler renders it as text next to the picture,
+    // and satori has no emoji font (see app/og.png/route.js), so bragLine() stays plain.
+    title: `⚡ ${bragLine({ by, score: best ? best.score : null, category: best ? rounds[best.idx] : "" })}`,
     desc: `${what}. Name as many as you can before the clock runs out, then try to beat the leaderboard. No sign-up, just click and play.`,
   };
 }
+
+// ---------- Share-link shapes ----------
+// The 27 geography boards, indexed for validating a ?geo= board name. `region` and `mode` on each
+// row are regionLabel()/modeOf() output, so the copy below reads them rather than re-deriving them.
+const GEO_BOARDS = new Map(allBoards().map((b) => [b.name.toLowerCase(), b]));
+const GEO_MODES = new Map(MODES.map((m) => [m.key, m]));
+const GEO_COUNT = GEO_BOARDS.size;
+
+// A repeated param (?geo=a&geo=b) arrives as an array, and String(["a","b"]) is "a,b" — which would
+// then fail every validity check for a reason nobody could read. Take the first value instead.
+const firstParam = (v) => String((Array.isArray(v) ? v[0] : v) ?? "");
 
 // isLockdown: the owner maintenance kill-switch, from rooms.js's createRooms() instance.
 function createChallengeRouter({ isLockdown }) {
@@ -194,28 +209,89 @@ function createChallengeRouter({ isLockdown }) {
     res.json({ ok: true, results: rows });
   });
 
-  // Share-link stub, templated from site-config.js's `challenge` defaults. When a valid ?id=
-  // is given, crawlers (Discord/iMessage/Reddit/Twitter) don't run JS, so we override the
-  // title/OG description with the challenger's name + score-to-beat, computed server-side.
+  // Share-link stub, templated from site-config.js's `challenge` defaults. Crawlers
+  // (Discord/iMessage/Reddit/Twitter) don't run JS, so the meta tags rendered here are the entire
+  // preview; real browsers run the script at the bottom of the template and are bounced into the
+  // app at /?<same query string>. Three shapes get a bespoke preview and a generated card:
+  //
+  //   ?id=<challengeId>   a challenge or the daily — the challenger's name + score-to-beat
+  //   ?geo=<boardName>    one of the 27 geography boards
+  //   ?room=<CODE>        a live multiplayer invite
+  //
+  // Anything else falls through to the static defaults, which is also the DB-off path: with no
+  // persistence there is no score to quote, and quoting one we made up would be worse than generic.
   router.get("/challenge.html", async (req, res, next) => {
     const a = (s) => String(s).replace(/[&<>"]/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch]));
     const vars = { ...siteVars, TITLE: SITE.challenge.title, DESCRIPTION: SITE.challenge.description,
       OG_TITLE: SITE.challenge.ogTitle, OG_DESCRIPTION: SITE.challenge.ogDescription };
-    const id = String(req.query.id || "").slice(0, 12);
-    if (id && analytics.enabled()) {
-      const c = await analytics.getChallenge(id).catch(() => null);
+    // One place that writes the preview, so a new shape can't ship with (say) og:title set and
+    // twitter:title still saying "Prove It! · the bluffing word game".
+    const preview = ({ title, desc, kind, facts, search }) => {
+      vars.TITLE = vars.OG_TITLE = vars.TWITTER_TITLE = a(title);
+      vars.DESCRIPTION = vars.OG_DESCRIPTION = vars.TWITTER_DESCRIPTION = a(desc);
+      vars.OG_IMAGE = a(cardUrl(kind, facts));
+      vars.OG_IMAGE_ALT = a(cardAlt(kind, facts));
+      // og:url is the canonical page, which is the app the bounce script lands on — not this stub.
+      // Rebuilt from the values we validated rather than echoed from req.url, so nothing a stranger
+      // put in the query string can end up being presented as our own canonical address.
+      vars.OG_URL = a(SITE.url + search);
+    };
+
+    const id = firstParam(req.query.id).slice(0, 12);
+    // ?by= is the sharer's own name. The daily has no single "creator" (it's the same puzzle for
+    // everyone, auto-created by whoever plays first each day, hence by_name === "Daily"), so for a
+    // daily link whoever is SHARING it is who "says" the challenge in the preview.
+    const rawBy = firstParam(req.query.by).trim().slice(0, 24);
+    const sharedBy = rawBy ? cleanName(rawBy) : "";
+    const geo = firstParam(req.query.geo).trim().slice(0, 60);
+    const room = firstParam(req.query.room).toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, 4);
+
+    // An ?id= link stays an ?id= link even with no database behind it (the app gives it priority
+    // too — see the deepLink ref in components/AppShell.jsx), so this branch is chosen on the param
+    // being present, not on our being able to fill it in.
+    if (id) {
+      const c = analytics.enabled() ? await analytics.getChallenge(id).catch(() => null) : null;
       if (c) {
         const results = await analytics.getChallengeResults(id).catch(() => []);
-        // The daily has no single "creator" (it's the same puzzle for everyone, auto-created by
-        // whoever plays first each day, hence by_name === "Daily") — so whoever is SHARING it can
-        // pass their own name (?by=), and that's who "says" the challenge in the link preview.
-        const rawBy = String(req.query.by || "").trim().slice(0, 24);
-        const sharedBy = id.startsWith("d-") && rawBy ? cleanName(rawBy) : "";
-        const { title, desc } = challengePreview({ by: sharedBy || c.by_name || "A friend", type: c.type, genre: c.genre, rounds: c.rounds, results });
-        vars.TITLE = vars.OG_TITLE = a(title);
-        vars.DESCRIPTION = vars.OG_DESCRIPTION = a(desc);
+        const daily = id.startsWith("d-");
+        const by = (daily && sharedBy) || c.by_name || "A friend";
+        const { title, desc } = challengePreview({ by, type: c.type, genre: c.genre, rounds: c.rounds, results });
+        const best = bestRound(by, results);
+        preview({
+          title, desc,
+          kind: daily ? "daily" : "challenge",
+          facts: {
+            by, score: best ? best.score : null, category: best ? (c.rounds || [])[best.idx] : "",
+            rounds: c.rounds, timer: c.timer, sub: c.type === "genre" ? c.genre : "",
+          },
+          search: `?id=${encodeURIComponent(id)}${daily && sharedBy ? `&by=${encodeURIComponent(sharedBy)}` : ""}`,
+        });
       }
+    } else if (geo) {
+      // ?geo=1 is the app's own "open the Geography screen" deep link, so an unrecognised value is
+      // the normal case here, not an error — it gets the card for the whole geography section.
+      const board = GEO_BOARDS.get(geo.toLowerCase());
+      const mode = board ? GEO_MODES.get(board.mode) : null;
+      preview(board ? {
+        title: `⚡ Can you name all ${board.answers} ${board.name}?`,
+        desc: `${mode ? mode.blurb + " " : ""}${board.region} · every board keeps its own leaderboard, so there's a score to beat on this one. No sign-up, just click and play.`,
+        kind: "geo", facts: { board: board.name },
+        search: `?geo=${encodeURIComponent(board.name)}`,
+      } : {
+        title: `⚡ ${GEO_COUNT} geography boards on Prove It!`,
+        desc: `Name the map, the flags, the borders or the capitals — ${GEO_COUNT} boards, each with its own leaderboard and one overall ranking. No sign-up, just click and play.`,
+        kind: "geo", facts: {},
+        search: "?geo=1",
+      });
+    } else if (room) {
+      preview({
+        title: sharedBy ? `⚡ ${sharedBy} wants to play you on Prove It!` : `⚡ Join my Prove It! room · ${room}`,
+        desc: `Head-to-head: brag how many you can name, then back it up against the clock — or call the bluff. Room code ${room}. No sign-up, just click and play.`,
+        kind: "room", facts: { code: room, by: sharedBy },
+        search: `?room=${encodeURIComponent(room)}${sharedBy ? `&by=${encodeURIComponent(sharedBy)}` : ""}`,
+      });
     }
+
     let template;
     try { template = fs.readFileSync(path.join(__dirname, "..", "templates", "challenge.html"), "utf8"); } catch (e) { return next(); }
     res.set("content-type", "text/html").set("cache-control", "no-cache").send(render(template, vars));

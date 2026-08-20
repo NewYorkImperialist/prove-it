@@ -3,8 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<!-- Share-link stub. The server rewrites og:title/og:description/<title> per ?id= (dynamic
-     social preview for crawlers). Real browsers are redirected into the app at /?id=.
+<!-- Share-link stub. The server rewrites og:title/og:description/og:image/<title> per share shape
+     — ?id= (a challenge or the daily), ?geo= (a geography board), ?room= (a multiplayer invite) —
+     because crawlers don't run JS, so the meta tags are all they ever see. Real browsers DO run the
+     script at the bottom and are bounced into the app carrying the same query string.
      All values below are placeholders filled in by routes/challenge.js from site-config.js
      — edit there, not here. -->
 <title>{{TITLE}}</title>
@@ -14,11 +16,17 @@
 <meta property="og:site_name" content="{{OG_SITE_NAME}}">
 <meta property="og:title" content="{{OG_TITLE}}">
 <meta property="og:description" content="{{OG_DESCRIPTION}}">
+<meta property="og:url" content="{{OG_URL}}">
 <meta property="og:image" content="{{OG_IMAGE}}">
 <meta property="og:image:width" content="{{OG_IMAGE_WIDTH}}">
 <meta property="og:image:height" content="{{OG_IMAGE_HEIGHT}}">
+<meta property="og:image:alt" content="{{OG_IMAGE_ALT}}">
 <meta name="twitter:image" content="{{OG_IMAGE}}">
 <meta name="twitter:card" content="summary_large_image">
+<!-- Twitter reads og:title/og:description when these are absent, but Discord does not fall back
+     the same way for the summary_large_image card, so both are spelled out rather than inherited. -->
+<meta name="twitter:title" content="{{TWITTER_TITLE}}">
+<meta name="twitter:description" content="{{TWITTER_DESCRIPTION}}">
 <meta name="theme-color" content="{{THEME_COLOR}}">
 <script>location.replace("/" + (location.search || ""));</script>
 </head>

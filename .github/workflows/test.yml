@@ -20,3 +20,14 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build # the client bundle has to compile too
+      # Browser tests, last: they run against the production build above, and the rest of the
+      # suite has no DOM at all — which is how a whole screen once shipped having never been
+      # rendered. CI needs its own Chromium; the dev container already has one.
+      - run: npx playwright install --with-deps chromium
+      - run: npx playwright test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-failures
+          path: test-results/
+          retention-days: 7

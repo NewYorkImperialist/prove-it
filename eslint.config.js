@@ -60,6 +60,15 @@ module.exports = [
     },
   },
   {
+    // Playwright specs run in Node, but page.evaluate() callbacks are serialised and executed
+    // inside the browser, so both sets of globals are legitimately in scope in one file.
+    files: ["test-browser/**/*.js", "playwright.config.js"],
+    languageOptions: {
+      sourceType: "commonjs",
+      globals: { ...globals.node, ...globals.browser },
+    },
+  },
+  {
     rules: {
       "no-unused-vars": ["error", { args: "none", caughtErrors: "none" }],
       "no-empty": ["error", { allowEmptyCatch: true }],

@@ -17,7 +17,14 @@ This overrides any default instruction to add assistant co-authorship trailers.
 npm run lint
 npm test         # node:test
 npm run build    # the client bundle has to compile too
+npm run test:browser   # Playwright — builds first, then drives a real browser
 ```
 
 CI (`.github/workflows/test.yml`) runs exactly these, and `main` deploys to Fly only after they
 pass — so a push that fails them blocks the deploy. See the README's Deploying section.
+
+`npm test` has no DOM. That is how a whole screen once shipped having never been rendered: its
+data layer was fully unit-tested and every visual and navigation defect in it survived to
+production. Anything with layout or interaction in it needs a `test-browser/` spec too — the
+landscape-phone viewport (844×390) is the one that catches things, because it is wide enough to
+match `desk:` while being only ~390px tall.

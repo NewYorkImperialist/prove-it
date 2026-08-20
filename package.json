@@ -1,14 +1,15 @@
 {
   "name": "prove-it",
   "version": "1.0.0",
-  "description": "Prove It! — multiplayer server (Next.js app + Socket.IO realtime layer on one port)",
+  "description": "Prove It! \u2014 multiplayer server (Next.js app + Socket.IO realtime layer on one port)",
   "main": "server/index.js",
   "scripts": {
     "dev": "node server/index.js",
     "build": "next build",
     "start": "NODE_ENV=production node server/index.js",
     "test": "node --test",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test:browser": "next build && playwright test"
   },
   "license": "MIT",
   "dependencies": {
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.62.1",
     "@tailwindcss/postcss": "^4.3.3",
     "eslint": "^10.8.0",
     "globals": "^17.8.0",

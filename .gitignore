@@ -5,3 +5,7 @@ next-env.d.ts
 
 # UI mockups / design tests — local + Fly only, never on GitHub
 mockup-*.html
+
+# Playwright's own output (the specs themselves live in test-browser/ and ARE tracked)
+test-results/
+playwright-report/

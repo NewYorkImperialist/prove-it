@@ -44,7 +44,10 @@ module.exports = [
       sourceType: "module",
       ecmaVersion: "latest",
       parserOptions: { ecmaFeatures: { jsx: true } },
-      globals: globals.browser,
+      // process is a build-time read here, not a browser global: Next inlines NEXT_PUBLIC_* into
+      // the bundle, so `process.env.NEXT_PUBLIC_…` never survives to the client. Declaring it once
+      // beats an inline /* global process */ in every file that reads one.
+      globals: { ...globals.browser, process: "readonly" },
     },
     rules: {
       "jsx/jsx-uses-vars": "error",

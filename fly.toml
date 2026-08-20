@@ -3,15 +3,21 @@ app = "proveit"
 primary_region = "ewr"
 
 [build]
+  # The Cloudflare Web Analytics token is a BUILD-time value, not a runtime secret: Next inlines
+  # NEXT_PUBLIC_* into the client bundle, so `fly secrets set` can't reach it. Pass it to the image
+  # build instead — `fly deploy --build-arg NEXT_PUBLIC_CF_BEACON_TOKEN=<token>` (the Dockerfile has
+  # to declare that ARG before `npm run build`). Left out, app/layout.jsx renders no beacon at all,
+  # so a fork of this repo reports nothing to anyone's account.
 
 [http_service]
   internal_port = 3000
   force_https = true
   # always-on (no cold start) — the machine stays up so the admin board & first player don't wait on a boot.
   # to go back to scale-to-zero (~free, ~1-3s cold start), set auto_stop_machines = "stop" and min_machines_running = 0.
-  # NOTE: the server's automatic cost guard (server.js) flips these two settings itself at runtime via the
-  # Fly Machines API once projected spend crosses $4/mo — see FLY_COST in server.js. Requires the FLY_API_TOKEN
-  # secret (fly secrets set FLY_API_TOKEN=$(fly tokens create deploy)); the values below are just the deploy-time default.
+  # NOTE: the server's automatic cost guard flips these two settings itself at runtime via the Fly Machines
+  # API once projected spend crosses $4/mo — the thresholds and the projection are FLY_COST in
+  # lib/cost-guard.js (server.js only wires the guard up). Requires the FLY_API_TOKEN secret
+  # (fly secrets set FLY_API_TOKEN=$(fly tokens create deploy)); the values below are just the deploy-time default.
   auto_stop_machines = "off"
   auto_start_machines = true
   min_machines_running = 1

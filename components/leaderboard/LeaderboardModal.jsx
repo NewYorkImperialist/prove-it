@@ -58,9 +58,12 @@ export default function LeaderboardModal({ onClose, visitorId }) {
     };
   }, [tab, today]);
 
+  // The category tab's picker only offers the geography categories that HAVE a board (geoBoardCats
+  // — 13 of the 23), so it can't claim a board "per category": counting the ones on offer keeps the
+  // promise the size of the picker even as categories come and go.
   const title =
     tab === "alltime" ? "Highest daily score, all time"
-    : tab === "cat" ? "All-time best per category"
+    : tab === "cat" ? `All-time best · ${geoCats.length} geography boards`
     : tab === "goat" ? "Geography GOAT · every category, ranked"
     : today && today.date ? `Today's puzzle · ${today.date}`
     : "";

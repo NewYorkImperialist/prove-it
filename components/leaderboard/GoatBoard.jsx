@@ -5,6 +5,8 @@ import { LbTable, LbRow, LbCell, LbName, LbTotal, LbNote } from "./table";
 
 // One overall geography ranking. Points reward BOTH volume and speed, summed across every
 // geography category, so the top spot can't be taken with a single fast fluke or a slow grind.
+// Solo runs only, like the per-category boards: stats.js's geoGoat filters mode='solo', so daily
+// and shared-link geography runs contribute nothing — the note below promises no more than that.
 export default function GoatBoard({ visitorId }) {
   const [state, setState] = useState({ loading: true });
 
@@ -40,7 +42,8 @@ export default function GoatBoard({ visitorId }) {
         })}
       </LbTable>
       <LbNote>
-        Points across <b>every</b> geography category: each answer scores, ×a speed bonus (up to 2× fast, ½× slow) when you clear them all. Name more, across more, faster.
+        Points from your <b>solo</b> runs across every geography category (daily and shared-link plays don&apos;t count): each answer
+        scores, ×a speed bonus (up to 2× fast, ½× slow) when you clear them all. Name more, across more, faster.
       </LbNote>
     </>
   );

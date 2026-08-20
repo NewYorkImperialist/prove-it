@@ -24,6 +24,10 @@
  *   • Aliases let "cr7" / "ronaldo" / "cristiano ronaldo" all match one player.
  *   • Matching is case-, space-, and accent-insensitive ("mbappe" matches "Mbappé"),
  *     so you usually don't need plain-text aliases for accents.
+ *   • Punctuation is NOT ignored: "-", "." and "'" survive normalization, so a name carrying
+ *     any of them needs its punctuation-free spelling as an alias too. Without one, "Guinea
+ *     Bissau" / "St. Lucia" land a single edit away from the real answer, so solo's near-miss
+ *     hint loops "almost — check your spelling" forever and the guess never counts.
  *
  * OPTIONAL per-category flag:
  *   • exact: true  → this is a complete, finite list (e.g. US States). On an
@@ -286,7 +290,7 @@ const CATEGORY_GROUPS = {
     { name: "European Soccer Clubs", items: [
       ["Real Madrid","real madrid","madrid"], ["Barcelona","barcelona","barca","fc barcelona"], ["Manchester United","manchester united","man united","man utd"],
       ["Manchester City","manchester city","man city"], ["Liverpool","liverpool","lfc"], ["Chelsea","chelsea","cfc"], ["Arsenal","arsenal"],
-      ["Tottenham","tottenham","spurs","tottenham hotspur"], ["Bayern Munich","bayern munich","bayern"], ["Borussia Dortmund","borussia dortmund","dortmund","bvb"],
+      ["Tottenham","tottenham","spurs","tottenham hotspur"], ["Bayern Munich","bayern munich","bayern munchen","bayern"], ["Borussia Dortmund","borussia dortmund","dortmund","bvb"],
       ["Juventus","juventus","juve"], ["AC Milan","ac milan","milan"], ["Inter Milan","inter milan","inter","internazionale"], ["Napoli","napoli"], ["AS Roma","as roma","roma"],
       ["Paris Saint-Germain","paris saint-germain","psg","paris saint germain"], ["Atletico Madrid","atletico madrid","atletico"], ["Sevilla","sevilla"], ["Ajax","ajax"],
       ["Porto","porto","fc porto"], ["Benfica","benfica"], ["Celtic","celtic"], ["RB Leipzig","rb leipzig","leipzig"], ["Bayer Leverkusen","bayer leverkusen","leverkusen"],
@@ -363,25 +367,26 @@ const CATEGORY_GROUPS = {
       "Benin", "Bhutan", "Bolivia", ["Bosnia and Herzegovina","bosnia and herzegovina","bosnia"], "Botswana", "Brazil", "Brunei",
       "Bulgaria", "Burkina Faso", "Burundi", ["Cabo Verde","cabo verde","cape verde"], "Cambodia", "Cameroon", "Canada",
       ["Central African Republic","central african republic","car"], "Chad", "Chile", "China", "Colombia", "Comoros",
-      ["Republic of the Congo","republic of the congo","congo","congo-brazzaville"], "Costa Rica", "Croatia", "Cuba", "Cyprus",
-      ["Czechia","czechia","czech republic"], ["Democratic Republic of the Congo","democratic republic of the congo","drc","dr congo","congo-kinshasa"],
+      ["Republic of the Congo","republic of the congo","congo","congo-brazzaville","congo brazzaville"], "Costa Rica", "Croatia", "Cuba", "Cyprus",
+      ["Czechia","czechia","czech republic"], ["Democratic Republic of the Congo","democratic republic of the congo","drc","dr congo","congo-kinshasa","congo kinshasa"],
       "Denmark", "Djibouti", "Dominica", ["Dominican Republic","dominican republic"], "Ecuador", "Egypt", "El Salvador",
       "Equatorial Guinea", "Eritrea", "Estonia", ["Eswatini","eswatini","swaziland"], "Ethiopia", "Fiji", "Finland", "France", "Gabon",
-      "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", "Guinea-Bissau", "Guyana", "Haiti",
+      "Gambia", "Georgia", "Germany", "Ghana", "Greece", "Grenada", "Guatemala", "Guinea", ["Guinea-Bissau","guinea-bissau","guinea bissau"], "Guyana", "Haiti",
       "Honduras", "Hungary", "Iceland", "India", "Indonesia", "Iran", "Iraq", "Ireland", "Israel", "Italy",
-      ["Ivory Coast","ivory coast","cote d'ivoire","cote divoire"], "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati",
+      ["Ivory Coast","ivory coast","cote d'ivoire","cote divoire","cote d ivoire"], "Jamaica", "Japan", "Jordan", "Kazakhstan", "Kenya", "Kiribati",
       "Kosovo", "Kuwait", "Kyrgyzstan", "Laos", "Latvia", "Lebanon", "Lesotho", "Liberia", "Libya", ["Liechtenstein","liechtenstein","listhenstein","listenshtein","lictenshtein"], "Lithuania",
       "Luxembourg", "Madagascar", "Malawi", "Malaysia", "Maldives", "Mali", "Malta", "Marshall Islands", "Mauritania", "Mauritius",
       "Mexico", "Micronesia", "Moldova", "Monaco", "Mongolia", "Montenegro", "Morocco", "Mozambique", ["Myanmar","myanmar","burma"],
       "Namibia", "Nauru", "Nepal", "Netherlands", "New Zealand", "Nicaragua", "Niger", "Nigeria", ["North Korea","north korea","dprk"],
       ["North Macedonia","north macedonia","macedonia"], "Norway", "Oman", "Pakistan", "Palau", "Palestine", "Panama",
       ["Papua New Guinea","papua new guinea"], "Paraguay", "Peru", "Philippines", "Poland", "Portugal", "Qatar", "Romania",
-      ["Russia","russia","russian federation"], "Rwanda", ["Saint Kitts and Nevis","saint kitts and nevis","st kitts and nevis","st kitts"],
-      ["Saint Lucia","saint lucia","st lucia"], ["Saint Vincent and the Grenadines","saint vincent and the grenadines","st vincent"],
+      ["Russia","russia","russian federation"], "Rwanda", ["Saint Kitts and Nevis","saint kitts and nevis","st kitts and nevis","st. kitts and nevis","st kitts","st. kitts"],
+      ["Saint Lucia","saint lucia","st lucia","st. lucia"],
+      ["Saint Vincent and the Grenadines","saint vincent and the grenadines","st vincent and the grenadines","st. vincent and the grenadines","st vincent","st. vincent"],
       "Samoa", "San Marino", ["Sao Tome and Principe","sao tome and principe","sao tome"], ["Saudi Arabia","saudi arabia","saudi"],
       "Senegal", "Serbia", "Seychelles", "Sierra Leone", "Singapore", "Slovakia", "Slovenia", "Solomon Islands", "Somalia",
       ["South Africa","south africa"], ["South Korea","south korea","korea"], "South Sudan", "Spain", "Sri Lanka", "Sudan", "Suriname",
-      "Sweden", "Switzerland", "Syria", "Taiwan", "Tajikistan", "Tanzania", "Thailand", ["Timor-Leste","timor-leste","east timor"],
+      "Sweden", "Switzerland", "Syria", "Taiwan", "Tajikistan", "Tanzania", "Thailand", ["Timor-Leste","timor-leste","timor leste","east timor"],
       "Togo", "Tonga", ["Trinidad and Tobago","trinidad and tobago","trinidad"], "Tunisia", ["Turkey","turkey","turkiye"], "Turkmenistan",
       "Tuvalu", "Uganda", "Ukraine", ["United Arab Emirates","united arab emirates","uae"],
       ["United Kingdom","united kingdom","uk","britain","great britain","england","scotland","wales"], ["United States","united states","usa","us","america","united states of america"],
@@ -417,7 +422,7 @@ const CATEGORY_GROUPS = {
     ]},
     { name: "US State Capitals", exact: true, items: [
       "Sacramento","Austin","Albany","Tallahassee","Springfield","Columbus","Atlanta","Denver","Boston","Phoenix",
-      "Nashville","Raleigh","Madison","Lansing", ["Saint Paul","saint paul","st paul"], "Jefferson City",
+      "Nashville","Raleigh","Madison","Lansing", ["Saint Paul","saint paul","st paul","st. paul"], "Jefferson City",
       "Oklahoma City","Salt Lake City","Carson City","Boise","Helena","Cheyenne","Bismarck","Pierre","Topeka",
       "Lincoln","Des Moines","Indianapolis","Frankfort","Montgomery","Jackson","Baton Rouge","Little Rock",
       "Richmond","Annapolis","Dover","Trenton","Harrisburg","Hartford","Providence","Augusta","Concord",
@@ -477,14 +482,19 @@ const CATEGORY_GROUPS = {
       "Cameroon", ["Central African Republic","central african republic","car"], "Chad","Comoros",
       ["Republic of the Congo","republic of the congo","congo-brazzaville","congo brazzaville"],
       ["DR Congo","dr congo","democratic republic of the congo","democratic republic of congo","drc","rdc","congo-kinshasa","congo kinshasa"],
-      ["Côte d'Ivoire","cote d'ivoire","cote divoire","ivory coast"], "Djibouti","Egypt","Equatorial Guinea","Eritrea",
+      ["Côte d'Ivoire","cote d'ivoire","cote divoire","cote d ivoire","ivory coast"], "Djibouti","Egypt","Equatorial Guinea","Eritrea",
       ["Eswatini","eswatini","swaziland"], "Ethiopia","Gabon", ["The Gambia","the gambia","gambia"], "Ghana","Guinea",
       ["Guinea-Bissau","guinea-bissau","guinea bissau"], "Kenya","Lesotho","Liberia","Libya","Madagascar","Malawi","Mali",
       "Mauritania","Mauritius","Morocco","Mozambique","Namibia","Niger","Nigeria","Rwanda",
       ["São Tomé and Príncipe","sao tome and principe","sao tome"], "Senegal","Seychelles","Sierra Leone","Somalia",
       "South Africa","South Sudan","Sudan","Tanzania","Togo","Tunisia","Uganda","Zambia","Zimbabwe",
     ]},
-    { name: "Countries in South America", exact: true, items: [
+    // NOT `exact`, unlike its sibling continents: the list keeps French Guiana (an overseas
+    // department of France, so not a country) because players name it and the map shows it — but
+    // that makes 13 the wrong number to say out loud, and dropping it to say "12" would mark a
+    // correct-looking answer wrong. Without the flag the over-claim cap still holds; the game
+    // just declines to assert a count it can't defend.
+    { name: "Countries in South America", items: [
       "Brazil","Argentina","Chile","Peru","Colombia","Venezuela","Ecuador","Bolivia","Paraguay","Uruguay","Guyana","Suriname",
       ["French Guiana","french guiana"],
     ]},
@@ -502,7 +512,7 @@ const CATEGORY_GROUPS = {
     ]},
     { name: "Famous Mountains", items: [
       ["Mount Everest","everest","mount everest"], "K2","Kangchenjunga", ["Kilimanjaro","kilimanjaro","mount kilimanjaro"],
-      "Mont Blanc","Matterhorn", ["Denali","denali","mount mckinley"], ["Fuji","fuji","mount fuji","mt fuji"],
+      "Mont Blanc","Matterhorn", ["Denali","denali","mount mckinley"], ["Fuji","fuji","mount fuji","mt fuji","mt. fuji"],
       "Aconcagua","Annapurna","Nanga Parbat","Eiger", ["Mount Rainier","mount rainier","rainier"], ["Mount Etna","mount etna","etna"],
       ["Mount Vesuvius","mount vesuvius","vesuvius"], ["Mount Olympus","mount olympus","olympus"],
       ["Mount Elbrus","mount elbrus","elbrus"], ["Mount Kosciuszko","mount kosciuszko","kosciuszko"], "Pikes Peak",
@@ -537,8 +547,8 @@ const CATEGORY_GROUPS = {
       "Guatemala","Belize",["El Salvador","el salvador"],"Honduras","Nicaragua",["Costa Rica","costa rica"],"Panama",
       "Cuba","Jamaica","Haiti",["Dominican Republic","dominican republic","dr"],["Bahamas","the bahamas"],
       "Barbados",["Antigua and Barbuda","antigua"],"Dominica","Grenada",
-      ["Saint Kitts and Nevis","st kitts and nevis","st kitts"],["Saint Lucia","st lucia"],
-      ["Saint Vincent and the Grenadines","st vincent"],["Trinidad and Tobago","trinidad"],
+      ["Saint Kitts and Nevis","st kitts and nevis","st. kitts and nevis","st kitts","st. kitts"],["Saint Lucia","st lucia","st. lucia"],
+      ["Saint Vincent and the Grenadines","st vincent and the grenadines","st. vincent and the grenadines","st vincent","st. vincent"],["Trinidad and Tobago","trinidad"],
     ]},
     { name: "Countries in Central America", exact: true, items: [
       "Guatemala","Belize","Honduras",["El Salvador","el salvador"],"Nicaragua",["Costa Rica","costa rica"],"Panama",
@@ -560,7 +570,7 @@ const CATEGORY_GROUPS = {
       ["Mount Rushmore","mount rushmore","rushmore"], ["Walt Disney World","walt disney world","disney world"], "Disneyland", "Yellowstone", ["Niagara Falls","niagara falls","niagara"],
       ["Las Vegas Strip","las vegas strip","the strip"], ["Empire State Building","empire state building"], ["Hollywood Sign","hollywood sign","hollywood"], "Yosemite",
       ["White House","white house"], ["Lincoln Memorial","lincoln memorial"], ["Washington Monument","washington monument"], ["Central Park","central park"], ["Brooklyn Bridge","brooklyn bridge"],
-      ["Space Needle","space needle"], "Alcatraz", ["Hoover Dam","hoover dam"], ["Liberty Bell","liberty bell"], ["Gateway Arch","gateway arch","st louis arch"], ["French Quarter","french quarter"],
+      ["Space Needle","space needle"], "Alcatraz", ["Hoover Dam","hoover dam"], ["Liberty Bell","liberty bell"], ["Gateway Arch","gateway arch","st louis arch","st. louis arch"], ["French Quarter","french quarter"],
       ["National Mall","national mall"], ["Universal Studios","universal studios"], ["Mall of America","mall of america"], ["Willis Tower","willis tower","sears tower"], ["One World Trade Center","one world trade center","freedom tower"],
       ["Pearl Harbor","pearl harbor"], "Graceland", ["Kennedy Space Center","kennedy space center"], "Zion", ["Death Valley","death valley"], ["Bourbon Street","bourbon street"],
     ]},
@@ -885,10 +895,10 @@ const CATEGORY_GROUPS = {
       "Bahrain", "Qatar", ["United Arab Emirates","united arab emirates","uae"], ["Papua New Guinea","papua new guinea"], "Gibraltar",
       ["Yemen","yemen","aden"], "Somaliland", ["Eswatini","eswatini","swaziland"], "Lesotho", ["Solomon Islands","solomon islands"],
       "Tuvalu", "Vanuatu", "Grenada",
-      ["Saint Lucia","saint lucia","st lucia"],
-      ["Saint Vincent and the Grenadines","saint vincent and the grenadines","st vincent"],
+      ["Saint Lucia","saint lucia","st lucia","st. lucia"],
+      ["Saint Vincent and the Grenadines","saint vincent and the grenadines","st vincent and the grenadines","st. vincent and the grenadines","st vincent","st. vincent"],
       ["Antigua and Barbuda","antigua and barbuda","antigua"], "Dominica",
-      ["Saint Kitts and Nevis","saint kitts and nevis","st kitts"], "Kiribati", "Nauru", "Seychelles", "Mauritius",
+      ["Saint Kitts and Nevis","saint kitts and nevis","st kitts and nevis","st. kitts and nevis","st kitts","st. kitts"], "Kiribati", "Nauru", "Seychelles", "Mauritius",
       "Maldives",
     ]},
     { name: "People in the Epstein Files", items: [

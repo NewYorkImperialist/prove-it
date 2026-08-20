@@ -1,6 +1,8 @@
 "use strict";
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("fs");
+const path = require("path");
 const CATEGORY_GROUPS = require("../data/categories.js");
 
 // Mirrors game-engine.js's norm() exactly (not exported, so duplicated here) — this is what
@@ -114,5 +116,72 @@ describe("category content structure", () => {
         if (cat.exact) assert.ok(cat.items.length >= 2, `${gname}/${cat.name}: exact category with under 2 items looks wrong`);
       }
     }
+  });
+});
+
+// solo's norm() (lib/solo-matching.js) keeps "-", "." and "'", so a punctuation-free spelling of a
+// punctuated answer is one edit away from it: nearMiss() answers "almost — check your spelling"
+// and keeps answering that forever, with the count never moving. The alias is the only cure, and it
+// has to exist in EVERY category holding that answer — "guinea bissau" used to be right on
+// "Countries in Africa" and an unbreakable near-miss loop on "Countries of the World".
+describe("punctuation-free spellings are accepted wherever the answer appears", () => {
+  const SPELLINGS = [
+    ["Guinea-Bissau", ["guinea bissau"]],
+    ["Timor-Leste", ["timor leste"]],
+    ["Republic of the Congo", ["congo brazzaville"]],
+    ["Democratic Republic of the Congo", ["congo kinshasa"]],
+    ["DR Congo", ["congo kinshasa"]],
+    ["Ivory Coast", ["cote divoire", "cote d ivoire"]],
+    ["Côte d'Ivoire", ["cote divoire", "cote d ivoire"]],
+    ["Saint Lucia", ["st lucia", "st. lucia"]],
+    ["Saint Kitts and Nevis", ["st kitts", "st. kitts", "st kitts and nevis", "st. kitts and nevis"]],
+    ["Saint Vincent and the Grenadines", ["st vincent", "st. vincent", "st vincent and the grenadines", "st. vincent and the grenadines"]],
+    ["Saint Paul", ["st paul", "st. paul"]],
+  ];
+
+  for (const [display, spellings] of SPELLINGS) {
+    test(`"${display}" accepts ${spellings.map((s) => `"${s}"`).join(", ")} in every category it appears in`, () => {
+      let seen = 0;
+      for (const [gname, grp] of Object.entries(CATEGORY_GROUPS)) {
+        for (const cat of grp.cats) {
+          const item = cat.items.find((it) => norm(Array.isArray(it) ? it[0] : it) === norm(display));
+          if (!item) continue;
+          seen++;
+          const accepted = new Set((Array.isArray(item) ? item : [item]).map(norm));
+          for (const s of spellings) assert.ok(accepted.has(norm(s)), `${gname}/${cat.name}: "${display}" doesn't accept "${s}"`);
+        }
+      }
+      assert.ok(seen > 0, `"${display}" is no longer in the data — drop or rename this row`);
+    });
+  }
+});
+
+// The README quotes these totals twice as a selling point ("N categories, N verified answers").
+// Nothing regenerates them, so content grows and the numbers quietly become a lie — this recomputes
+// them from the data and holds the README to it.
+describe("the README's content figures match the data", () => {
+  const README = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
+  const groups = Object.entries(CATEGORY_GROUPS);
+  const cats = groups.reduce((n, [, g]) => n + g.cats.length, 0);
+  const answers = groups.reduce((n, [, g]) => n + g.cats.reduce((m, c) => m + c.items.length, 0), 0);
+  const soloCats = groups.filter(([, g]) => !g.defaultOff).reduce((n, [, g]) => n + g.cats.length, 0);
+
+  const quoted = (re) => {
+    const found = [...README.matchAll(re)].map((m) => Number(m[1].replace(/,/g, "")));
+    assert.ok(found.length > 0, `the README no longer quotes a figure matching ${re}`);
+    return found;
+  };
+
+  test("every category count the README quotes is the real one", () => {
+    for (const n of quoted(/([\d,]+) categories/g)) assert.equal(n, cats);
+  });
+
+  test("every answer count the README quotes is the real one", () => {
+    for (const n of quoted(/([\d,]+) verified answers/g)) assert.equal(n, answers);
+  });
+
+  test("the group and solo-playable counts the README quotes are the real ones", () => {
+    for (const n of quoted(/([\d,]+) themed groups/g)) assert.equal(n, groups.length);
+    for (const n of quoted(/([\d,]+) of them playable solo/g)) assert.equal(n, soloCats);
   });
 });

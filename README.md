@@ -9,24 +9,27 @@ You trade raises ("I can name 7"… "make it 8") until someone calls **"Prove it
 **No install, no sign-up, no ads.** Click the link, you're in a round in seconds.
 
 ## How to play
-**Multiplayer** is a bluffing duel:
+**Live Multiplayer** is a bluffing duel:
 1. You're shown a category.
 2. Declare a number — *"I can name 6."*
 3. Trade raises back and forth with your opponent.
 4. Someone calls **🗣️ Prove it!** — the claimant must name that many before the timer runs out.
 5. Back it up → you take the round. Choke → they do. First to the target score wins.
 
+**Challenge Race** is the same game with the bluffing swapped for a footrace: 2–8 players get one category at once, everyone types at the same time, and the most correct answers takes the round.
+
 **Solo** and **Daily Challenge** drop the bluffing — it's just you against the clock, naming as many as you can per category before time runs out.
 
 ## Modes
-- 👥 **Multiplayer** — create a room, share the link, and play head-to-head in real time. Friends can also **spectate** live.
+- 👥 **Live Multiplayer** — create a room, share the link, and play the bluffing duel head-to-head. Friends can also **spectate** live.
+- 🏁 **Challenge Race** — 2–8 players, one category, everyone racing at once. Clocks are **per player**, like chess: you can set a bonus increment for every correct answer, and no clock can grow past twice the base timer, so one player on a hot streak can't leave the room waiting. Play best-of-3, best-of-5 or endless; turn on **sudden death** and a tie at the top sends just the tied players into a decider; the room can throw a category away by unanimous vote; and when the last clock runs out everyone sees each other's answers and can **approve the near-misses** the matcher was too strict about. Don't want to trade room codes? **Quick Match** queues you up and drops you into a race with whoever else is waiting.
 - 🕹️ **Solo** — pick a category, or build a custom multi-round run, and race the clock alone. No opponent needed.
 - 📅 **Daily Challenge** — the same puzzle for everyone each day, with a shared leaderboard. Share your score and challenge friends to beat it.
 
 ## Why it hits different
 - **The bluff is the game.** Most naming games end when you run out of answers. Here, the tension is deciding *when to stop raising* — pure "chicken" energy, not trivia recall.
-- **250+ categories, ~11,000 verified answers** — deep enough that regulars still get surprised, wide enough that non-nerds can hang.
-- **Real-time, not turn-based.** Raises and calls happen live over Socket.IO — no refreshing, no waiting on someone's turn.
+- **272 categories, 11,531 verified answers** — deep enough that regulars still get surprised, wide enough that non-nerds can hang.
+- **Live, not laggy.** Raises, calls, answers and chat land the instant they're sent, over Socket.IO — nothing to refresh, and nothing to install. (The duel takes turns on purpose — that's where the bluffing lives, and letting your 10s turn expire calls **Prove it!** for you, so nobody can stall it out. The race doesn't take turns at all: everyone types at once.)
 - **A few secrets** hidden in the category list that we're not going to spoil here.
 
 ## Share it
@@ -37,7 +40,7 @@ This is built to be passed around — drop the link in your group chat, Discord,
 To play a friend specifically: open the site, hit **Create a room**, and share the room link/code — or copy a `?room=CODE` invite link straight from the lobby.
 
 ## Content
-**250+ categories, ~11,000 verified answers**, spanning Sports, Geography, History, Entertainment, Food, Animals, Music, Brands, Computer Science, Math, Science, Art, Mythology, Games & Puzzles, and Pop Culture (yes, including memes and Italian brainrot).
+**272 categories, 11,531 verified answers** across 17 themed groups, 268 of them playable solo — spanning Sports, Geography, History, Entertainment, Food, Animals, Music, Brands, Computer Science, Math, Science, Art, Mythology, Games & Puzzles, American Innovations, and Pop Culture (yes, including memes and Italian brainrot).
 
 Want to add your own? Edit **`data/categories.js`** — each entry is `"Name"` or `["Canonical","alias", …]` (aliases all match but count once). The header comment in that file explains the format; no code changes needed.
 
@@ -55,6 +58,7 @@ game-engine.js              the multiplayer duel
 race-engine.js              the live Challenge Race
 rooms.js, matchmaking.js    lobbies, reconnection, quick match
 routes/, stats.js           JSON API, owner dashboard, analytics
+lib/cost-guard.js           the Fly spend projection + the two automatic caps
 ```
 
 ```bash
@@ -73,10 +77,23 @@ and the client build all pass. You can also trigger it by hand from the repo's *
 It needs one repository secret, set once: `fly tokens create deploy`, then save the output (the
 `FlyV1 …` string) under **Settings → Secrets and variables → Actions** as **`FLY_API_TOKEN`**.
 The running server wants that same token as a *Fly* secret too — that's what lets its cost guard
-scale the machine down; see the note in `fly.toml`.
+scale the machine down; see the note in `fly.toml`. The dollar thresholds and the projection maths
+live in **`lib/cost-guard.js`** (`FLY_COST`) — `server.js` only wires the guard up.
 
 ```bash
 fly deploy      # or deploy straight from your machine, bypassing CI
 ```
+
+### Environment
+Nothing is required — with no environment at all the game runs, and the parts that need a database
+just switch themselves off.
+
+| variable | effect when set |
+| --- | --- |
+| `TURSO_URL`, `TURSO_TOKEN` | turns on persistence: challenge links, the daily, every leaderboard. Without them those endpoints answer "not configured". |
+| `OWNER_KEY` | unlocks the owner-only `/admin` dashboard and the 👑 crown on your own scores. |
+| `FLY_API_TOKEN` | lets the cost guard scale the machine down by itself (see above). |
+| `NEXT_PUBLIC_CF_BEACON_TOKEN` | loads the Cloudflare Web Analytics beacon. **Unset, no analytics script is served at all** — so a fork reports nothing to anybody. It's read at build time (Next inlines `NEXT_PUBLIC_*`), so it belongs in the build environment, not in `fly secrets`. |
+| `PORT` | the port to listen on (default 3000). |
 
 — Built by [NewYorkImperialist](https://github.com/NewYorkImperialist)

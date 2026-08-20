@@ -3,7 +3,7 @@ const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 const express = require("express");
 const request = require("supertest");
-const { createChallengeRouter } = require("../routes/challenge.js");
+const { createChallengeRouter, challengePreview } = require("../routes/challenge.js");
 
 // analytics.enabled() is false throughout (no TURSO_URL in the test environment), so these
 // hit the same "persistence not configured" paths verified manually against the real server —
@@ -59,5 +59,54 @@ describe("routes/challenge.js", () => {
     assert.equal(res.status, 200);
     assert.match(res.headers["content-type"], /text\/html/);
     assert.equal(res.headers["cache-control"], "no-cache");
+  });
+});
+
+// The share-link preview is what a crawler puts in a group chat, and solo's "Quick play" /
+// "Pick a category → Play" both build ONE-round challenges — so the singular cases below are the
+// ones most links actually hit.
+describe("challengePreview (the crawler-facing share copy)", () => {
+  test("a one-round challenge says round, not rounds", () => {
+    const { desc } = challengePreview({ by: "Jayden", type: "custom", rounds: ["US States"], results: [] });
+    assert.match(desc, /^1 round\. /);
+  });
+
+  test("a multi-round challenge still says rounds", () => {
+    const { desc } = challengePreview({ by: "Jayden", type: "custom", rounds: ["US States", "Countries in Europe"], results: [] });
+    assert.match(desc, /^2 rounds\. /);
+  });
+
+  test("a genre challenge pluralizes the same way", () => {
+    assert.match(challengePreview({ by: "Jayden", type: "genre", genre: "Geography", rounds: ["US States"], results: [] }).desc, /^1 round of Geography\. /);
+    assert.match(challengePreview({ by: "Jayden", type: "genre", genre: "Geography", rounds: ["US States", "World Capitals"], results: [] }).desc, /^2 rounds of Geography\. /);
+  });
+
+  test("a score of 1 doesn't get glued to a plural category name", () => {
+    const { title } = challengePreview({ by: "Jayden", type: "custom", rounds: ["US States"], results: [{ name: "Jayden", scores: [1] }] });
+    assert.equal(title, "⚡ Jayden says you can't name more than 1 answer in US States");
+  });
+
+  test("a score above 1 reads as a count of the category", () => {
+    const { title } = challengePreview({ by: "Jayden", type: "custom", rounds: ["US States"], results: [{ name: "Jayden", scores: [17] }] });
+    assert.equal(title, "⚡ Jayden says you can't name more than 17 US States");
+  });
+
+  test("with no scores on the board yet it falls back to the plain challenge title", () => {
+    const { title } = challengePreview({ by: "A friend", type: "custom", rounds: ["US States"], results: [] });
+    assert.equal(title, "⚡ A friend challenged you on Prove It!");
+  });
+
+  test("the creator's own best wins over a stranger's higher score", () => {
+    const { title } = challengePreview({
+      by: "Jayden", type: "custom", rounds: ["US States", "World Capitals"],
+      results: [{ name: "sam", scores: [50, 50] }, { name: "jayden", scores: [4, 9] }],
+    });
+    assert.equal(title, "⚡ Jayden says you can't name more than 9 World Capitals");
+  });
+
+  test("missing rounds/results don't throw — a half-written challenge row still renders a preview", () => {
+    const { title, desc } = challengePreview({ by: "A friend" });
+    assert.equal(title, "⚡ A friend challenged you on Prove It!");
+    assert.match(desc, /^0 rounds\. /);
   });
 });

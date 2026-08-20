@@ -3,6 +3,11 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+# Cloudflare Analytics token. Next inlines NEXT_PUBLIC_* at build time, so this has to arrive as a
+# build arg — a runtime env var would come too late for a prerendered page. Unset is fine and is
+# what a fork gets: app/layout.jsx then renders no beacon script at all.
+ARG NEXT_PUBLIC_CF_BEACON_TOKEN=""
+ENV NEXT_PUBLIC_CF_BEACON_TOKEN=$NEXT_PUBLIC_CF_BEACON_TOKEN
 COPY package*.json ./
 RUN npm ci
 COPY . .

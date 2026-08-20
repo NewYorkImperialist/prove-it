@@ -32,6 +32,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
       # --remote-only builds the image on Fly's builders, so this job needs no Docker setup.
-      - run: flyctl deploy --remote-only
+      # CF_BEACON_TOKEN is optional: unset (as in any fork) simply ships no analytics beacon.
+      # It's a --build-arg rather than an env var because Next inlines NEXT_PUBLIC_* while building.
+      - run: flyctl deploy --remote-only --build-arg NEXT_PUBLIC_CF_BEACON_TOKEN="$CF_BEACON_TOKEN"
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          CF_BEACON_TOKEN: ${{ secrets.CF_BEACON_TOKEN }}

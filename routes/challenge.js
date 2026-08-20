@@ -36,6 +36,36 @@ function dailyRounds(date, n = 3) {
 const DAILY_TIMER = 30;
 const dailyId = (date) => "d-" + date.replace(/-/g, ""); // e.g. d-20260624 (10 chars, within the 12-char id slice)
 
+// The title/description crawlers (Discord/iMessage/Reddit/Twitter) show for a share link. Pure, so
+// the copy is testable without a database — every solo "Quick play" and "Pick a category → Play" run
+// is a ONE-round challenge, and its link is the most-shared artifact in the game, so the singular
+// cases here are the common ones, not the edge ones: "1 rounds" and "more than 1 US States" were
+// both reachable from the button most players press first.
+function challengePreview({ by, type, genre, rounds, results }) {
+  rounds = rounds || [];
+  results = results || [];
+  const n = rounds.length;
+  const roundWord = `${n} round${n === 1 ? "" : "s"}`;
+  const what = type === "genre" && genre ? `${roundWord} of ${genre}` : roundWord;
+  // The challenger's best single-round score + that round's category ("17 Countries in Europe").
+  // Prefer the creator's own runs; fall back to everyone's if their name isn't on the board yet.
+  const mine = results.filter((r) => (r.name || "").trim().toLowerCase() === String(by).trim().toLowerCase());
+  const pool = mine.length ? mine : results;
+  let best = null; // { score, idx }
+  for (const r of pool) (r.scores || []).forEach((s, i) => { s = Number(s) || 0; if (s > 0 && (!best || s > best.score)) best = { score: s, idx: i }; });
+  // Category names are plural ("US States"), so a score of 1 can't be dropped straight in front of
+  // one — it needs a counted noun of its own instead.
+  const brag = best && rounds[best.idx]
+    ? (best.score === 1
+      ? `⚡ ${by} says you can't name more than 1 answer in ${rounds[best.idx]}`
+      : `⚡ ${by} says you can't name more than ${best.score} ${rounds[best.idx]}`)
+    : `⚡ ${by} challenged you on Prove It!`;
+  return {
+    title: brag,
+    desc: `${what}. Name as many as you can before the clock runs out, then try to beat the leaderboard. No sign-up, just click and play.`,
+  };
+}
+
 // isLockdown: the owner maintenance kill-switch, from rooms.js's createRooms() instance.
 function createChallengeRouter({ isLockdown }) {
   const router = express.Router();
@@ -172,20 +202,7 @@ function createChallengeRouter({ isLockdown }) {
         // pass their own name (?by=), and that's who "says" the challenge in the link preview.
         const rawBy = String(req.query.by || "").trim().slice(0, 24);
         const sharedBy = id.startsWith("d-") && rawBy ? cleanName(rawBy) : "";
-        const by = sharedBy || c.by_name || "A friend";
-        const rounds = c.rounds || [];
-        const nRounds = rounds.length;
-        const what = c.type === "genre" && c.genre ? `${nRounds} rounds of ${c.genre}` : `${nRounds} rounds`;
-        // Pick the challenger's best single-round score + that round's category ("17 Countries in Europe").
-        // Prefer the creator's own runs; fall back to everyone's if their name isn't on the board yet.
-        const mine = results.filter((r) => (r.name || "").trim().toLowerCase() === by.trim().toLowerCase());
-        const pool = mine.length ? mine : results;
-        let best = null; // { score, idx }
-        for (const r of pool) (r.scores || []).forEach((s, i) => { s = Number(s) || 0; if (s > 0 && (!best || s > best.score)) best = { score: s, idx: i }; });
-        const title = (best && rounds[best.idx])
-          ? `⚡ ${by} says you can't name more than ${best.score} ${rounds[best.idx]}`
-          : `⚡ ${by} challenged you on Prove It!`;
-        const desc = `${what}. Name as many as you can before the clock runs out, then try to beat the leaderboard. No sign-up, just click and play.`;
+        const { title, desc } = challengePreview({ by: sharedBy || c.by_name || "A friend", type: c.type, genre: c.genre, rounds: c.rounds, results });
         vars.TITLE = vars.OG_TITLE = a(title);
         vars.DESCRIPTION = vars.OG_DESCRIPTION = a(desc);
       }
@@ -198,4 +215,4 @@ function createChallengeRouter({ isLockdown }) {
   return router;
 }
 
-module.exports = { createChallengeRouter };
+module.exports = { createChallengeRouter, challengePreview };

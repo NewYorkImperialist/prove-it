@@ -35,7 +35,7 @@ export default function ChallengeBoard({ id, visitorId, reloadKey = 0 }) {
 
   const roundHead = rounds.map((r, i) => ({ label: `R${i + 1}`, title: r }));
   // Who took each individual round — the bragging-rights line under the table.
-  const qWinners = rounds
+  const roundWinners = rounds
     .map((r, i) => {
       const w = players.find((p) => (scoresOf(p)[i] || 0) === colMax[i] && colMax[i] > 0);
       return w ? { round: i + 1, name: w.name, score: colMax[i] } : null;
@@ -66,9 +66,9 @@ export default function ChallengeBoard({ id, visitorId, reloadKey = 0 }) {
         <b>{players[0].name}</b> leads with {players[0].total} · {players.length} player{players.length > 1 ? "s" : ""}.
       </LbNote>
       <LbNote>
-        Question winners:{" "}
-        {qWinners.length
-          ? qWinners.map((w, i) => (
+        Round winners:{" "}
+        {roundWinners.length
+          ? roundWinners.map((w, i) => (
               <span key={w.round}>
                 {i ? " · " : ""}
                 <b>R{w.round}</b> {w.name} ({w.score})

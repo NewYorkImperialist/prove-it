@@ -1,6 +1,8 @@
 "use strict";
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("fs");
+const path = require("path");
 const { collapseResults, columnMax, scoresOf, wpmsOf, avgWpm } = require("../lib/leaderboard.js");
 
 describe("collapseResults", () => {
@@ -81,5 +83,45 @@ describe("avgWpm", () => {
   test("a run with no speeds averages to 0", () => {
     assert.equal(avgWpm({ wpms: [] }), 0);
     assert.equal(avgWpm({}), 0);
+  });
+});
+
+// What the boards PROMISE has to match what stats.js selects. There's no DOM in this harness, so —
+// like test/styles.test.js does for Tailwind variants — these read the components as text. The
+// failure they guard is a player being told a board is "all-time" for a run that was never eligible
+// for it: CategoryBoard is rendered to whoever just finished a shared link (mode='link') too.
+describe("the leaderboard copy doesn't over-promise", () => {
+  const read = (f) => fs.readFileSync(path.join(__dirname, "..", "components", "leaderboard", f), "utf8");
+  const STATS = fs.readFileSync(path.join(__dirname, "..", "stats.js"), "utf8");
+
+  test("stats.js still counts solo runs only — the copy below is written to that", () => {
+    assert.equal([...STATS.matchAll(/challenge_results WHERE mode='solo'/g)].length, 2,
+      "categoryLeaderboard/geoGoat changed what they select; the board copy needs to change with them");
+  });
+
+  test("CategoryBoard says whose runs the board holds", () => {
+    const src = read("CategoryBoard.jsx");
+    assert.match(src, /All-time best <b>solo<\/b> runs on/);
+    assert.match(src, /shared-link plays don&apos;t count/);
+  });
+
+  test("GoatBoard doesn't claim points from every kind of run", () => {
+    const src = read("GoatBoard.jsx");
+    assert.doesNotMatch(src, /Points across <b>every<\/b> geography category/);
+    assert.match(src, /Points from your <b>solo<\/b> runs/);
+    // The multiplier half of that sentence is accurate — it should survive any rewording.
+    assert.match(src, /up to 2× fast, ½× slow/);
+  });
+
+  test("the geography tab's title is scoped to the boards its picker offers", () => {
+    const src = read("LeaderboardModal.jsx");
+    assert.doesNotMatch(src, /"All-time best per category"/);
+    assert.match(src, /geoCats\.length\} geography boards/);
+  });
+
+  test("ChallengeBoard calls them rounds, like every other screen", () => {
+    const src = read("ChallengeBoard.jsx");
+    assert.doesNotMatch(src, /Question winners/);
+    assert.match(src, /Round winners:/);
   });
 });

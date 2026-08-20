@@ -1,12 +1,13 @@
 "use client";
 import { useState } from "react";
-import TextInput, { FieldLabel } from "@/components/ui/Field";
+import TextInput, { FieldLabel, Select } from "@/components/ui/Field";
 import { SoloButton, SoloCard, SoloSub, SoloErr, BigNumber } from "./SoloBits";
 import ChallengeBoard from "@/components/leaderboard/ChallengeBoard";
 import CategoryBoard from "@/components/leaderboard/CategoryBoard";
 import { useCopied } from "@/hooks/useCopied";
 import { useReplay } from "@/hooks/useReplay";
 import { dailyInvite } from "@/lib/browser/daily";
+import { geoChallengeCats } from "@/lib/solo-catalog";
 import * as store from "@/lib/browser/storage";
 import { cx } from "@/lib/browser/cx";
 
@@ -22,6 +23,7 @@ export default function DoneSection({ solo, onExitToMenu }) {
   const [copied, copy] = useCopied(2200);
   const [shakeTick, setShakeTick] = useState(0);
   const [shaking, endShake] = useReplay(shakeTick);
+  const [nextGeoCat, setNextGeoCat] = useState(() => geoChallengeCats()[0] || "");
 
   if (!d) return null;
   const url = solo.challengeUrl();
@@ -87,13 +89,33 @@ export default function DoneSection({ solo, onExitToMenu }) {
         {copied ? (d.daily ? "Copied — send it to a friend!" : "Copied! Paste it to a friend") : d.daily ? "Copy invite + my score" : "Copy challenge link"}
       </SoloButton>
 
+      {d.geoChallenge ? (
+        <div>
+          <FieldLabel htmlFor="nextGeoCat">Or play a specific question next</FieldLabel>
+          <div className="flex items-stretch gap-2.5">
+            <Select id="nextGeoCat" value={nextGeoCat} onChange={(e) => setNextGeoCat(e.target.value)} className="min-w-0 flex-1">
+              {geoChallengeCats().map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </Select>
+            <SoloButton
+              variant="ghost"
+              className="mt-0! w-auto! shrink-0 px-6"
+              onClick={() => nextGeoCat && solo.startGeoChallenge(undefined, nextGeoCat)}
+            >
+              Play
+            </SoloButton>
+          </div>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-2.5">
         <SoloButton variant="ghost" className="mt-3!" onClick={() => setReload((r) => r + 1)}>
           Refresh leaderboard
         </SoloButton>
         {d.geoChallenge ? (
           <>
-            <SoloButton variant="ghost" className="mt-3!" onClick={solo.startGeoChallenge}>
+            <SoloButton variant="ghost" className="mt-3!" onClick={() => solo.startGeoChallenge()}>
               Play a different geography?
             </SoloButton>
             <SoloButton variant="ghost" className="mt-3!" onClick={() => solo.backToStart()}>

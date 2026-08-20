@@ -404,14 +404,17 @@ export function useSolo({ onExitToMenu }) {
 
   // Quick solo play: a real (DB-backed, shareable) run built from a fixed category list.
   // `geo` marks a run started from startGeoChallenge() below (drives the done screen's CTA).
+  // `nameOverride` bypasses the byName state — used by the ?geo=1 deep link, which can fire
+  // before a name typed elsewhere has actually propagated through React state.
   const startSolo = useCallback(
-    async (rounds, seconds, geo = false) => {
+    async (rounds, seconds, geo = false, nameOverride) => {
       setCreateErr("");
       playOrigin.current = "solo";
       isGeoChallenge.current = geo;
-      const by = byName.trim().slice(0, 20);
+      const by = (nameOverride ?? byName).trim().slice(0, 20);
       if (!by) return setCreateErr("Enter your name first.");
       store.setSoloName(by);
+      if (nameOverride) setByName(by); // keep the field in sync if this came from a deep link
       if (seconds != null) clampPerRound(seconds);
       setBusy("starting");
       const res = await postJSON("/challenge", { type: "custom", genre: "", rounds, by, timer: seconds != null ? seconds : perRoundRef.current });
@@ -425,14 +428,14 @@ export function useSolo({ onExitToMenu }) {
     [byName, clampPerRound, perRoundRef, setChallengeId, setDef, startPlaying],
   );
 
-  // One random geography category (the board/map ones — same pool the category leaderboards
-  // track) at its recommended time, so the run is fair and lands on that category's board with
-  // no setup. "Play a different geography?" on the done screen just calls this again.
-  const startGeoChallenge = useCallback(() => {
+  // One geography category (the board/map ones — same pool the category leaderboards track) at
+  // its recommended time, so the run is fair and lands on that category's board with no setup.
+  // Random unless `catName` names a specific one (the done screen's "play a specific one" picker).
+  const startGeoChallenge = useCallback((nameOverride, catName) => {
     setCreateErr("");
-    const [catName] = pickGenreRounds("Geography", 1);
-    if (!catName) return setCreateErr("No geography categories available right now.");
-    startSolo([catName], recommendedTime(catName), true);
+    const cat = catName || pickGenreRounds("Geography", 1)[0];
+    if (!cat) return setCreateErr("No geography categories available right now.");
+    startSolo([cat], recommendedTime(cat), true, nameOverride);
   }, [startSolo]);
 
   const createChallenge = useCallback(async () => {

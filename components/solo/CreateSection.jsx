@@ -58,7 +58,7 @@ export default function CreateSection({ solo, onBack }) {
 
       {/* One random geography category at its own recommended time — no setup, and it lands
           straight on that category's leaderboard. */}
-      <SoloButton variant="ghost" onClick={solo.startGeoChallenge} disabled={!!solo.busy}>
+      <SoloButton variant="ghost" onClick={() => solo.startGeoChallenge()} disabled={!!solo.busy}>
         {solo.busy === "starting" ? "Starting…" : "Geography challenge"}
       </SoloButton>
 

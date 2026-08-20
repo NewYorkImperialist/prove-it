@@ -6,6 +6,7 @@ import { useMultiplayer } from "@/hooks/useMultiplayer";
 import { useSolo } from "@/hooks/useSolo";
 import { useAppHeight } from "@/hooks/useAppHeight";
 import { playedDailyToday } from "@/lib/browser/daily";
+import * as store from "@/lib/browser/storage";
 import { ConnBadge, OnlineBadge, AnnounceBanner } from "@/components/StatusBadges";
 import HomeCard from "@/components/home/HomeCard";
 import MpSetupCard from "@/components/mp/MpSetupCard";
@@ -49,6 +50,22 @@ export default function AppShell() {
     bootedDeepLink.current = true;
     solo.initJoin(deepLink.current);
     router.go("solo");
+  }, [solo, router]);
+
+  // ?geo=1 drops straight into a Geography Challenge — no menu-hunting. If a name's already
+  // remembered it starts immediately; otherwise it lands on Create with the name field waiting.
+  const autoGeo = useRef(null);
+  if (autoGeo.current === null) {
+    autoGeo.current = typeof window === "undefined" ? false : new URLSearchParams(window.location.search).get("geo") === "1";
+  }
+  const bootedAutoGeo = useRef(false);
+  useEffect(() => {
+    if (bootedAutoGeo.current || !autoGeo.current || deepLink.current) return; // a ?id= link takes priority
+    bootedAutoGeo.current = true;
+    solo.initCreate();
+    router.go("solo");
+    const savedName = store.getSoloName();
+    if (savedName) solo.startGeoChallenge(savedName);
   }, [solo, router]);
 
   const openSolo = () => {

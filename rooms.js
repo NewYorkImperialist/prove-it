@@ -6,15 +6,36 @@
 // socket id — so a reconnect with a new socket re-claims the same player slot.
 
 const { createMatchmaking } = require("./matchmaking.js");
+const { isBlocked } = require("./lib/name-filter.js");
 
 const TIMERS = [15, 30, 45, 60];
 const TARGETS = [3, 5, 10]; // plus null = endless (duel mode's win target)
-const FORMATS = [3, 5, null]; // best-of-3 / best-of-5 / endless (race mode's round-win target)
+// Race round-win target: winsNeeded = ceil(format/2), so the lobby labels these "First to 2" /
+// "First to 3" / endless — NOT "best of N", since a race seats up to 8 and there's no fixed
+// number of rounds to be best of.
+const FORMATS = [3, 5, null];
 const isValidIncrement = (n) => Number.isInteger(n) && n >= 0 && n <= 30; // bonus seconds per correct answer
 const MAX_PLAYERS = 2; // the 1v1 duel is always exactly 2
 const MAX_RACE_PLAYERS = 8; // race rooms allow a small group
 const MIN_RACE_PLAYERS = 2;
 const GRACE_MS = 30000; // time to reconnect before forfeiting
+const CHAT_MIN_GAP_MS = 400; // anti-spam gap between one player's chat messages
+// A display name is refused, not silently replaced: the client renders this string next to the
+// name field (createRoom/joinRoom/spectateRoom/quickMatchJoin all surface `error`), so the
+// player knows why their name didn't take instead of finding themselves renamed mid-lobby.
+const NAME_REJECTED = "That name isn't allowed — pick a different one.";
+
+// Socket.IO heartbeat. The defaults (pingInterval 25s + pingTimeout 20s) mean a silent network
+// drop — the exact case GRACE_MS exists for — isn't noticed for up to 45s: the dropped player
+// watches a clock that keeps ticking locally off `deadline`, and their opponent gets no pause
+// banner, because every pause/grace path below hangs off the `disconnect` event. 5s/5s detects a
+// dead connection in 5-10s instead, comfortably inside GRACE_MS, while still tolerating a 5s
+// dead-air stall (a tunnel, an LTE handover). Being wrong in the aggressive direction is cheap:
+// a false positive pauses the match and the client reconnects within ~1s, re-claiming its seat
+// via `resume` — nobody forfeits until GRACE_MS is fully spent. The extra heartbeat traffic is a
+// few bytes per client every 5s. The client inherits both values from the handshake, so its own
+// "reconnecting…" indicator speeds up by the same amount.
+const PING_OPTIONS = { pingInterval: 5000, pingTimeout: 5000 };
 
 // ---- client IP + rough geolocation (owner-only analytics) ----
 function clientIp(headers, fallback) {
@@ -66,8 +87,16 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
   function genId() {
     return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
   }
+  // Trim + cap; a blank name gets the house joke name.
   function cleanName(name) {
     return String(name || "").trim().slice(0, 20) || "Jayden Lin fanboy";
+  }
+  // …and the same profanity/slur filter the leaderboard uses (lib/name-filter.js). A multiplayer
+  // name is every bit as public as a leaderboard one: it sits in the roster, in every chat line,
+  // in the game log and in the owner's feed. Checked on the CLEANED value, since that's what
+  // would actually be stored and shown. Returns an error string, or null if the name is fine.
+  function nameRejected(name) {
+    return isBlocked(cleanName(name)) ? NAME_REJECTED : null;
   }
 
   function roomState(room) {
@@ -149,7 +178,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
   // room. Lives in its own module (matchmaking.js) but is tightly coupled to this closure's
   // room-creation/attach/broadcast primitives, so it's instantiated here rather than injected
   // from server.js the way engine/raceEngine are.
-  const matchmaking = createMatchmaking({ newRoom, attach, broadcast, DEFAULT_GROUPS, graceMs: quickMatchGraceMs });
+  const matchmaking = createMatchmaking({ newRoom, attach, broadcast, cleanName, nameRejected, DEFAULT_GROUPS, graceMs: quickMatchGraceMs });
 
   function leaveCurrentRoom(socket) {
     const code = socket.data.roomCode, pid = socket.data.playerId;
@@ -197,6 +226,8 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     // mode: "duel" (default) or "race". raceSettings: {groups, timer, format, suddenDeath, maxPlayers, increment} — ignored for duel rooms.
     socket.on("createRoom", ({ name, playerId, mode, raceSettings } = {}, ack) => {
       if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
+      const bad = nameRejected(name);
+      if (bad) return ack?.({ ok: false, error: bad }); // checked BEFORE leaving the current room, so a refusal costs them nothing
       leaveCurrentRoom(socket);
       const pid = playerId || genId();
       const isRace = mode === "race";
@@ -224,6 +255,10 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       if (room.players.has(pid)) return doResume(room, pid, ack); // rejoining your own slot
       if (room.players.size >= capFor(room)) return ack?.({ ok: false, error: "That room is full." });
       if (room.status !== "waiting") return ack?.({ ok: false, error: "That game already started." });
+      // Only a NEW seat is name-checked: a resume (handled above) must never be blocked by a
+      // name the client already has in storage, or a drop would lock them out of their own match.
+      const badJoin = nameRejected(name);
+      if (badJoin) return ack?.({ ok: false, error: badJoin });
       leaveCurrentRoom(socket);
       room.players.set(pid, { id: pid, name: cleanName(name), socketId: socket.id, connected: true });
       attach(room, socket, pid);
@@ -248,6 +283,8 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       if (!room) return ack?.({ ok: false, error: "No room with that code." });
       const pid = playerId || genId();
       if (room.players.has(pid)) return doResume(room, pid, ack); // they're actually a player → resume their slot
+      const badSpec = nameRejected(name);
+      if (badSpec) return ack?.({ ok: false, error: badSpec }); // a spectator's name shows in the roster and in chat too
       leaveCurrentRoom(socket);
       if (!room.spectators) room.spectators = new Map();
       room.spectators.set(pid, { id: pid, name: cleanName(name), socketId: socket.id });
@@ -299,13 +336,19 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     });
 
     // Change your display name — works in the lobby AND mid-game.
-    socket.on("setName", ({ name } = {}) => {
+    socket.on("setName", ({ name } = {}, ack) => {
       const room = rooms.get(socket.data.roomCode);
       const p = room?.players.get(socket.data.playerId) || room?.spectators?.get(socket.data.playerId);
-      if (!p) return;
+      if (!p) return ack?.({ ok: false, error: "You're not in a room." });
+      // Renaming into a blocked name is refused outright — the old name stands. The ack is here
+      // for the client to surface (it currently fires this event without one, so the roster
+      // broadcast below, which still carries the unchanged name, is the only feedback).
+      const bad = nameRejected(name);
+      if (bad) return ack?.({ ok: false, error: bad });
       p.name = cleanName(name);
       if (socket.data.session) socket.data.session.name = p.name;
       if (room.game && room.game.names && room.players.has(socket.data.playerId)) room.game.names[socket.data.playerId] = p.name;
+      ack?.({ ok: true, name: p.name });
       broadcast(room);
       if (room.game) engineFor(room).resync(io, room); // refresh in-game name labels
     });
@@ -414,19 +457,27 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     socket.on("raceVoteEnd", withRaceGame((room) => raceEngine.handleVoteEnd(io, room, socket)));
 
     // Chat — works any time you're in a room (lightly rate-limited; rendered separately from game messages).
-    socket.on("chat", ({ text } = {}) => {
+    socket.on("chat", ({ text } = {}, ack) => {
       const room = rooms.get(socket.data.roomCode);
       const p = room?.players.get(socket.data.playerId) || room?.spectators?.get(socket.data.playerId);
       if (!p) return;
-      const now = Date.now();
-      if (p.lastChatAt && now - p.lastChatAt < 400) return;
-      p.lastChatAt = now;
       const msg = String(text || "").replace(/\s+/g, " ").trim().slice(0, 200);
-      if (msg) {
-        const spectator = !room.players.has(p.id);
-        io.to(room.code).emit("chat", { id: p.id, name: p.name, text: msg, spectator });
-        analytics.recordChat({ gid: room.game?.gid, code: room.code, name: p.name, text: msg, at: Date.now(), spectator, mode: "mp" });
+      // Emptiness is checked BEFORE the rate limit: stamping the clock for a message nobody was
+      // ever going to see meant a blank submit ate the next real one.
+      if (!msg) return ack?.({ ok: false, error: "Nothing to send." });
+      const now = Date.now();
+      if (p.lastChatAt && now - p.lastChatAt < CHAT_MIN_GAP_MS) {
+        // …and a dropped message is now announced. Dropping it silently looked exactly like the
+        // room having gone deaf: the input cleared and the message reached nobody. The `log`
+        // event goes to this socket only and already renders in their feed (with a buzz).
+        socket.emit("log", { by: "system", text: "Slow down — that message wasn't sent.", kind: "bad" });
+        return ack?.({ ok: false, error: "You're sending messages too fast." });
       }
+      p.lastChatAt = now; // only an ACCEPTED message resets the limiter
+      const spectator = !room.players.has(p.id);
+      io.to(room.code).emit("chat", { id: p.id, name: p.name, text: msg, spectator });
+      analytics.recordChat({ gid: room.game?.gid, code: room.code, name: p.name, text: msg, at: Date.now(), spectator, mode: "mp" });
+      ack?.({ ok: true });
     });
 
     // Typing indicator — relayed to the rest of the room (not echoed back to the sender).
@@ -481,4 +532,4 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
   };
 }
 
-module.exports = { createRooms };
+module.exports = { createRooms, PING_OPTIONS, GRACE_MS };

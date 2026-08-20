@@ -15,11 +15,11 @@ const { ownerOk } = require("./lib/owner-auth.js");
 const { createCostGuard } = require("./lib/cost-guard.js");
 const { createChallengeRouter } = require("./routes/challenge.js");
 const { createAdminRouter } = require("./routes/admin.js");
-const { createRooms } = require("./rooms.js");
+const { createRooms, PING_OPTIONS } = require("./rooms.js");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, PING_OPTIONS); // heartbeat tuned so a silent drop is seen in seconds — see rooms.js
 app.use(express.json({ limit: "16kb" })); // for /challenge and cost-override JSON bodies
 
 const costGuard = createCostGuard({ analytics, SITE, ownerOk });

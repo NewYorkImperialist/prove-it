@@ -62,6 +62,15 @@ function makeRoom(gameOverrides = {}, roomOverrides = {}) {
   return room;
 }
 
+// server.js hangs the analytics writes off engine.setReporter, so the reporter is the only place
+// a finished game is recorded. Captures those calls, and always puts the no-op reporter back so
+// one test can't leak its collector into the next.
+function withReporter(fn) {
+  const calls = [];
+  engine.setReporter((room, type, extra) => calls.push({ type, extra }));
+  try { return fn(calls); } finally { engine.setReporter(null); }
+}
+
 describe("handleOpen", () => {
   test("rejects when it isn't the caller's turn", () => {
     const io = makeIO(); const room = makeRoom();
@@ -490,16 +499,42 @@ describe("round/match resolution", () => {
     assert.equal(room.game.claim, 0);
     assert.equal(room.game.phase, "opening");
   });
+
+  test("lastResult counts the round the same way the broadcast snapshot does", () => {
+    const io = makeIO();
+    // 1 on-list + 1 granted off-list + a 1-point bonus = 3 toward the claim.
+    const room = makeRoom({ phase: "proving", turnId: "p1", challengerId: "p2", target: 100,
+      claim: 5, proven: [0], granted: [{ id: 1, text: "Delta" }], bonus: 1, pending: new Map() });
+    engine.handleGiveUp(io, room, sock("p1"));
+    // lastResult.proven was g.proven.length (1) while the snapshot in the same payload reported
+    // listed + granted + bonus (3) — two numbers for one round, from one broadcast.
+    assert.equal(room.game.lastResult.proven, 3);
+    assert.equal(io.lastState().proven, room.game.lastResult.proven);
+  });
 });
 
 describe("handleVoteSkip", () => {
   test("needs both players before the category actually changes", () => {
     const io = makeIO();
+    const room = makeRoom({ phase: "bidding", round: 1, current: testCategory({ name: "Doomed Cat" }) });
+    engine.handleVoteSkip(io, room, sock("p1"));
+    assert.equal(room.game.current.name, "Doomed Cat"); // only 1 vote so far
+    assert.equal(room.game.phase, "bidding");
+    engine.handleVoteSkip(io, room, sock("p2"));
+    assert.equal(room.game.current.name, "Test Cat"); // both voted -> fresh category off the pool
+    assert.equal(room.game.phase, "opening");
+  });
+
+  test("a skipped category doesn't consume a round number", () => {
+    const io = makeIO();
     const room = makeRoom({ phase: "bidding", round: 1 });
     engine.handleVoteSkip(io, room, sock("p1"));
-    assert.equal(room.game.round, 1); // only 1 vote so far
     engine.handleVoteSkip(io, room, sock("p2"));
-    assert.equal(room.game.round, 2); // both voted -> fresh round
+    // The skipped round never happened (race-engine's passSkipVote takes the same line): the feed
+    // used to jump "Round 1" → "Round 2" for what was still the first SCORED round.
+    assert.equal(room.game.round, 1);
+    assert.match(io.logs().map((l) => l.text).join(" "), /Round 1 ·/);
+    assert.equal(room.game.turnId, "p1", "and the same player still opens, since beginRound derives the opener from the round number");
   });
 
   test("the same player voting twice doesn't count as two votes", () => {
@@ -527,6 +562,34 @@ describe("handleVoteEnd", () => {
     engine.handleVoteEnd(io, room, sock("p2"));
     assert.equal(room.game.phase, "matchover");
     assert.equal(room.game.matchWinnerId, null);
+  });
+
+  test("a tied vote-end is still REPORTED, so the finished game gets recorded", () => {
+    withReporter((calls) => {
+      const io = makeIO();
+      const room = makeRoom({ target: Infinity, scores: { p1: 3, p2: 3 } });
+      engine.handleVoteEnd(io, room, sock("p1"));
+      engine.handleVoteEnd(io, room, sock("p2"));
+      // The tie branch returned before matchOver(), so report(…, "end") never fired and a whole
+      // played-out duel was missing from the analytics `games` table and every dashboard total.
+      const ends = calls.filter((c) => c.type === "end");
+      assert.equal(ends.length, 1);
+      assert.equal(ends[0].extra.winnerId, null);
+      assert.equal(ends[0].extra.reason, "vote-end");
+    });
+  });
+
+  test("an untied vote-end reports the winner — the control for the tie case", () => {
+    withReporter((calls) => {
+      const io = makeIO();
+      const room = makeRoom({ target: Infinity, scores: { p1: 5, p2: 2 } });
+      engine.handleVoteEnd(io, room, sock("p1"));
+      engine.handleVoteEnd(io, room, sock("p2"));
+      const ends = calls.filter((c) => c.type === "end");
+      assert.equal(ends.length, 1);
+      assert.equal(ends[0].extra.winnerId, "p1");
+      assert.equal(ends[0].extra.reason, "vote-end");
+    });
   });
 
   test("a mutual vote on an untied endless match awards the leader", () => {
@@ -675,5 +738,15 @@ describe("startMatch (integration)", () => {
     const state = io.lastState();
     assert.equal(state.phase, "opening");
     assert.equal(state.players.length, 2);
+  });
+
+  test("the gameStarted announcement carries a real head count", () => {
+    const io = makeIO();
+    const room = { code: "REAL", players: new Map([["p1", { id: "p1", name: "Alice", crown: false }], ["p2", { id: "p2", name: "Bob", crown: false }]]), spectators: new Map(), settings: { groups: ["Sports"] } };
+    engine.startMatch(io, room);
+    const started = io.events.find((e) => e.event === "gameStarted");
+    // It used to send `snapshot.length` — the ARITY of the snapshot function, i.e. 1, whatever
+    // the room actually held.
+    assert.equal(started.payload.players, 2);
   });
 });

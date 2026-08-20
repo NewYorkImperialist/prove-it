@@ -80,7 +80,8 @@ function handleNextRound(io, room, socket) {
   if (!g || g.phase !== "roundover") return;
   beginRound(io, room);
 }
-// Vote to end the whole match · endless mode only, needs both players to agree.
+// Vote to end the whole match · endless mode only, needs both players to agree. Player-visible
+// wording says "match" throughout (lib/duel-view.js's "End match" button, race-engine's logs).
 function handleVoteEnd(io, room, socket) {
   const g = room.game;
   if (!g || g.target !== Infinity || g.phase === "matchover") return; // endless only
@@ -94,14 +95,19 @@ function handleVoteEnd(io, room, socket) {
     if (sa === sb) { // ended by mutual vote with a tied score
       clearTimer(room);
       g.phase = "matchover"; g.deadline = null; g.matchWinnerId = null; g.paused = false;
-      log(io, room, "system", null, `Game ended by vote · it's a tie! (${sa}–${sb})`);
+      log(io, room, "system", null, `Match ended by vote · it's a tie! (${sa}–${sb})`);
+      // This is a terminal path like any other, so it has to be recorded: returning here without
+      // reporting kept a whole finished duel out of the analytics `games` table (and therefore out
+      // of every dashboard total). matchOver() isn't reusable as-is — a tie has no winner to name
+      // in its log line — so it reports the same "end" the way race-engine's tie branch does.
+      report(room, "end", { winnerId: null, reason: "vote-end" });
       return emit(io, room);
     }
     return matchOver(io, room, sa > sb ? a : b, "vote-end");
   }
   // first vote → pause any auto-advance so the other player can respond
   if (g.phase === "roundover" && g.autoAdvance && !g.intermission) { clearTimer(room); g.intermission = true; }
-  log(io, room, "system", null, `${g.names[pid]} wants to end the game (1/2).`);
+  log(io, room, "system", null, `${g.names[pid]} wants to end the match (1/2).`);
   emit(io, room);
 }
 
@@ -116,6 +122,11 @@ function handleVoteSkip(io, room, socket) {
   if (g.skipVotes.size >= 2) {
     log(io, room, "system", null, "Both players skipped · new category.");
     report(room, "event", { type: "categorySkipped", detail: g.current.name });
+    // The skipped round never happened: rewind the counter (as race-engine's passSkipVote does)
+    // so the replacement keeps its number instead of the feed jumping "Round 1" → "Round 2"
+    // for what is still the first scored round. It also keeps the same player opening, since
+    // beginRound() derives the opener from g.round.
+    g.round--;
     return beginRound(io, room); // fresh category, no points awarded
   }
   log(io, room, "system", null, `${g.names[pid]} wants to skip this category (1/2).`);
@@ -182,7 +193,8 @@ function startMatch(io, room) {
     startedAt: Date.now(),
     gid: "g-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7), // unique per match (threads rounds/answers/chat together)
   };
-  io.to(room.code).emit("gameStarted", { players: snapshot.length });
+  // `snapshot.length` here was the ARITY of the snapshot function (always 1), not a head count.
+  io.to(room.code).emit("gameStarted", { players: order.length });
   beginRound(io, room);
 }
 
@@ -455,7 +467,10 @@ function roundOver(io, room, winnerId, reason) {
   const g = room.game;
   g.scores[winnerId] = (g.scores[winnerId] || 0) + 1;
   g.phase = "roundover"; g.deadline = null;
-  g.lastResult = { winnerId, winnerName: g.names[winnerId], reason, claim: g.claim, proven: g.proven.length };
+  // total(g), not g.proven.length: the snapshot in this same broadcast reports the round's
+  // progress as listed + granted + bonus, and the two disagreeing meant lastResult understated
+  // the round (3 proven read as 1) for anything that rendered it.
+  g.lastResult = { winnerId, winnerName: g.names[winnerId], reason, claim: g.claim, proven: total(g) };
   g.intermission = false;
   log(io, room, "system", null, `${reason} · point ${g.names[winnerId]} (${g.scores[g.order[0]]}–${g.scores[g.order[1]]})`);
   report(room, "round", { winnerId, winnerName: g.names[winnerId], category: g.current.name, grp: g.current.group, claim: g.claim, proven: total(g) });

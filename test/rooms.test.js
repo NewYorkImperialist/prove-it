@@ -2,13 +2,15 @@
 const { test, describe, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const http = require("http");
+const fs = require("fs");
+const path = require("path");
 const express = require("express");
 const { Server } = require("socket.io");
 const { io: ioClient } = require("socket.io-client");
 const engine = require("../game-engine.js");
 const analytics = require("../stats.js"); // no TURSO_URL in the test env — every write is a silent no-op
 const { CATEGORY_GROUPS, DEFAULT_GROUPS } = require("../lib/category-data.js");
-const { createRooms } = require("../rooms.js");
+const { createRooms, PING_OPTIONS, GRACE_MS } = require("../rooms.js");
 
 // Real Socket.IO client <-> server over a loopback TCP port — this is the same shape of check
 // as the manual smoke test used earlier to verify the server.js extraction, now checked in CI.
@@ -53,6 +55,43 @@ function waitFor(socket, event) {
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+// Like emit(), but resolves with null if the server never answers. The bugs below were all
+// "the server said nothing at all", which `await emit()` can only express by hanging forever.
+function emitOrNull(socket, event, payload, ms = 300) {
+  return new Promise((resolve) => {
+    const t = setTimeout(() => resolve(null), ms);
+    socket.emit(event, payload, (r) => { clearTimeout(t); resolve(r); });
+  });
+}
+function trackEvent(socket, event) {
+  const box = { all: [] };
+  socket.on(event, (payload) => box.all.push(payload));
+  return box;
+}
+// A throwaway server + rooms instance, for the two things the shared harness above can't express:
+// its own Socket.IO options, and its own analytics double. Torn down before it returns.
+async function withOwnServer({ socketOptions, analytics: analyticsDouble } = {}, fn) {
+  const httpServer2 = http.createServer(express());
+  const io2 = new Server(httpServer2, socketOptions);
+  const api = createRooms({ io: io2, engine, analytics: analyticsDouble || analytics, CATEGORY_GROUPS, DEFAULT_GROUPS });
+  await new Promise((resolve) => httpServer2.listen(0, resolve));
+  const port2 = httpServer2.address().port;
+  const opened = [];
+  // reconnection: false — these tests assert on what the SERVER saw, so a client quietly
+  // reconnecting mid-assertion would make them flaky.
+  const open = () => new Promise((resolve) => {
+    const s = ioClient(`http://localhost:${port2}`, { transports: ["websocket"], reconnection: false });
+    opened.push(s);
+    s.on("connect", () => resolve(s));
+  });
+  try {
+    return await fn({ api, open });
+  } finally {
+    api.closeAllRooms();
+    opened.forEach((c) => c.close());
+    await new Promise((resolve) => httpServer2.close(resolve));
+  }
+}
 // createRoom/joinRoom broadcast "roomState" as a side effect of their own handler, so a `once`
 // listener registered right after one action can race with — and catch — that action's own
 // broadcast instead of the next one. Track the latest broadcast continuously instead.
@@ -387,6 +426,179 @@ describe("rooms.js — owner ghost watch", () => {
       g.emit("chat", { text: "boo" });
       await sleep(120);
       assert.equal(heard, null, "a ghost's chat must never reach the room");
+    });
+  });
+});
+
+// Multiplayer names used to go through a LOCAL cleanName that only trimmed and truncated, so the
+// obscenity filter in lib/name-filter.js — applied to leaderboard names since forever — didn't
+// cover the name that sits in the roster, in every chat line and in the owner's feed. These join
+// paths all ack with an `error` the client already renders next to the name field, so the name is
+// refused outright rather than silently swapped for something the player didn't choose.
+describe("rooms.js — display names go through the profanity filter", () => {
+  test("createRoom refuses a blocked name instead of seating it", async () => {
+    const a = await connect();
+    const before = roomsApi.rooms.size;
+    const res = await emit(a, "createRoom", { name: "fuck you" });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /isn't allowed/);
+    assert.equal(roomsApi.rooms.size, before, "no room should have been created");
+  });
+
+  test("joinRoom refuses a blocked name and leaves the roster alone", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const res = await emit(b, "joinRoom", { code: created.code, name: "n1gg4" });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /isn't allowed/);
+    assert.equal(roomsApi.rooms.get(created.code).players.size, 1);
+  });
+
+  test("spectateRoom refuses a blocked name too", async () => {
+    const a = await connect(), spec = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const res = await emit(spec, "spectateRoom", { code: created.code, name: "fuck you" });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /isn't allowed/);
+    assert.equal(roomsApi.rooms.get(created.code).spectators.size, 0);
+  });
+
+  test("setName refuses a blocked rename, and the old name stands", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    const res = await emitOrNull(b, "setName", { name: "n i g g a" });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /isn't allowed/);
+    assert.equal(roomsApi.rooms.get(created.code).players.get(joined.you).name, "Bob");
+  });
+
+  test("an ordinary name is still accepted, trimmed, and capped at 20 characters", async () => {
+    const a = await connect();
+    const created = await emit(a, "createRoom", { name: "   Scunthorpe Sam is a very long name   " });
+    assert.equal(created.ok, true); // "Scunthorpe" is exactly the innocuous-substring case the filter whitelists
+    const me = [...roomsApi.rooms.get(created.code).players.values()][0];
+    assert.equal(me.name, "Scunthorpe Sam is a ");
+    assert.equal(me.name.length, 20);
+  });
+
+  test("reclaiming a seat is never name-checked — a stale name in storage can't lock you out", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    // The name check has to sit AFTER the resume branch: a client re-sends whatever name it has
+    // in storage on every reconnect, and refusing that would strand a seated player mid-match.
+    const again = await emit(b, "joinRoom", { code: created.code, name: "fuck you", playerId: joined.you });
+    assert.equal(again.ok, true);
+    assert.equal(roomsApi.rooms.get(created.code).players.get(joined.you).name, "Bob");
+  });
+});
+
+describe("rooms.js — chat rate limiting", () => {
+  test("a message dropped by the rate limit tells the sender, and only the sender", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    const heard = trackEvent(b, "chat");
+    const myLogs = trackEvent(a, "log");
+    const otherLogs = trackEvent(b, "log");
+
+    const first = await emitOrNull(a, "chat", { text: "one" });
+    assert.deepEqual(first, { ok: true });
+    const second = await emitOrNull(a, "chat", { text: "two" }); // well inside the 400ms gap
+    // Dropping this silently looked exactly like the room going deaf: the client cleared the
+    // input and the text reached nobody, with no ack and no message back.
+    assert.notEqual(second, null, "the server has to answer, even to refuse");
+    assert.equal(second.ok, false);
+    assert.match(second.error, /too fast/);
+    await sleep(60);
+    assert.deepEqual(heard.all.map((m) => m.text), ["one"], "the dropped message must not reach the room");
+    assert.ok(myLogs.all.some((l) => /wasn't sent/.test(l.text)), "the sender is told, in their own feed");
+    assert.equal(otherLogs.all.length, 0, "and nobody else is");
+  });
+
+  test("a blank message doesn't stamp the rate-limit clock and eat the next real one", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    const heard = trackEvent(b, "chat");
+    a.emit("chat", { text: "   " }); // whitespace only → nothing to send
+    await sleep(30);
+    a.emit("chat", { text: "hello" }); // …and this used to be swallowed by the blank one's stamp
+    await sleep(80);
+    assert.deepEqual(heard.all.map((m) => m.text), ["hello"]);
+  });
+});
+
+// A tab CLOSE sends a close frame and is noticed in ~200ms, so every test above sees the pause
+// machinery work. A silent network drop — the case the 30s grace exists for — is only noticed by
+// the heartbeat, and Socket.IO's defaults (25s + 20s) left both players staring at a smoothly
+// ticking clock for up to 45 seconds.
+describe("rooms.js — heartbeat tuning", () => {
+  test("a dead connection is noticed in seconds, well inside the reconnect grace", () => {
+    const worstCase = PING_OPTIONS.pingInterval + PING_OPTIONS.pingTimeout;
+    assert.ok(worstCase <= 12000, `detection worst case should be seconds, got ${worstCase}ms`);
+    assert.ok(worstCase < GRACE_MS / 2, "and must leave most of the grace window for actually reconnecting");
+    // The other direction matters too: a pingTimeout tight enough to trip on a brief mobile
+    // stall would pause a live match (and, at worst, spend someone's grace window) over nothing.
+    assert.ok(PING_OPTIONS.pingTimeout >= 4000, "but must tolerate a normal few-second hiccup");
+  });
+
+  test("server.js actually hands those settings to the Socket.IO server", () => {
+    // server.js boots Next, so it can't be required here — but the wiring is the whole fix.
+    const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+    assert.match(src, /new Server\(server,\s*PING_OPTIONS\)/);
+  });
+
+  test("a silently dropped client is caught by the heartbeat and pauses the match", async () => {
+    // Its own server with a tiny heartbeat: the real PING_OPTIONS would mean waiting up to 10s.
+    // What this pins down is that the pause/grace machinery is reached by the ping timeout at
+    // all — which is why the numbers asserted above are what decide how fast a real drop shows.
+    await withOwnServer({ socketOptions: { pingInterval: 40, pingTimeout: 40 } }, async ({ api, open }) => {
+      const a = await open(), b = await open();
+      const created = await emit(a, "createRoom", { name: "Alice" });
+      await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+      await emit(a, "startMatch", {});
+      const room = api.rooms.get(created.code);
+      assert.equal(!!room.game.paused, false);
+
+      // Dead air, not a close frame: the socket stays open, the client simply stops reading, so
+      // it never answers a ping. This is the drop a phone in a tunnel actually produces.
+      b.io.engine.transport.ws.pause();
+      await sleep(400);
+      assert.equal(room.game.paused, true, "the heartbeat has to be what notices");
+      assert.equal(room.players.get([...room.players.keys()][1]).connected, false);
+      assert.equal(room.players.size, 2, "…and the seat is still held for the grace window");
+    });
+  });
+});
+
+// "N went to single-player" on the owner dashboard is driven entirely by this one event.
+describe("rooms.js — single-player session tagging", () => {
+  test("enterSingleplayer tags the session, and the tag reaches the analytics write", async () => {
+    const sessions = [];
+    await withOwnServer({ analytics: { ...analytics, recordSession: (s) => sessions.push(s) } }, async ({ open }) => {
+      const solo = await open();
+      solo.emit("enterSingleplayer");
+      await sleep(50);
+      solo.close();
+      await sleep(80);
+      const [rec] = sessions;
+      assert.ok(rec, "a session should have been recorded on disconnect");
+      assert.equal(rec.singleplayer, true);
+      assert.equal(rec.joined, false); // they never took a seat — this is the visit that used to be mis-tagged "browsed"
+    });
+  });
+
+  test("a visitor who never leaves the lobby is not tagged as single-player", async () => {
+    const sessions = [];
+    await withOwnServer({ analytics: { ...analytics, recordSession: (s) => sessions.push(s) } }, async ({ open }) => {
+      const browser = await open();
+      await sleep(30);
+      browser.close();
+      await sleep(80);
+      assert.equal(sessions.length, 1);
+      assert.ok(!sessions[0].singleplayer);
     });
   });
 });

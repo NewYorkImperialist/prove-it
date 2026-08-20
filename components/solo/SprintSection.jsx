@@ -95,6 +95,11 @@ export default function SprintSection({ solo, onBack }) {
           is what the round is played on, so it wins the argument over the header. */}
       <div ref={solo.mapEl} className={cx("w-full", solo.geoMode ? "my-2 flex min-h-[150px] flex-1 flex-col short:my-1" : "hidden")} />
 
+      {/* The atlases are fetched from a CDN at runtime, so this round can lose its board even
+          though the round itself is fine. Saying so beats the map, the total and "Show what's
+          left" all vanishing at once with no explanation. */}
+      {solo.geoErr ? <p className="my-1.5 text-[13px] text-gold">{solo.geoErr}</p> : null}
+
       {flagMode ? (
         <FlagBoard
           entries={cat.entries}

@@ -92,6 +92,9 @@ export function useSolo({ onExitToMenu }) {
   const [flagSel, setFlagSel, flagSelRef] = useStateRef(0); // index of the highlighted flag, in a Flags quiz round
   const mapActive = useRef(false);
   const [showTotal, setShowTotal] = useState(false);
+  // Set when the geography board can't be drawn (the atlases come off a CDN at runtime), so the
+  // round can say why the map, the running total and "Show what's left" all just went away.
+  const [geoErr, setGeoErr] = useState("");
   const [remOn, setRemOn] = useState(false);
   const [fillProgress, setFillProgress] = useState({ filled: 0, total: 0 });
   const [geoRound, setGeoRound] = useState(null); // { cat, mode, key } — set when a round needs a board
@@ -358,6 +361,7 @@ export function useSolo({ onExitToMenu }) {
   useEffect(() => {
     if (!geoRound || !mapEl.current) return undefined;
     let cancelled = false;
+    setGeoErr(""); // a new round gets a clean slate — last round's CDN failure isn't this one's
     (async () => {
       try {
         const mod = await import("@/lib/browser/geomap");
@@ -372,10 +376,13 @@ export function useSolo({ onExitToMenu }) {
         // wherever a resume left off).
         if (geoRound.cat.isBorderQuiz) mod.GeoMap.highlight(geoRound.cat.entries[flagSelRef.current]?.id ?? null);
       } catch {
-        // Any failure (CDN down, no shapes for this list) falls back to the plain chip list.
+        // Any failure (CDN down, no shapes for this list) falls back to the plain chip list —
+        // but says so. Silently dropping the map, the total and "Show what's left" mid-round
+        // looked like the round itself had broken, with nothing to tell you to keep typing.
         if (cancelled) return;
         setGeoMode(null);
         setShowTotal(false);
+        setGeoErr("Couldn't load the map for this round — your answers still count, so keep typing.");
         mapActive.current = false;
         if (mapEl.current) mapEl.current.innerHTML = "";
       }
@@ -896,7 +903,7 @@ export function useSolo({ onExitToMenu }) {
     challengeId, def, isDaily, daily, dailyDate, roundCats, cur, visitorId,
     // round
     count, countLabel, chips, timeLeft, clock: fmtClock(Math.max(0, timeLeft)), wpm, cmsg, shakeTick,
-    geoMode, remOn, mapEl, missed, missedOpen, setMissedOpen, between, done, countdown,
+    geoMode, geoErr, remOn, mapEl, missed, missedOpen, setMissedOpen, between, done, countdown,
     joinInfo, joinName, setJoinName, joinErr, setJoinErr,
     saveErr, retryPendingResult,
     resumeInfo, resumeRun, dismissResume,

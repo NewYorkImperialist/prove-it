@@ -64,7 +64,17 @@ export default function RaceGeoBoard({ catName, mode, round, mine }) {
     applied.current = mine.length;
   }, [ready, mine, mode, cat]);
 
-  if (!cat || failed) return null;
+  if (!cat) return null;
+  // The board is drawn from CDN-hosted atlases, so it can fail on a round that is otherwise
+  // running normally. Returning null just made it disappear; the race is still playable by
+  // typing, so say that instead of leaving a hole where the map was.
+  if (failed) {
+    return (
+      <p className="mx-3 my-1.5 text-[13px] text-gold desk:mx-5">
+        Couldn&apos;t load the map for this round — your answers still count, so keep typing.
+      </p>
+    );
+  }
   // D3 owns this node, so React must not render children into it. A column: the map takes the
   // free space, the island fill-in boxes sit underneath it.
   // short: a landscape phone matches `desk:` on width but is only ~390px tall, where reserving

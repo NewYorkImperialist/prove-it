@@ -374,14 +374,18 @@ async function categoryLeaderboards(topN = 10) {
 // Public per-category leaderboard: each player's best score for one category across all runs
 // (solo/daily/link). Deduped per visitor; all crowned rows collapse to a single creator entry.
 async function categoryLeaderboard(catName, limit = 50) {
-  const chs = await q(`SELECT id, rounds FROM challenges`);
-  const roundsById = {};
-  for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } }
-  // Geography boards count ONLY solo-map plays (mode='solo'): live-multiplayer lives in the separate
-  // `games` table and never reached here, and we also exclude shared friend-link plays + old untagged rows.
-  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, at, crown FROM challenge_results WHERE mode='solo'`);
+  const chs = await q(`SELECT id, rounds, timer FROM challenges`);
+  const roundsById = {}, timerById = {};
+  for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } timerById[c.id] = c.timer; }
+  // Geography boards count solo-map plays (mode='solo') AND shared friend-link plays (mode='link')
+  // that used the "recommended time per round" setting (timer===0) — i.e. the same per-category
+  // timing a direct solo play always uses, so it's still an apples-to-apples comparison. A link with
+  // a custom fixed timer is excluded (it could be way longer/shorter than the category's standard
+  // length). Live-multiplayer lives in the separate `games` table and never reached here.
+  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, at, crown, mode FROM challenge_results WHERE mode='solo' OR mode='link'`);
   const rows = [];
   for (const r of results) {
+    if (r.mode === "link" && timerById[r.challenge_id] !== 0) continue; // not the recommended-time setting
     const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
     let scores = [], times = []; try { scores = JSON.parse(r.scores || "[]"); } catch (e) {} try { times = JSON.parse(r.times || "[]"); } catch (e) {}
     let sc = 0, tm = null; // best score for this category + its completion time
@@ -403,15 +407,17 @@ async function geoGoat(limit = 50) {
   const CATEGORY_GROUPS = require("./data/categories.js");
   const geoCats = new Map(); // geography category name → total item count
   if (CATEGORY_GROUPS.Geography) for (const c of CATEGORY_GROUPS.Geography.cats) geoCats.set(c.name, (c.items || []).length);
-  const chs = await q(`SELECT id, rounds FROM challenges`);
-  const roundsById = {};
-  for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } }
-  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, crown FROM challenge_results WHERE mode='solo'`);
+  const chs = await q(`SELECT id, rounds, timer FROM challenges`);
+  const roundsById = {}, timerById = {};
+  for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } timerById[c.id] = c.timer; }
+  // Same solo+link (recommended-timer-only) eligibility as categoryLeaderboard() above.
+  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, crown, mode FROM challenge_results WHERE mode='solo' OR mode='link'`);
   const creator = (await getCreatorName()) || null; // merge the creator's rows/devices like the other boards
   const creatorNN = creator ? String(creator).trim().toLowerCase() : null;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const players = new Map(); // key → { name, visitor_id, crown, best: Map<cat, points> }
   for (const r of results) {
+    if (r.mode === "link" && timerById[r.challenge_id] !== 0) continue; // not the recommended-time setting
     const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
     let scores = [], times = []; try { scores = JSON.parse(r.scores || "[]"); } catch (e) {} try { times = JSON.parse(r.times || "[]"); } catch (e) {}
     const isCreator = !!r.crown || (creatorNN && String(r.name || "").trim().toLowerCase() === creatorNN);

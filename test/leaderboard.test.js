@@ -99,11 +99,15 @@ describe("the leaderboard copy doesn't over-promise", () => {
     // now happened once in each direction, which is why it's pinned.
     assert.equal([...STATS.matchAll(/challenge_results WHERE mode='solo' OR mode='link'/g)].length, 2,
       "categoryLeaderboard/geoGoat changed what they select; the board copy needs to change with them");
+    // …and a link run only counts at the recommended time. Losing this guard would leave the copy
+    // promising every shared-link play, which is how it read before.
+    assert.equal([...STATS.matchAll(/r\.mode === "link" && timerById\[r\.challenge_id\] !== 0/g)].length, 2,
+      "the recommended-time condition on link runs moved; the board copy describes it");
   });
 
   test("CategoryBoard says whose runs the board holds", () => {
     const src = read("CategoryBoard.jsx");
-    assert.match(src, /Solo runs and\s*\n?\s*shared-link plays both count/);
+    assert.match(src, /Solo runs count,\s*\n?\s*plus shared-link plays that used the recommended time/);
     assert.doesNotMatch(src, /shared-link plays don&apos;t count/);
   });
 

@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { findCat } from "@/lib/solo-catalog";
 import { norm } from "@/lib/solo-matching";
+import { cx } from "@/lib/browser/cx";
 
 // Resolve a canonical answer back to its catalogue entry, so map mode knows which shape to
 // light. The server sends only the display string; ids are positional and the two builders
@@ -65,19 +66,29 @@ export default function RaceGeoBoard({ catName, mode, round, mine }) {
   }, [ready, mine, mode, cat]);
 
   if (!cat) return null;
-  // The board is drawn from CDN-hosted atlases, so it can fail on a round that is otherwise
-  // running normally. Returning null just made it disappear; the race is still playable by
-  // typing, so say that instead of leaving a hole where the map was.
-  if (failed) {
-    return (
-      <p className="mx-3 my-1.5 text-[13px] text-gold desk:mx-5">
-        Couldn&apos;t load the map for this round — your answers still count, so keep typing.
-      </p>
-    );
-  }
   // D3 owns this node, so React must not render children into it. A column: the map takes the
   // free space, the island fill-in boxes sit underneath it.
   // short: a landscape phone matches `desk:` on width but is only ~390px tall, where reserving
   // 200px for the board leaves nothing for the feed and the input bar.
-  return <div ref={el} className="mx-3 my-1.5 flex min-h-[150px] min-w-0 flex-1 flex-col desk:mx-5 desk:my-2 desk:min-h-[200px] short:my-1 short:min-h-[130px]" />;
+  // The container stays mounted even when the draw failed, and is hidden rather than removed.
+  // Unmounting it nulled `el.current`, and the setup effect bails on a null ref BEFORE it can
+  // clear `failed` — so one CDN hiccup left every later round in the match showing the error with
+  // no board and no way back, even though the atlas was cached by then. Solo hides its container
+  // for the same reason (SprintSection).
+  return (
+    <>
+      <div
+        ref={el}
+        className={cx(
+          "mx-3 min-w-0 flex-col desk:mx-5",
+          failed ? "hidden" : "my-1.5 flex min-h-[150px] flex-1 desk:my-2 desk:min-h-[200px] short:my-1 short:min-h-[130px]",
+        )}
+      />
+      {failed ? (
+        <p className="mx-3 my-1.5 text-[13px] text-gold desk:mx-5">
+          Couldn&apos;t load the map for this round — your answers still count, so keep typing.
+        </p>
+      ) : null}
+    </>
+  );
 }

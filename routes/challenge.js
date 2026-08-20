@@ -95,7 +95,11 @@ function createChallengeRouter({ isLockdown }) {
     res.json({ ok: true, id: c.id, type: c.type, genre: c.genre, rounds: c.rounds, by: c.by_name, timer: c.timer == null ? 45 : c.timer });
   });
   router.post("/challenge/:id/result", async (req, res) => {
-    if (!analytics.enabled()) return res.json({ ok: false });
+    // No database configured is not a failed write, and the client now retries + warns on ok:false
+    // — which turned a deployment (or a local dev run) with no persistence into 15s of retrying
+    // followed by "check your connection" after every single run. `stored: false` says the run was
+    // accepted and there was simply nowhere to keep it.
+    if (!analytics.enabled()) return res.json({ ok: true, stored: false });
     const id = String(req.params.id).slice(0, 12);
     const c = await analytics.getChallenge(id).catch(() => null);
     if (!c) return res.json({ ok: false });

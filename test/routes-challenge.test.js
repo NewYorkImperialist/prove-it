@@ -62,6 +62,14 @@ describe("routes/challenge.js", () => {
       });
     });
 
+    test("no database configured is not reported as a failed write", async () => {
+      // Otherwise the client's retry loop treats a deployment with no persistence as a network
+      // fault: 15s of retrying and then "check your connection" after every single run.
+      const res = await post(buildApp(() => false)); // analytics.enabled() is false in this env
+      assert.equal(res.body.ok, true);
+      assert.equal(res.body.stored, false, "and it says the run wasn't kept, rather than implying it was");
+    });
+
     test("a write that rejects outright is reported too, not turned into a 500", async () => {
       await withAnalytics(async () => { throw new Error("connection reset"); }, async () => {
         const res = await post(buildApp(() => false));

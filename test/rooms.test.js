@@ -54,6 +54,17 @@ function waitFor(socket, event) {
   return new Promise((resolve) => socket.once(event, resolve));
 }
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// Poll rather than sleep-then-assert: these tests share a machine with three other suites, and a
+// fixed wait that's generous on an idle box is a coin flip under load. Fails with the real reason
+// (the last predicate result) rather than a bare timeout.
+async function waitUntil(fn, { timeout = 4000, step = 20, what = "condition" } = {}) {
+  const until = Date.now() + timeout;
+  for (;;) {
+    if (fn()) return;
+    if (Date.now() > until) throw new Error(`timed out after ${timeout}ms waiting for ${what}`);
+    await sleep(step);
+  }
+}
 
 // Like emit(), but resolves with null if the server never answers. The bugs below were all
 // "the server said nothing at all", which `await emit()` can only express by hanging forever.
@@ -565,7 +576,7 @@ describe("rooms.js — heartbeat tuning", () => {
       // Dead air, not a close frame: the socket stays open, the client simply stops reading, so
       // it never answers a ping. This is the drop a phone in a tunnel actually produces.
       b.io.engine.transport.ws.pause();
-      await sleep(400);
+      await waitUntil(() => room.game.paused, { what: "the heartbeat to notice the dead socket" });
       assert.equal(room.game.paused, true, "the heartbeat has to be what notices");
       assert.equal(room.players.get([...room.players.keys()][1]).connected, false);
       assert.equal(room.players.size, 2, "…and the seat is still held for the grace window");

@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { useSocketCtx } from "@/components/SocketProvider";
 import { duelView } from "@/lib/duel-view";
 import { raceView, raceFormatLine, raceRoster, raceBoardMode } from "@/lib/race-view";
-import { fmtClock } from "@/lib/format";
+import { fmtTime } from "@/lib/format";
 import { cx } from "@/lib/browser/cx";
 import TopBar from "./TopBar";
 import Sidebar from "./Sidebar";
@@ -157,8 +157,10 @@ export default function GameScreen({ mp, onLeaveIntent }) {
               mp.clock.danger ? "border-[rgba(255,91,110,.4)] bg-[rgba(255,91,110,.1)] text-bad" : "border-line bg-accdim text-accent",
             )}
           >
-            {/* fmtClock, the formatter solo's clock uses: a race clock at its ceiling read "120s". */}
-            {fmtClock(mp.clock.left)}
+            {/* fmtTime, not the raw seconds this used to print: a race clock at its ceiling read
+                "120s". fmtClock would drop the unit below a minute, leaving a bare "45" in a pill
+                sitting next to the scores. */}
+            {fmtTime(mp.clock.left)}
           </div>
         ) : null}
 

@@ -7,6 +7,7 @@
 
 const { createMatchmaking } = require("./matchmaking.js");
 const { isBlocked } = require("../lib/name-filter.js");
+const { sourceOf, safeReferrer } = require("../lib/referral.js");
 
 const TIMERS = [15, 30, 45, 60];
 const TARGETS = [3, 5, 10]; // plus null = endless (duel mode's win target)
@@ -214,14 +215,25 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     socket.on("latencyPing", (ack) => { if (typeof ack === "function") ack(); }); // RTT probe for the client's "X ms" indicator
     socket.on("enterSingleplayer", () => { if (socket.data.session) socket.data.session.singleplayer = true; }); // they left the lobby for Solo/Daily
     const ip = clientIp(socket.handshake.headers, socket.handshake.address);
-    socket.data.session = { connectedAt: Date.now(), device: deviceOf(socket), joined: false, spectated: false, played: false, name: null, ip, visitor_id: null, tz: null, locale: null, geo: null };
+    socket.data.session = { connectedAt: Date.now(), device: deviceOf(socket), joined: false, spectated: false, played: false, name: null, ip, visitor_id: null, tz: null, locale: null, geo: null, ref_source: null, referrer: null };
     geoLookup(ip).then((g) => { if (socket.data.session) socket.data.session.geo = g; }); // async; resolved well before disconnect
-    // Client reports its persistent visitor id + timezone/locale right after connecting.
+    // Client reports its persistent visitor id + timezone/locale + where the visit came from, right
+    // after connecting. This is the only channel referral data travels on: SocketProvider wraps the
+    // whole app, so it fires for every visitor including pure-solo players, which is why there is no
+    // HTTP endpoint for it (an unauthenticated fire-and-forget analytics write route was explicitly
+    // rejected).
     socket.on("clientMeta", (m = {}) => {
       const ss = socket.data.session; if (!ss) return;
       if (m.visitorId) ss.visitor_id = String(m.visitorId).slice(0, 40);
       if (m.tz) ss.tz = String(m.tz).slice(0, 40);
       if (m.locale) ss.locale = String(m.locale).slice(0, 20);
+      // The label is derived HERE, from raw values, so it can be improved later without shipping a
+      // new client bundle; sourceOf is total, so no guard is needed around it. The raw referrer is
+      // kept because it's the one thing a better label couldn't be recomputed from — the landing
+      // URL deliberately is NOT stored, since it can carry query strings we have no business
+      // persisting (an owner key, a challenge id) and only its campaign tag is of any use.
+      ss.ref_source = sourceOf({ referrer: m.referrer, landing: m.landing, self: socket.handshake.headers.host });
+      ss.referrer = safeReferrer(m.referrer);
     });
 
     function doResume(room, pid, ack) {
@@ -533,7 +545,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       matchmaking.leave(socket); // no-op if they weren't queued
       if (!socket.data.ghostUncounted) { online = Math.max(0, online - 1); broadcastPresence(); } // ghosts were already uncounted
       const sess = socket.data.session; // log the whole visit (records nothing if persistence is off)
-      if (sess) { const end = Date.now(); analytics.recordSession({ connected_at: sess.connectedAt, disconnected_at: end, duration_ms: end - sess.connectedAt, device: sess.device, played: sess.played, joined: sess.joined, spectated: sess.spectated, name: sess.name, reason, singleplayer: sess.singleplayer, ip: sess.ip, visitor_id: sess.visitor_id, tz: sess.tz, locale: sess.locale, geo: sess.geo }); }
+      if (sess) { const end = Date.now(); analytics.recordSession({ connected_at: sess.connectedAt, disconnected_at: end, duration_ms: end - sess.connectedAt, device: sess.device, played: sess.played, joined: sess.joined, spectated: sess.spectated, name: sess.name, reason, singleplayer: sess.singleplayer, ip: sess.ip, visitor_id: sess.visitor_id, tz: sess.tz, locale: sess.locale, geo: sess.geo, ref_source: sess.ref_source, referrer: sess.referrer }); }
       const code = socket.data.roomCode, pid = socket.data.playerId;
       if (!code) return;
       const room = rooms.get(code);

@@ -183,6 +183,14 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const peakH = sHours.some((n) => n) ? sHours.indexOf(Math.max(...sHours)) : null;
     const sDay = {}; stimes.forEach((ts) => { const d = easternDay(ts); sDay[d] = (sDay[d] || 0) + 1; });
     const sDayRows = Object.keys(sDay).sort().reverse().slice(0, 14).map((d) => `<tr><td>${d}</td><td>${sDay[d]}</td></tr>`).join("");
+    // Where visitors come from. `(h.referrals || [])` is not defensive decoration: summary() is
+    // absent entirely with no Turso configured, and referral labels only exist for sessions
+    // recorded since the columns were added.
+    const refs = h.referrals || [];
+    const refMax = Math.max(1, ...refs.map((r) => num(r.n)));
+    // Sessions get the bar (matching the hour histogram next door); played is the column that
+    // actually answers "does this channel deliver players", so it carries the conversion rate.
+    const refRows = refs.map((r) => `<tr><td>${esc(r.source)}</td><td>${bar(num(r.n), refMax)} ${num(r.n)}</td><td>${num(r.visitors)}</td><td>${num(r.played)}${num(r.n) ? ` <span style="color:#8a92a6">(${Math.round(num(r.played) / num(r.n) * 100)}%)</span>` : ""}</td></tr>`).join("");
     const browseOnly = num(ses.total) - num(ses.joined);
     const browsePct = ses.total ? Math.round(browseOnly / num(ses.total) * 100) : 0;
     const s = h.superlatives;
@@ -213,6 +221,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         ${peakH != null ? `<span class="pill">⏰ Busiest hour: <b>${fmtHour12(peakH)} ET</b> (${sHours[peakH]} sessions)</span>` : ""}
       </div>
       <div class="cols">
+        <div><h3>🌐 Where visitors come from</h3>${tbl(["Channel", "Sessions", "Visitors", "Played"], refRows, 4)}</div>
         <div><h3>📱 Device</h3>${tbl(["Device", "Sessions", "Avg stay"], dev, 3)}</div>
         <div><h3>📈 Sessions per day (Eastern)</h3>${tbl(["Day", "Sessions"], sDayRows, 2)}</div>
         <div><h3>🕒 Recent sessions (Eastern) · <a href="/admin/sessions?key=${k}">see all →</a></h3>${tbl(["Arrived", "Stayed", "Device", "Location / IP", "Did"], sesRecent, 5)}</div>

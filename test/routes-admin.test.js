@@ -4,6 +4,7 @@ const assert = require("node:assert/strict");
 const express = require("express");
 const request = require("supertest");
 const { createAdminRouter } = require("../routes/admin.js");
+const analytics = require("../server/stats.js"); // the same module object admin.js holds — patchable per test
 
 process.env.OWNER_KEY = "test-owner-key";
 
@@ -39,6 +40,8 @@ function buildApp({ lockdown = false } = {}) {
 }
 
 describe("routes/admin.js — owner-key auth gate", () => {
+  // Referral tracking added no route of its own on purpose (it rides the clientMeta socket emit
+  // instead of an unauthenticated analytics POST), so this list is still the complete surface.
   test("every /admin* route 404s with no key", async () => {
     const { app } = buildApp();
     for (const path of ["/admin", "/admin/ping", "/admin/health", "/admin/games", "/admin/chat", "/admin/visitors",
@@ -142,6 +145,85 @@ describe("routes/admin.js — gamePeek rendering", () => {
     assert.equal(dash.status, 200);
     assert.match(dash.text, /Granted off-list: Nowray/);
     assert.equal(dash.text.includes("[object Object]"), false);
+  });
+});
+
+// The referral panel ("🌐 Where visitors come from") is the only part of the dashboard fed by a
+// column that didn't exist for most of the sessions table's life, so it gets rendered three ways:
+// no persistence at all (the CI/fork default), persistence on but the query returning nothing, and
+// real rows. summary() is stubbed on the stats module object — admin.js requires it directly rather
+// than taking it as a dependency, and it looks each function up at call time.
+describe("routes/admin.js — referral sources panel", () => {
+  // histHtml() reads several of these unguarded, so a stub has to be summary()-shaped, not minimal.
+  const emptyHistory = () => ({
+    games: 0, rounds: 0, avgDurationMs: 0, players: 0,
+    categories: [], perDay: [], startedTimes: [], reasons: [], features: [], topAnswers: [], namedPerCat: [],
+    superlatives: { longestGame: null, mostRounds: null, highestClaim: null, easterEggs: 0 },
+    recent: [], skips: [], sessions: {}, solo: {}, daily: {}, sp: {},
+  });
+  let realEnabled, realSummary;
+  before(() => { realEnabled = analytics.enabled; realSummary = analytics.summary; });
+  after(() => { analytics.enabled = realEnabled; analytics.summary = realSummary; });
+  const withHistory = (history) => { analytics.enabled = () => true; analytics.summary = async () => history; };
+
+  test("no persistence configured: the dashboard still renders and just says history is off", async () => {
+    analytics.enabled = realEnabled; analytics.summary = realSummary;
+    const { app } = buildApp();
+    const res = await request(app).get("/admin?key=test-owner-key");
+    assert.equal(res.status, 200);
+    assert.match(res.text, /Historical stats off/);
+    assert.equal(res.text.includes("Where visitors come from"), false);
+  });
+
+  test("persistence on but no referral data: the panel renders empty instead of throwing", async () => {
+    // `referrals` is absent from the object entirely — exactly what an older summary() or a failed
+    // sub-query looks like, and the case `(h.referrals || [])` exists for.
+    withHistory(emptyHistory());
+    const { app } = buildApp();
+    const res = await request(app).get("/admin?key=test-owner-key");
+    assert.equal(res.status, 200);
+    assert.match(res.text, /Where visitors come from/);
+    withHistory({ ...emptyHistory(), referrals: [] });
+    const res2 = await request(app).get("/admin?key=test-owner-key");
+    assert.equal(res2.status, 200);
+    assert.match(res2.text, /Where visitors come from/);
+  });
+
+  test("channels render with sessions, visitors and a played conversion rate", async () => {
+    // BigInt-ish counts are what libSQL actually hands back, so the stub uses them: Number()-ing
+    // them is why histHtml has its local num() helper.
+    withHistory({ ...emptyHistory(), referrals: [
+      { source: "reddit", n: 10n, visitors: 8n, played: 5n },
+      { source: "direct", n: 4n, visitors: 4n, played: 0n },
+    ] });
+    const { app } = buildApp();
+    const res = await request(app).get("/admin?key=test-owner-key");
+    assert.equal(res.status, 200);
+    assert.match(res.text, /<td>reddit<\/td>/);
+    assert.match(res.text, /<td>direct<\/td>/);
+    assert.match(res.text, /5 <span style="color:#8a92a6">\(50%\)<\/span>/); // 5 of 10 reddit sessions played
+    assert.match(res.text, /0 <span style="color:#8a92a6">\(0%\)<\/span>/);
+  });
+
+  test("a zero-session row can't divide by zero, and a hostile channel label is escaped", async () => {
+    withHistory({ ...emptyHistory(), referrals: [
+      { source: "<script>alert(1)</script>", n: 0, visitors: 0, played: 0 },
+      { source: null, n: null, visitors: null, played: null },
+    ] });
+    const { app } = buildApp();
+    const res = await request(app).get("/admin?key=test-owner-key");
+    assert.equal(res.status, 200);
+    assert.equal(res.text.includes("<script>alert(1)</script>"), false);
+    assert.match(res.text, /&lt;script&gt;/);
+    assert.equal(/NaN|Infinity/.test(res.text), false);
+  });
+
+  test("?json=1 exposes the same referral rows for ad-hoc digging", async () => {
+    withHistory({ ...emptyHistory(), referrals: [{ source: "hackernews", n: 3, visitors: 3, played: 2 }] });
+    const { app } = buildApp();
+    const res = await request(app).get("/admin?key=test-owner-key&json=1");
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.body.history.referrals, [{ source: "hackernews", n: 3, visitors: 3, played: 2 }]);
   });
 });
 

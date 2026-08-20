@@ -3,6 +3,7 @@ import { createContext, useContext, useEffect, useMemo, useRef, useState } from 
 import { getSocket } from "@/lib/browser/socket";
 import { armAudio } from "@/lib/browser/sfx";
 import { visitorId } from "@/lib/browser/storage";
+import { arrivedFrom } from "@/lib/browser/referrer";
 
 const SocketContext = createContext(null);
 export const useSocketCtx = () => useContext(SocketContext);
@@ -33,9 +34,15 @@ export default function SocketProvider({ children }) {
     const onConnect = () => {
       setConn({ text: "connected", ok: true });
       measure();
-      // Persistent anonymous visitor id + timezone/locale → owner analytics.
+      // Persistent anonymous visitor id + timezone/locale + where the visit came from → owner
+      // analytics. referrer/landing are the values captured at page load (see referrer.js) rather
+      // than read here: this handler also fires on reconnects, by which point the app has rewritten
+      // its own URL and location no longer says where the visitor arrived from. The server derives
+      // the channel label from them (lib/referral.js), so that logic can improve without a new
+      // client bundle.
       try {
-        socket.emit("clientMeta", { visitorId: visitorId(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, locale: navigator.language });
+        const { referrer, landing } = arrivedFrom();
+        socket.emit("clientMeta", { visitorId: visitorId(), tz: Intl.DateTimeFormat().resolvedOptions().timeZone, locale: navigator.language, referrer, landing });
       } catch {
         /* analytics only — never block connecting */
       }

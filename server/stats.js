@@ -60,6 +60,9 @@ async function init() {
       ["sessions", "singleplayer INTEGER DEFAULT 0"],
       ["games", "gid TEXT"], ["rounds", "gid TEXT"], ["answers", "gid TEXT"], ["answers", "player TEXT"], ["events", "gid TEXT"],
       ["sessions", "ip TEXT"], ["sessions", "visitor_id TEXT"], ["sessions", "tz TEXT"], ["sessions", "locale TEXT"], ["sessions", "geo TEXT"],
+      // referral tracking: ref_source is the canonical channel label (lib/referral.js), referrer the
+      // raw header it was derived from — kept so a mislabelled channel can be re-derived later.
+      ["sessions", "ref_source TEXT"], ["sessions", "referrer TEXT"],
       ["challenges", "timer INTEGER DEFAULT 45"], ["challenge_results", "wpms TEXT"], ["challenge_results", "crown INTEGER DEFAULT 0"],
       ["challenge_results", "gid TEXT"], ["challenge_results", "times TEXT"], ["challenge_results", "mode TEXT"], ["answers", "verdict TEXT"],
       // Challenge Race additions: format (bo3/bo5/endless) + sudden-death flag + player count on `games`;
@@ -72,6 +75,11 @@ async function init() {
     // daily rows (`d-%`) → 'daily'; everything else untagged → 'solo'. Idempotent (only touches NULL).
     try { await client.execute(`UPDATE challenge_results SET mode='daily' WHERE mode IS NULL AND challenge_id LIKE 'd-%'`); } catch (e) {}
     try { await client.execute(`UPDATE challenge_results SET mode='solo'  WHERE mode IS NULL`); } catch (e) {}
+    // Sessions that predate referral tracking are 'unknown', NOT 'direct': claiming a visit from
+    // before the column existed had no referrer would quietly inflate the direct channel forever.
+    // Idempotent — every session written from now on carries a label, so this only ever touches
+    // old rows (and the odd socket that connected without a browser sending clientMeta).
+    try { await client.execute(`UPDATE sessions SET ref_source='unknown' WHERE ref_source IS NULL`); } catch (e) {}
     console.log("📊 stats: connected to Turso ✓");
   } catch (e) {
     console.error("📊 stats: schema init failed —", e.message);
@@ -116,9 +124,9 @@ function recordChat(c) {
     [c.gid || null, c.code || null, c.name || null, c.text || null, c.at || Date.now(), c.spectator ? 1 : 0, c.mode || "mp"]);
 }
 function recordSession(s) {
-  fire(`INSERT INTO sessions (connected_at,disconnected_at,duration_ms,device,played,joined,spectated,name,reason,mode,singleplayer,ip,visitor_id,tz,locale,geo) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  fire(`INSERT INTO sessions (connected_at,disconnected_at,duration_ms,device,played,joined,spectated,name,reason,mode,singleplayer,ip,visitor_id,tz,locale,geo,ref_source,referrer) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [s.connected_at, s.disconnected_at, s.duration_ms, s.device, s.played ? 1 : 0, s.joined ? 1 : 0, s.spectated ? 1 : 0, s.name || null, s.reason || null, s.mode || "mp", s.singleplayer ? 1 : 0,
-     s.ip || null, s.visitor_id || null, s.tz || null, s.locale || null, s.geo || null]);
+     s.ip || null, s.visitor_id || null, s.tz || null, s.locale || null, s.geo || null, s.ref_source || null, s.referrer || null]);
 }
 
 async function q(sql, args) { if (!client) return []; try { return (await client.execute(args ? { sql, args } : sql)).rows; } catch (e) { console.error("📊 stats read:", e.message); return []; } }
@@ -162,6 +170,7 @@ async function summary() {
     recent: await q(`SELECT code,gid,p1_name,p2_name,p1_score,p2_score,winner_name,groups,rounds,reason,duration_ms,ended_at
       FROM games WHERE mode='mp' ORDER BY id DESC LIMIT 15`),
     skips: await q(`SELECT detail category, COUNT(*) n FROM events WHERE type='categorySkipped' AND detail IS NOT NULL GROUP BY detail ORDER BY n DESC LIMIT 25`),
+    referrals: await referralStats(),
     sessions: await sessionStats(),
     solo: await soloStats(),
     daily: await dailyStats(),
@@ -220,6 +229,23 @@ async function spStats() {
     byDifficulty: await q(`SELECT COALESCE(difficulty,'?') difficulty, COUNT(*) n, COALESCE(SUM(winner_name='You'),0) wins FROM games WHERE mode='sp' GROUP BY difficulty ORDER BY n DESC`),
     topCategories: await q(`SELECT grp, category, COUNT(*) plays FROM rounds WHERE mode='sp' GROUP BY grp,category ORDER BY plays DESC LIMIT 15`),
   };
+}
+
+// Where visitors come from, per channel (lib/referral.js labels them on the way in).
+//
+// Deliberately NOT filtered to mode='mp' like the other session queries: a channel that only ever
+// sends solo players is still a channel that works, and splitting the answer by game mode would
+// make the table useless for the question it exists to answer.
+//
+// Sessions alone would be the misleading number — "reddit: 12" says nothing about whether those 12
+// bounced. `played` counts a visit where someone actually played SOMETHING (a duel or a solo/daily
+// run, hence the OR on singleplayer), and `visitors` de-duplicates one person reconnecting five
+// times, which one deploy or one flaky phone connection is enough to cause.
+async function referralStats() {
+  return q(`SELECT COALESCE(NULLIF(ref_source,''),'unknown') source, COUNT(*) n,
+      COUNT(DISTINCT COALESCE(visitor_id, id)) visitors,
+      COALESCE(SUM(played=1 OR singleplayer=1),0) played
+    FROM sessions GROUP BY source ORDER BY n DESC, source LIMIT 25`);
 }
 
 async function sessionStats() {

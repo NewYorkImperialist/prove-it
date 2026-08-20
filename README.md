@@ -28,7 +28,7 @@ You trade raises ("I can name 7"… "make it 8") until someone calls **"Prove it
 
 ## Why it hits different
 - **The bluff is the game.** Most naming games end when you run out of answers. Here, the tension is deciding *when to stop raising* — pure "chicken" energy, not trivia recall.
-- **272 categories, 11,531 verified answers** — deep enough that regulars still get surprised, wide enough that non-nerds can hang.
+- **272 categories, 11,533 verified answers** — deep enough that regulars still get surprised, wide enough that non-nerds can hang.
 - **Live, not laggy.** Raises, calls, answers and chat land the instant they're sent, over Socket.IO — nothing to refresh, and nothing to install. (The duel takes turns on purpose — that's where the bluffing lives, and letting your 10s turn expire calls **Prove it!** for you, so nobody can stall it out. The race doesn't take turns at all: everyone types at once.)
 - **A few secrets** hidden in the category list that we're not going to spoil here.
 
@@ -40,7 +40,7 @@ This is built to be passed around — drop the link in your group chat, Discord,
 To play a friend specifically: open the site, hit **Create a room**, and share the room link/code — or copy a `?room=CODE` invite link straight from the lobby.
 
 ## Content
-**272 categories, 11,531 verified answers** across 17 themed groups, 268 of them playable solo — spanning Sports, Geography, History, Entertainment, Food, Animals, Music, Brands, Computer Science, Math, Science, Art, Mythology, Games & Puzzles, American Innovations, and Pop Culture (yes, including memes and Italian brainrot).
+**272 categories, 11,533 verified answers** across 17 themed groups, 268 of them playable solo — spanning Sports, Geography, History, Entertainment, Food, Animals, Music, Brands, Computer Science, Math, Science, Art, Mythology, Games & Puzzles, American Innovations, and Pop Culture (yes, including memes and Italian brainrot).
 
 Want to add your own? Edit **`data/categories.js`** — each entry is `"Name"` or `["Canonical","alias", …]` (aliases all match but count once). The header comment in that file explains the format; no code changes needed.
 

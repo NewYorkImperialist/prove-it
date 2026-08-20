@@ -92,4 +92,38 @@ describe("the fill board agrees with the World Capitals category", () => {
     }
     assert.deepEqual(rejected, []);
   });
+
+  // The reverse direction, which is the one that actually bit: the fill board's round-end study
+  // list teaches you its OWN canonical, so a name it displays but the category rejects means solo
+  // teaches a spelling the duel marks wrong — on a shared category name.
+  test("every capital the fill board DISPLAYS is accepted by the category too", () => {
+    const catAccepts = new Set();
+    for (const it of cat.items) for (const raw of Array.isArray(it) ? it : [it]) catAccepts.add(norm(raw));
+    const rejected = Object.entries(CAPITALS)
+      .filter(([, rec]) => !catAccepts.has(norm(rec.c)))
+      .map(([place, rec]) => `${place} → ${rec.c}`);
+    assert.deepEqual(rejected, [], `solo teaches ${rejected.length} capital(s) the duel won't accept`);
+  });
+
+  // The file header promises both, and for most of Europe only the English name worked.
+  test("well-known endonyms are accepted alongside the English name", () => {
+    const pairs = [
+      ["Italy", "Roma"], ["Czechia", "Praha"], ["Austria", "Wien"], ["Portugal", "Lisboa"],
+      ["Poland", "Warszawa"], ["Serbia", "Beograd"], ["Romania", "Bucuresti"],
+      ["Greece", "Athina"], ["Vietnam", "Ha Noi"], ["Denmark", "Kobenhavn"],
+    ];
+    const missing = pairs.filter(([place, endonym]) => !CAPITALS[place].a.includes(norm(endonym)));
+    assert.deepEqual(missing, []);
+  });
+
+  // …and the English name is what gets DISPLAYED, since that's what the study list teaches.
+  test("a capital with a common English name displays it, not the endonym", () => {
+    const expected = {
+      Greece: "Athens", Cuba: "Havana", Oman: "Muscat", Uzbekistan: "Tashkent",
+      Sudan: "Khartoum", Mexico: "Mexico City", Bahrain: "Manama", Panama: "Panama City",
+    };
+    for (const [place, want] of Object.entries(expected)) {
+      assert.equal(CAPITALS[place].c, want, `${place} still displays "${CAPITALS[place].c}"`);
+    }
+  });
 });

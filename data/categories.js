@@ -468,6 +468,10 @@ const CATEGORY_GROUPS = {
       "Ashgabat", "Funafuti", "Kampala", ["Kyiv","kyiv","kiev"], "Abu Dhabi", "London",
       ["Washington, D.C.","washington","washington dc","washington d.c."], "Montevideo", "Tashkent", "Port Vila",
       ["Vatican City","vatican city","vatican"], "Caracas", "Hanoi", ["Sanaa","sanaa","sana'a"], "Lusaka", "Harare",
+      // The solo fill board prompts for these two (data/capitals.js has all 197 countries), and
+      // its "you missed" list teaches them — so the duel has to accept them too, or one category
+      // name has two different answer keys depending on which mode you're in.
+      "Taipei", ["East Jerusalem","east jerusalem","gaza","ramallah"],
     ]},
     { name: "Countries in Asia", items: [
       "China","India","Japan","South Korea","North Korea","Vietnam","Thailand","Cambodia","Laos",["Myanmar","myanmar","burma"],"Malaysia",

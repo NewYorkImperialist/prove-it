@@ -5,11 +5,11 @@ const http = require("http");
 const express = require("express");
 const { Server } = require("socket.io");
 const { io: ioClient } = require("socket.io-client");
-const engine = require("../game-engine.js");
-const raceEngine = require("../race-engine.js");
-const analytics = require("../stats.js"); // no TURSO_URL in the test env — every write is a silent no-op
+const engine = require("../server/game-engine.js");
+const raceEngine = require("../server/race-engine.js");
+const analytics = require("../server/stats.js"); // no TURSO_URL in the test env — every write is a silent no-op
 const { CATEGORY_GROUPS, DEFAULT_GROUPS } = require("../lib/category-data.js");
-const { createRooms } = require("../rooms.js");
+const { createRooms } = require("../server/rooms.js");
 
 // Real Socket.IO client <-> server over a loopback TCP port, mirroring test/rooms.test.js's
 // approach — but exercising the "race" mode (room.mode === "race") end to end.

@@ -1,7 +1,7 @@
 "use strict";
 const { test, describe, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
-const engine = require("../race-engine.js");
+const engine = require("../server/race-engine.js");
 
 // Mirrors test/game-engine.test.js's pattern: mock timers so round/countdown/reveal timers
 // never actually wait, and can be advanced deterministically with t.mock.timers.tick(ms).

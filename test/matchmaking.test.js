@@ -1,7 +1,7 @@
 "use strict";
 const { test, describe, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
-const { createMatchmaking } = require("../matchmaking.js");
+const { createMatchmaking } = require("../server/matchmaking.js");
 
 beforeEach((t) => { t.mock.timers.enable({ apis: ["setTimeout"] }); });
 

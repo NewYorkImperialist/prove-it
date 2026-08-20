@@ -4,7 +4,7 @@ const globals = require("globals");
 const jsxPlugin = require("./tools/eslint-jsx.js");
 
 // Three worlds in one repo:
-//   • the Node server (CommonJS): server.js, the engines, lib/, routes/, data/
+//   • the Node server (CommonJS): server/, lib/, routes/, data/
 //   • the Next.js client (ES modules + JSX): app/, components/, hooks/, lib/browser/
 //   • the tests (CommonJS, node:test)
 // lib/ is deliberately CommonJS even where the client imports it — those modules are shared
@@ -16,8 +16,7 @@ module.exports = [
   },
   {
     files: [
-      "server.js", "game-engine.js", "race-engine.js", "matchmaking.js", "stats.js", "site-config.js",
-      "eslint.config.js", "next.config.js", "rooms.js", "lib/**/*.js", "routes/**/*.js", "data/**/*.js", "tools/**/*.js",
+      "server/**/*.js", "eslint.config.js", "next.config.js", "lib/**/*.js", "routes/**/*.js", "data/**/*.js", "tools/**/*.js",
     ],
     ignores: ["lib/browser/**"],
     languageOptions: {

@@ -1,7 +1,7 @@
 "use strict";
 const { test, describe, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
-const engine = require("../game-engine.js");
+const engine = require("../server/game-engine.js");
 
 // Every scenario below drives game-engine handlers directly rather than waiting on real clocks
 // (open/turn/prove timers run 5-20s). Mock timers so setTimeout calls the engine makes never

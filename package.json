@@ -2,11 +2,11 @@
   "name": "prove-it",
   "version": "1.0.0",
   "description": "Prove It! — multiplayer server (Next.js app + Socket.IO realtime layer on one port)",
-  "main": "server.js",
+  "main": "server/index.js",
   "scripts": {
-    "dev": "node server.js",
+    "dev": "node server/index.js",
     "build": "next build",
-    "start": "NODE_ENV=production node server.js",
+    "start": "NODE_ENV=production node server/index.js",
     "test": "node --test",
     "lint": "eslint ."
   },

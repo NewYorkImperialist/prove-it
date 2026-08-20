@@ -2,8 +2,8 @@
 // One match lives on room.game. The server is authoritative: it owns the turn
 // state machine, the clocks, and answer validation. Clients send intents and
 // render the broadcast snapshots.
-const CATEGORY_GROUPS = require("./data/categories.js");
-const { norm, resolve, buildPool } = require("./lib/answer-matching.js");
+const CATEGORY_GROUPS = require("../data/categories.js");
+const { norm, resolve, buildPool } = require("../lib/answer-matching.js");
 
 const OPEN_MS = 20_000;       // time to open with a number
 const TURN_MS = 10_000;       // time to raise / call Prove It!

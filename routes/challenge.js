@@ -4,8 +4,8 @@
 const path = require("path");
 const fs = require("fs");
 const express = require("express");
-const analytics = require("../stats"); // persistent game history (Turso)
-const SITE = require("../site-config");
+const analytics = require("../server/stats"); // persistent game history (Turso)
+const SITE = require("../lib/site-config");
 const { render, siteVars } = require("../lib/render.js");
 const { easternDay } = require("../lib/html.js");
 const { CATEGORY_GROUPS, CAT_SIZES, ALL_ROUND_NAMES } = require("../lib/category-data.js");

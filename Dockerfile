@@ -20,4 +20,4 @@ RUN npm ci --omit=dev
 COPY . .
 COPY --from=build /app/.next ./.next
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "server/index.js"]

@@ -178,7 +178,7 @@ export function useSolo({ onExitToMenu }) {
       });
     }
     // After a geography round, list what you missed so you can study it for next time. Flags
-    // and Silhouette quizzes are folded into the Geography group, so this already covers them.
+    // and Borders quizzes are folded into the Geography group, so this already covers them.
     let items = [];
     if (cat && /^Geography/.test(cat.group)) {
       if (geoModeRef.current === "fill" && geoRef.current) items = geoRef.current.missedFill().map((m) => ({ q: m.q, a: m.a }));
@@ -212,6 +212,7 @@ export function useSolo({ onExitToMenu }) {
     (secsOverride) => {
       if (!challengeIdRef.current || !defRef.current) return;
       const secs = secsOverride != null ? secsOverride : timeLeftRef.current;
+      const cat = roundCatsRef.current[curRef.current];
       store.saveResumeRun({
         challengeId: challengeIdRef.current,
         def: defRef.current,
@@ -222,6 +223,9 @@ export function useSolo({ onExitToMenu }) {
         namedIds: [...named.current],
         deadline: Date.now() + secs * 1000,
         flagSel: flagSelRef.current,
+        // A picture quiz's grid order is shuffled fresh each play — remember it so a resume
+        // shows the exact same arrangement flagSel was pointing into, not a new shuffle.
+        entryOrder: cat && (cat.isFlagQuiz || cat.isBorderQuiz) ? cat.entries.map((e) => e.id) : undefined,
         runGid: runGid.current,
         isGeoChallenge: isGeoChallenge.current,
         playOrigin: playOrigin.current,
@@ -230,14 +234,30 @@ export function useSolo({ onExitToMenu }) {
         savedAt: Date.now(),
       });
     },
-    [challengeIdRef, defRef, curRef, timeLeftRef, flagSelRef, isDailyRef, dailyDate],
+    [challengeIdRef, defRef, curRef, timeLeftRef, flagSelRef, roundCatsRef, isDailyRef, dailyDate],
   );
 
-  // `resumeData` (optional): `{ namedIds, secsLeft }` from a saved snapshot — picks the round
-  // back up instead of starting it fresh (see resumeRun()).
+  // `resumeData` (optional): `{ namedIds, secsLeft, entryOrder }` from a saved snapshot — picks
+  // the round back up instead of starting it fresh (see resumeRun()).
   const startRound = useCallback(
     (i, resumeData) => {
       setCur(i);
+      let cat = roundCatsRef.current[i];
+      // Picture quizzes (Flags, Borders) get a fresh shuffle every time they're played, so the
+      // grid isn't the same predictable alphabetical order round after round. A resume restores
+      // the exact order it was interrupted in instead — flagSel is an index into this array, so
+      // reshuffling on resume would highlight a different country than the one you left on.
+      if (cat.isFlagQuiz || cat.isBorderQuiz) {
+        let entries;
+        if (resumeData && resumeData.entryOrder) {
+          const byId = new Map(cat.entries.map((e) => [e.id, e]));
+          entries = resumeData.entryOrder.map((id) => byId.get(id)).filter(Boolean);
+        } else {
+          entries = shuffle(cat.entries);
+        }
+        cat = { ...cat, entries };
+        setRoundCats((arr) => arr.map((c, idx) => (idx === i ? cat : c)));
+      }
       named.current = new Set(resumeData ? resumeData.namedIds : []);
       guesses.current = [];
       rChars.current = 0;
@@ -248,7 +268,6 @@ export function useSolo({ onExitToMenu }) {
       setRemOn(false);
       setFlagSel(resumeData ? resumeData.flagSel || 0 : 0);
       if (i === 0 && !resumeData) runGid.current = genGid(); // one id per run, threading every round's guesses
-      const cat = roundCatsRef.current[i];
       setChips(resumeData ? cat.entries.filter((e) => named.current.has(e.id)).map((e) => e.display) : []);
       setScreen("sprint");
 
@@ -257,7 +276,7 @@ export function useSolo({ onExitToMenu }) {
       const gm = hasGeoBoard(cat.name) ? geoModeOf(cat.name) : null;
       mapActive.current = false;
       setGeoMode(gm);
-      setShowTotal(!!gm || !!cat.isFlagQuiz || !!cat.isSilhouetteQuiz); // "/ total" for the enumerations and picture quizzes
+      setShowTotal(!!gm || !!cat.isFlagQuiz || !!cat.isBorderQuiz); // "/ total" for the enumerations and picture quizzes
       setFillProgress({ filled: 0, total: 0 });
 
       // Per-round time: the recommended-per-round sentinel (timer 0) uses each category's length.
@@ -279,7 +298,7 @@ export function useSolo({ onExitToMenu }) {
 
       if (!resumeData) snapshotRun(curRoundSecs.current);
     },
-    [setCur, setCount, setGeoMode, setFlagSel, setTimeLeft, timeLeftRef, roundCatsRef, defRef, perRoundRef, endRound, snapshotRun],
+    [setCur, setCount, setGeoMode, setFlagSel, setTimeLeft, timeLeftRef, roundCatsRef, setRoundCats, defRef, perRoundRef, endRound, snapshotRun],
   );
 
   // D3 needs a real, mounted node to draw into, so the geography board is set up after the
@@ -322,7 +341,7 @@ export function useSolo({ onExitToMenu }) {
     setTimeLeft((t) => t + incrementRef.current);
   }, [incrementRef, setTimeLeft]);
 
-  // Picture quizzes (Flags, Silhouettes): unlike every other round, an answer only counts
+  // Picture quizzes (Flags, Borders): unlike every other round, an answer only counts
   // against the ONE highlighted tile — naming a real country from the list that isn't this one
   // is still a miss, just a more informative one. Correct advances the highlight to the next
   // unsolved tile.
@@ -336,11 +355,11 @@ export function useSolo({ onExitToMenu }) {
 
   // Moves the highlighted tile left/right (also used for up/down — the grid reflows by screen
   // width, so there's no reliable row math to do arrow-key-accurate 2D navigation with). Shared
-  // by both picture quizzes (Flags, Silhouettes) — same grid, same highlight, different image.
+  // by both picture quizzes (Flags, Borders) — same grid, same highlight, different image.
   const moveFlagSel = useCallback(
     (delta) => {
       const cat = roundCatsRef.current[curRef.current];
-      if (!cat || (!cat.isFlagQuiz && !cat.isSilhouetteQuiz)) return;
+      if (!cat || (!cat.isFlagQuiz && !cat.isBorderQuiz)) return;
       setFlagSel((i) => Math.max(0, Math.min(cat.entries.length - 1, i + delta)));
     },
     [roundCatsRef, curRef, setFlagSel],
@@ -354,7 +373,7 @@ export function useSolo({ onExitToMenu }) {
       setWpm(liveWpm());
 
       const cat0 = roundCatsRef.current[curRef.current];
-      if (cat0.isFlagQuiz || cat0.isSilhouetteQuiz) {
+      if (cat0.isFlagQuiz || cat0.isBorderQuiz) {
         const entry = cat0.entries[flagSelRef.current];
         const nq = norm(q);
         if (entry.aliases.includes(nq)) {
@@ -571,7 +590,7 @@ export function useSolo({ onExitToMenu }) {
     times.current = snap.times || [];
     wpms.current = snap.wpms || [];
     const secsLeft = Math.max(0, Math.round((snap.deadline - Date.now()) / 1000));
-    startRound(snap.cur, { namedIds: snap.namedIds || [], flagSel: snap.flagSel, secsLeft });
+    startRound(snap.cur, { namedIds: snap.namedIds || [], flagSel: snap.flagSel, entryOrder: snap.entryOrder, secsLeft });
   }, [resumeInfo, setChallengeId, setDef, setRoundCats, setIsDaily, startRound]);
 
   const initCreate = useCallback(() => {

@@ -1,15 +1,15 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { silhouettePaths } from "@/lib/browser/silhouette-map";
+import { borderPaths } from "@/lib/browser/border-map";
 import { cx } from "@/lib/browser/cx";
 
 const TILE = 80; // px — the box each outline is fit into, same units the path data is computed in
 
-// The Silhouette quiz board: same grid/highlight/click-to-select shape as FlagBoard, but the
-// image per tile is a country outline computed client-side from the real world atlas (see
-// lib/browser/silhouette-map.js) instead of a static flag URL — so it loads once, asynchronously,
+// The Borders quiz board: same grid/highlight/click-to-select shape as FlagBoard, but the image
+// per tile is a country outline computed client-side from the real world atlas (see
+// lib/browser/border-map.js) instead of a static flag URL — so it loads once, asynchronously,
 // for the whole round rather than being ready immediately.
-export default function SilhouetteBoard({ entries, selected, namedIds, onSelect }) {
+export default function BorderBoard({ entries, selected, namedIds, onSelect }) {
   const [paths, setPaths] = useState(null); // Map<entryId, pathString|null>, or null while loading
   const [failed, setFailed] = useState(false);
   const selRef = useRef(null);
@@ -18,7 +18,7 @@ export default function SilhouetteBoard({ entries, selected, namedIds, onSelect 
     let live = true;
     setPaths(null);
     setFailed(false);
-    silhouettePaths(entries, TILE, TILE)
+    borderPaths(entries, TILE, TILE)
       .then((m) => live && setPaths(m))
       .catch(() => live && setFailed(true));
     return () => {

@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { BackButton } from "@/components/ui/Button";
 import { SoloButton } from "./SoloBits";
 import FlagBoard from "./FlagBoard";
-import SilhouetteBoard from "./SilhouetteBoard";
+import BorderBoard from "./BorderBoard";
 import { useReplay } from "@/hooks/useReplay";
 import { cx } from "@/lib/browser/cx";
 
@@ -16,9 +16,9 @@ export default function SprintSection({ solo, onBack }) {
   const [shaking, endShake] = useReplay(solo.shakeTick);
   const cat = solo.roundCats[solo.cur];
   const flagMode = !!(cat && cat.isFlagQuiz);
-  const silhouetteMode = !!(cat && cat.isSilhouetteQuiz);
-  const pictureMode = flagMode || silhouetteMode;
-  const PictureBoard = silhouetteMode ? SilhouetteBoard : FlagBoard;
+  const borderMode = !!(cat && cat.isBorderQuiz);
+  const pictureMode = flagMode || borderMode;
+  const PictureBoard = borderMode ? BorderBoard : FlagBoard;
   const mapMode = !!solo.geoMode || pictureMode;
 
   // Focus the box (and clear the last round's text) whenever a new round starts.
@@ -103,7 +103,7 @@ export default function SprintSection({ solo, onBack }) {
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck="false"
-        placeholder={silhouetteMode ? "Type this country's name…" : flagMode ? "Type this flag's country…" : "Type a name and hit Enter…"}
+        placeholder={borderMode ? "Type this country's name…" : flagMode ? "Type this flag's country…" : "Type a name and hit Enter…"}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {

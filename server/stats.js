@@ -395,7 +395,9 @@ async function categoryLeaderboard(catName, limit = 50) {
   return collapseBoard(rows, limit, await getCreatorName());
 }
 
-// GOAT board: ONE overall ranking across every geography category (solo plays only).
+// GOAT board: ONE overall ranking across every geography category. Same eligibility as the
+// per-category boards below: solo runs, plus shared-link runs that used the recommended time
+// (see the WHERE clause) — the daily has its own board and never lands here.
 // The score rewards volume, and speed only ever helps, never hurts:
 //   • each answer you name is worth 1 base point (so a lucky 1-answer run stays tiny — speed can't inflate it)
 //   • on a FULL clear we know how long it took, so those points get a speed bonus: 1× using the whole

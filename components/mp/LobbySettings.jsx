@@ -74,7 +74,10 @@ export function DuelSettings({ settings, iAmHost, onChange }) {
   return (
     <>
       <Panel locked={!iAmHost}>
-        <GroupTitle>Categories</GroupTitle>
+        {/* "Genres", not "Categories": this picker holds the 17 GROUPS, while a "category" is one
+            of the 272 inside them. Labelling it "Categories" meant ticking them all showed 17
+            items for a game with 272 — and solo has always called the same axis a genre. */}
+        <GroupTitle>Genres</GroupTitle>
         <CategoryChecks groups={s.groups || []} disabled={!iAmHost} onChange={(groups) => onChange({ groups })} />
         <GroupTitle>Timer</GroupTitle>
         <Seg options={TIMERS} value={s.timer} onChange={(timer) => onChange({ timer })} />
@@ -99,7 +102,7 @@ export function RaceSettings({ settings, iAmHost, onChange }) {
   return (
     <>
       <Panel locked={!iAmHost}>
-        <GroupTitle>Categories</GroupTitle>
+        <GroupTitle>Genres</GroupTitle>
         <CategoryChecks groups={s.groups || []} disabled={!iAmHost} onChange={(groups) => onChange({ groups })} />
         <GroupTitle>Timer per round</GroupTitle>
         <Seg options={TIMERS} value={s.timer} onChange={(timer) => onChange({ timer })} />

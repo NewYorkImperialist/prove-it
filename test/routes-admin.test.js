@@ -1,11 +1,20 @@
 "use strict";
-const { test, describe } = require("node:test");
+const { test, describe, before, after } = require("node:test");
 const assert = require("node:assert/strict");
 const express = require("express");
 const request = require("supertest");
 const { createAdminRouter } = require("../routes/admin.js");
 
 process.env.OWNER_KEY = "test-owner-key";
+
+// The lockdown and end-all-games routes narrate themselves to stdout ("🔒 LOCKDOWN ON — new games
+// blocked"), and stats.js announces itself on load. Interleaved with the test runner's own
+// serialized IPC stream that is enough to corrupt it, which surfaces as this whole FILE failing
+// with no failing test inside it — the same trap test/rooms.test.js documents. Errors still go to
+// console.error, so a real problem is never swallowed.
+let realLog;
+before(() => { realLog = console.log; console.log = () => {}; });
+after(() => { console.log = realLog; });
 
 // analytics.enabled() is false throughout (no TURSO_URL in the test environment) — these tests
 // cover routing + owner-key auth gating, not the Turso-backed report content.

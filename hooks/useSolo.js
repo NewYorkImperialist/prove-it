@@ -589,7 +589,7 @@ export function useSolo({ onExitToMenu }) {
       : `You named ${total} across ${rounds} ${rounds === 1 ? "round" : "rounds"}`;
     const savedSub = single
       ? `${named} at ${avgWpm} wpm avg.`
-      : `${named} at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`;
+      : `${named} at ${avgWpm} wpm avg. Send the link to friends · same rounds, same leaderboard.`;
     setDone({
       daily: false,
       geoChallenge: isGeoChallenge.current,

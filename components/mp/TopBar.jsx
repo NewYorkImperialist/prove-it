@@ -118,7 +118,7 @@ export default function TopBar({ mp, roster, roomLabel, canSkip, skipLabel, onLe
           }}
           className={cx(PILL, "hidden px-3 py-1.5 text-[13px] desk:inline-block")}
         >
-          Categories ▾
+          Genres ▾
         </button>
       ) : null}
 
@@ -137,7 +137,7 @@ export default function TopBar({ mp, roster, roomLabel, canSkip, skipLabel, onLe
 
       {catOpen ? (
         <div ref={catMenu} className={cx(MENU, "w-[232px] p-2.5")}>
-          <div className="mx-1 mt-0.5 mb-2 text-[11px] tracking-[1px] text-muted uppercase">Categories (applies next round)</div>
+          <div className="mx-1 mt-0.5 mb-2 text-[11px] tracking-[1px] text-muted uppercase">Genres (applies next round)</div>
           <CategoryChecks groups={groups} onChange={mp.setGroupsNow} className="max-h-[280px] grid-cols-1!" />
         </div>
       ) : null}
@@ -174,7 +174,7 @@ export default function TopBar({ mp, roster, roomLabel, canSkip, skipLabel, onLe
                 setCatOpen(true);
               }}
             >
-              Categories…
+              Genres…
             </MenuButton>
           ) : null}
           <MenuButton onClick={mp.leaveRoom} className="last:mb-0 hover:border-bad hover:bg-bad hover:text-white">

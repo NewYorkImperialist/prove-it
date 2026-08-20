@@ -22,7 +22,7 @@ You trade raises ("I can name 7"… "make it 8") until someone calls **"Prove it
 
 ## Modes
 - 👥 **Live Multiplayer** — create a room, share the link, and play the bluffing duel head-to-head. Friends can also **spectate** live.
-- 🏁 **Challenge Race** — 2–8 players, one category, everyone racing at once. Clocks are **per player**, like chess: you can set a bonus increment for every correct answer, and no clock can grow past twice the base timer, so one player on a hot streak can't leave the room waiting. Play best-of-3, best-of-5 or endless; turn on **sudden death** and a tie at the top sends just the tied players into a decider; the room can throw a category away by unanimous vote; and when the last clock runs out everyone sees each other's answers and can **approve the near-misses** the matcher was too strict about. Don't want to trade room codes? **Quick Match** queues you up and drops you into a race with whoever else is waiting.
+- 🏁 **Challenge Race** — 2–8 players, one category, everyone racing at once. Clocks are **per player**, like chess: you can set a bonus increment for every correct answer, and no clock can grow past twice the base timer, so one player on a hot streak can't leave the room waiting. Play first-to-2, first-to-3 or endless; turn on **sudden death** and a tie at the top sends just the tied players into a decider; the room can throw a category away by unanimous vote; and when the last clock runs out everyone sees each other's answers and can **approve the near-misses** the matcher was too strict about. Don't want to trade room codes? **Quick Match** queues you up and drops you into a race with whoever else is waiting.
 - 🕹️ **Solo** — pick a category, or build a custom multi-round run, and race the clock alone. No opponent needed.
 - 📅 **Daily Challenge** — the same puzzle for everyone each day, with a shared leaderboard. Share your score and challenge friends to beat it.
 
@@ -80,7 +80,7 @@ It needs one repository secret, set once: `fly tokens create deploy`, then save 
 `FlyV1 …` string) under **Settings → Secrets and variables → Actions** as **`FLY_API_TOKEN`**.
 The running server wants that same token as a *Fly* secret too — that's what lets its cost guard
 scale the machine down; see the note in `fly.toml`. The dollar thresholds and the projection maths
-live in **`lib/cost-guard.js`** (`FLY_COST`) — `server.js` only wires the guard up.
+live in **`lib/cost-guard.js`** (`FLY_COST`) — `server/index.js` only wires the guard up.
 
 ```bash
 fly deploy      # or deploy straight from your machine, bypassing CI

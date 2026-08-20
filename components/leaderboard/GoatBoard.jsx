@@ -41,7 +41,7 @@ export default function GoatBoard({ visitorId }) {
         })}
       </LbTable>
       <LbNote>
-        Points across <b>every</b> geography category: each answer scores 1, and a full clear gets up to a 2× bonus for finishing well under the recommended time — never a penalty for taking the whole time. Name more, across more, faster.
+        Points across <b>every</b> geography category: each answer scores 1, and a full clear gets up to a 2× bonus for finishing well under the recommended time — never a penalty for taking the whole time. Name more, across more, faster. Solo runs count, plus shared-link plays that used the recommended time; the daily has its own board.
       </LbNote>
     </>
   );

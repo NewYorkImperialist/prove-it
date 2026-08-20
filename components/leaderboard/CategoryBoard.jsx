@@ -4,7 +4,7 @@ import { getJSON } from "@/lib/browser/api";
 import { fmtTime } from "@/lib/format";
 import { LbTable, LbRow, LbCell, LbName, LbTotal, LbNote } from "./table";
 
-// All-time best per player on one category, from SOLO runs only — stats.js's categoryLeaderboard
+// All-time best per player on one category — stats.js's categoryLeaderboard
 // selects mode='solo' OR mode='link', but a link run only counts if its challenge used the
 // recommended-time setting (timer===0), so the timing is comparable to a direct solo play. A daily
 // run never lands here. The note below has

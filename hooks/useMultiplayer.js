@@ -216,7 +216,9 @@ export function useMultiplayer({ router }) {
       const key = roomMode === "race" ? "race" : "home";
       setErr(key, "");
       const c = String(code || "").trim().toUpperCase();
-      if (c.length < 4) return setErr(key, "Enter the 4-letter room code.");
+      // "4-letter" was wrong: makeCode() draws from ABCDEFGHJKMNPQRSTUVWXYZ23456789, so a real code
+      // can be 7K2Q. Someone reading "letter" literally has no reason to believe their own code.
+      if (c.length < 4) return setErr(key, "Enter the 4-character room code.");
       socket.emit("joinRoom", { code: c, name, playerId }, (res) => {
         if (!res?.ok) {
           const hint = roomMode === "race" ? " (not sure of the code?)" : " (tap Spectate to watch)";

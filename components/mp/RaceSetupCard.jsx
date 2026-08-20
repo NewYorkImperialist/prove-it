@@ -47,7 +47,7 @@ export default function RaceSetupCard({ leaving, mp, onBack }) {
         <TextInput
           id="raceJoinCode"
           maxLength={4}
-          placeholder="ABCD"
+          placeholder="AB2D"
           autoComplete="off"
           className="flex-1 tracking-[2px] uppercase"
           value={mp.raceJoinCode}

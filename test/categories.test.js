@@ -159,6 +159,38 @@ describe("punctuation-free spellings are accepted wherever the answer appears", 
 // The README quotes these totals twice as a selling point ("N categories, N verified answers").
 // Nothing regenerates them, so content grows and the numbers quietly become a lie — this recomputes
 // them from the data and holds the README to it.
+// Every answer that carries punctuation should also be reachable by typing it without — that was
+// the ~200-answer near-miss dead end (Kareem Abdul-Jabbar, John F. Kennedy, Cross-Country Skiing).
+// The exceptions are answers that differ from a SIBLING only by punctuation (C / C++ / C#), which
+// findEntry deliberately refuses to guess between unless the punctuation you typed picks one.
+describe("punctuated answers are reachable without their punctuation", () => {
+  const { norm, findEntry, punctKey } = require("../lib/solo-matching.js");
+  const { buildCategory } = require("../lib/answer-matching.js");
+
+  test("every punctuated answer resolves from its punctuation-free spelling", () => {
+    const unreachable = [];
+    for (const [group, g] of Object.entries(CATEGORY_GROUPS)) {
+      for (const raw of g.cats) {
+        const cat = buildCategory(raw, group, g.emoji);
+        // Answers whose stripped form is shared with another entry are the deliberate exception.
+        const keyCount = new Map();
+        for (const e of cat.entries) for (const k of new Set(e.aliases.map(punctKey))) keyCount.set(k, (keyCount.get(k) || 0) + 1);
+        for (const e of cat.entries) {
+          const display = e.display;
+          if (!/[^a-z0-9 ]/.test(norm(display))) continue; // nothing to strip once accents are folded
+          const key = punctKey(display);
+          if ((keyCount.get(key) || 0) > 1) continue; // ambiguous with a sibling, by design
+          // Fold accents FIRST (norm does that), then drop punctuation — otherwise "Mbappé"
+          // becomes "Mbapp" and the test is checking a spelling nobody would type.
+          const bare = norm(display).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+          if (!findEntry(cat, norm(bare))) unreachable.push(`${raw.name} :: ${display} (as "${bare}")`);
+        }
+      }
+    }
+    assert.deepEqual(unreachable, [], `${unreachable.length} punctuated answers can't be typed without their punctuation`);
+  });
+});
+
 describe("the README's content figures match the data", () => {
   const README = fs.readFileSync(path.join(__dirname, "..", "README.md"), "utf8");
   const groups = Object.entries(CATEGORY_GROUPS);

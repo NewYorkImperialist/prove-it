@@ -3,13 +3,18 @@ import { useEffect, useRef, useState } from "react";
 import { BackButton } from "@/components/ui/Button";
 import { SoloButton } from "./SoloBits";
 import FlagBoard from "./FlagBoard";
-import BorderBoard from "./BorderBoard";
 import { useReplay } from "@/hooks/useReplay";
 import { cx } from "@/lib/browser/cx";
 
 // The round itself: the clock, the count, the geography board or picture-quiz grid when there
 // is one, and the box you type into. Geography and picture-quiz rounds go full-screen (see
 // SoloApp's mapmode) so the board has room to breathe.
+//
+// Flags get their own isolated grid (FlagBoard) — there's no natural "map" for a flag. Borders
+// reuses the real geography map instead (solo.geoMode === "map", same <div ref={solo.mapEl}>
+// every other map category renders into): one shape highlighted at a time rather than a grid of
+// cut-out silhouettes, so you're naming it in the context of the whole map, same as JetPunk-style
+// "highlighted country" quizzes.
 export default function SprintSection({ solo, onBack }) {
   const [value, setValue] = useState("");
   const inputRef = useRef(null);
@@ -18,7 +23,6 @@ export default function SprintSection({ solo, onBack }) {
   const flagMode = !!(cat && cat.isFlagQuiz);
   const borderMode = !!(cat && cat.isBorderQuiz);
   const pictureMode = flagMode || borderMode;
-  const PictureBoard = borderMode ? BorderBoard : FlagBoard;
   const mapMode = !!solo.geoMode || pictureMode;
 
   // Focus the box (and clear the last round's text) whenever a new round starts.
@@ -83,8 +87,8 @@ export default function SprintSection({ solo, onBack }) {
           A column: the map takes the free space and the island fill-in boxes sit underneath it. */}
       <div ref={solo.mapEl} className={cx("w-full", solo.geoMode ? "my-2 flex min-h-0 flex-1 flex-col" : "hidden")} />
 
-      {pictureMode ? (
-        <PictureBoard
+      {flagMode ? (
+        <FlagBoard
           entries={cat.entries}
           selected={solo.flagSel}
           namedIds={solo.namedIds}

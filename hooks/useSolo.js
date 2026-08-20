@@ -315,6 +315,10 @@ export function useSolo({ onExitToMenu }) {
         if (cancelled) return;
         if (geoRound.mode === "fill") setFillProgress({ filled: mod.GeoMap.filled(), total: mod.GeoMap.total() });
         else mapActive.current = true;
+        // Borders quiz: the map just (re)loaded, so it has no idea which shape is the current
+        // target yet — give it the one flagSel was already pointing to (0 on a fresh round, or
+        // wherever a resume left off).
+        if (geoRound.cat.isBorderQuiz) mod.GeoMap.highlight(geoRound.cat.entries[flagSelRef.current]?.id ?? null);
       } catch {
         // Any failure (CDN down, no shapes for this list) falls back to the plain chip list.
         if (cancelled) return;
@@ -328,6 +332,15 @@ export function useSolo({ onExitToMenu }) {
       cancelled = true;
     };
   }, [geoRound, setGeoMode]);
+
+  // Borders quiz: move the map's highlight whenever flagSel moves (a correct answer advancing
+  // it, or an arrow key). The setup effect above only handles the very first one — this handles
+  // every one after, once the map's actually ready.
+  useEffect(() => {
+    const cat = roundCatsRef.current[curRef.current];
+    if (!cat || !cat.isBorderQuiz || !geoRef.current) return;
+    geoRef.current.highlight(cat.entries[flagSel]?.id ?? null);
+  }, [flagSel, roundCatsRef, curRef]);
 
   /* ---------------- answering ---------------- */
   const flash = useCallback((msg) => {
@@ -386,6 +399,7 @@ export function useSolo({ onExitToMenu }) {
           setCmsg("");
           guesses.current.push({ display: entry.display, verdict: "ok", at: Date.now() });
           bumpTimer();
+          if (cat0.isBorderQuiz && geoRef.current) geoRef.current.light(entry.id); // fills the shape in amber on the map
           setFlagSel(nextUnsolvedTile(cat0, flagSelRef.current));
           snapshotRun();
           if (named.current.size >= cat0.entries.length) finishRoundEarly(); // got them all

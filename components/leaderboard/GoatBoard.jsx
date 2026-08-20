@@ -3,8 +3,9 @@ import { useEffect, useState } from "react";
 import { getJSON } from "@/lib/browser/api";
 import { LbTable, LbRow, LbCell, LbName, LbTotal, LbNote } from "./table";
 
-// One overall geography ranking. Points reward BOTH volume and speed, summed across every
-// geography category, so the top spot can't be taken with a single fast fluke or a slow grind.
+// One overall geography ranking. Points reward volume, summed across every geography category,
+// with a speed bonus on top for a full clear well under the recommended time — a leisurely full
+// clear is never penalized, so the top spot rewards playing a lot rather than playing fast.
 export default function GoatBoard({ visitorId }) {
   const [state, setState] = useState({ loading: true });
 
@@ -40,7 +41,7 @@ export default function GoatBoard({ visitorId }) {
         })}
       </LbTable>
       <LbNote>
-        Points across <b>every</b> geography category: each answer scores, ×a speed bonus (up to 2× fast, ½× slow) when you clear them all. Name more, across more, faster.
+        Points across <b>every</b> geography category: each answer scores 1, and a full clear gets up to a 2× bonus for finishing well under the recommended time — never a penalty for taking the whole time. Name more, across more, faster.
       </LbNote>
     </>
   );

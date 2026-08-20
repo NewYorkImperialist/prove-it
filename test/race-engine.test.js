@@ -777,6 +777,25 @@ describe("post-round review: approving a missed/off-list answer", () => {
     assert.equal(final.tie, true); // 1-1 after the approval, instead of p1 winning outright
   });
 
+  // The reveal card ticks the Approve button optimistically and undoes it when the server refuses,
+  // so these RETURN values are load-bearing, not just the state they change: a success that came
+  // back as a refusal would take a real approval back off the screen.
+  test("approving reports success, and each refusal reports why", (t) => {
+    const io = makeIO(); const room = liveRoom();
+    engine.handleAnswer(io, room, sock("p2"), "Nowray", () => {});
+    engine.endLiveRound(io, room);
+    const missId = room.game.misses.p2[0].id;
+
+    assert.equal(engine.handleApproveMiss(io, room, sock("p2"), "p2", missId), "You can't approve your own answer.");
+    assert.match(engine.handleApproveMiss(io, room, sock("p1"), "p2", "no-such-miss"), /already been ruled on/);
+    // The one that has to NOT be a string, or the tick comes straight back off.
+    assert.equal(engine.handleApproveMiss(io, room, sock("p1"), "p2", missId), undefined);
+    assert.equal(room.game.liveScores.p2, 1);
+
+    t.mock.timers.tick(15000); // finalize → the review window is shut
+    assert.match(engine.handleApproveMiss(io, room, sock("p1"), "p2", missId), /review window/);
+  });
+
   test("you can't approve your own miss, or someone else's after the round is finalized", (t) => {
     const io = makeIO(); const room = liveRoom();
     engine.handleAnswer(io, room, sock("p2"), "Nowray", () => {});

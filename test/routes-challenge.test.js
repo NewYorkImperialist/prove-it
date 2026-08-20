@@ -130,12 +130,12 @@ describe("GET /challenge.html · the generated share card, per link shape", () =
     Object.assign(analytics, { enabled: () => true }, patch);
     return Promise.resolve(run()).finally(() => Object.assign(analytics, saved));
   }
+  // Extract meta tag values with HTML entity decoding.
   // A card URL has several params, so its ampersands arrive HTML-escaped inside the attribute —
   // which is correct markup and what a crawler unescapes before fetching, but it means new URL()
   // would otherwise read the query as "amp;k=...". Only &amp; is decoded here: the hostile-input
   // test below wants to see the other entities still in place.
   const attr = (html, sel) => ((html.match(new RegExp(`<meta ${sel} content="([^"]*)"`)) || [])[1] || "").replace(/&amp;/g, "&");
-  const ogImage = (html) => attr(html, 'property="og:image"');
   const metaOf = (html, kind, name) => attr(html, `${kind}="${name}"`);
 
   test("?id= quotes the challenger's real name, best score and category from the database", async () => {
@@ -145,15 +145,8 @@ describe("GET /challenge.html · the generated share card, per link shape", () =
     }, async () => {
       const res = await request(buildApp(() => false)).get("/challenge.html?id=abc1234");
       assert.equal(res.status, 200);
-      const url = new URL(ogImage(res.text));
-      assert.equal(url.pathname, SITE.ogCard.path);
-      assert.equal(url.searchParams.get("k"), "challenge");
-      assert.equal(url.searchParams.get("n"), "Jayden");
-      assert.equal(url.searchParams.get("s"), "17", "the best SINGLE-round score, not the total");
-      assert.equal(url.searchParams.get("c"), "World Capitals", "and the round that score came from");
-      assert.equal(url.searchParams.get("r"), "2");
-      assert.equal(url.searchParams.get("t"), "45");
-      assert.match(metaOf(res.text, "property", "og:image:alt"), /17 World Capitals/);
+      assert.ok(res.text.includes(SITE.ogImage.url), "uses the static card");
+      assert.match(metaOf(res.text, "property", "og:image:alt"), /Prove It/);
       assert.match(metaOf(res.text, "property", "og:url"), /\?id=abc1234$/);
     });
   });
@@ -164,10 +157,8 @@ describe("GET /challenge.html · the generated share card, per link shape", () =
       getChallengeResults: async () => [{ name: "Jayden", scores: [9] }],
     }, async () => {
       const res = await request(buildApp(() => false)).get("/challenge.html?id=d-20260624&by=Jayden");
-      const url = new URL(ogImage(res.text));
-      assert.equal(url.searchParams.get("k"), "daily");
-      assert.equal(url.searchParams.get("n"), "Jayden", "by_name is 'Daily' for everyone, so ?by= is who says it");
-      assert.equal(url.searchParams.get("s"), "9");
+      assert.ok(res.text.includes(SITE.ogImage.url), "uses the static card");
+      assert.match(metaOf(res.text, "property", "og:url"), /\?id=d-20260624&by=Jayden$/);
     });
   });
 
@@ -181,9 +172,7 @@ describe("GET /challenge.html · the generated share card, per link shape", () =
   test("?geo=<board> validates the board name and describes that board", async () => {
     const res = await request(buildApp(() => false)).get("/challenge.html?geo=Countries%20of%20the%20World");
     assert.equal(res.status, 200);
-    const url = new URL(ogImage(res.text));
-    assert.equal(url.searchParams.get("k"), "geo");
-    assert.equal(url.searchParams.get("c"), "Countries of the World");
+    assert.ok(res.text.includes(SITE.ogImage.url), "uses the static card");
     assert.match(metaOf(res.text, "property", "og:title"), /Can you name all 197 Countries of the World/);
     assert.match(metaOf(res.text, "property", "og:url"), /\?geo=Countries%20of%20the%20World$/);
   });
@@ -191,19 +180,14 @@ describe("GET /challenge.html · the generated share card, per link shape", () =
   test("?geo=1 — the app's own 'open the Geography screen' link — gets the generic geography card", async () => {
     for (const q of ["geo=1", "geo=Atlantis"]) {
       const res = await request(buildApp(() => false)).get(`/challenge.html?${q}`);
-      const url = new URL(ogImage(res.text));
-      assert.equal(url.searchParams.get("k"), "geo", q);
-      assert.equal(url.searchParams.get("c"), null, `${q} names no board, so the card names none either`);
+      assert.ok(res.text.includes(SITE.ogImage.url), `${q} uses the static card`);
       assert.match(metaOf(res.text, "property", "og:title"), /geography boards/);
     }
   });
 
   test("?room= normalises the code and renders a multiplayer invite", async () => {
     const res = await request(buildApp(() => false)).get("/challenge.html?room=ab1&by=Jayden");
-    const url = new URL(ogImage(res.text));
-    assert.equal(url.searchParams.get("k"), "room");
-    assert.equal(url.searchParams.get("x"), "AB1");
-    assert.equal(url.searchParams.get("n"), "Jayden");
+    assert.ok(res.text.includes(SITE.ogImage.url), "uses the static card");
     assert.match(metaOf(res.text, "property", "og:description"), /Room code AB1/);
   });
 

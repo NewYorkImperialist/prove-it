@@ -11,7 +11,7 @@ const { easternDay } = require("../lib/html.js");
 const { CATEGORY_GROUPS, CAT_SIZES, ALL_ROUND_NAMES } = require("../lib/category-data.js");
 const { cleanName, isBlocked } = require("../lib/name-filter.js");
 const { MODES, allBoards } = require("../lib/geo-boards.js");
-const { bragLine, cardUrl, cardAlt } = require("../lib/og-card.js");
+const { bragLine } = require("../lib/og-card.js");
 
 const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char url-safe id
 
@@ -229,8 +229,8 @@ function createChallengeRouter({ isLockdown }) {
     const preview = ({ title, desc, kind, facts, search }) => {
       vars.TITLE = vars.OG_TITLE = vars.TWITTER_TITLE = a(title);
       vars.DESCRIPTION = vars.OG_DESCRIPTION = vars.TWITTER_DESCRIPTION = a(desc);
-      vars.OG_IMAGE = a(cardUrl(kind, facts));
-      vars.OG_IMAGE_ALT = a(cardAlt(kind, facts));
+      vars.OG_IMAGE = a(`${SITE.ogImage.url}?v=${SITE.ogImage.v}`);
+      vars.OG_IMAGE_ALT = a(SITE.ogImage.alt);
       // og:url is the canonical page, which is the app the bounce script lands on — not this stub.
       // Rebuilt from the values we validated rather than echoed from req.url, so nothing a stranger
       // put in the query string can end up being presented as our own canonical address.

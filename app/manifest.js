@@ -35,6 +35,10 @@ export default function manifest() {
       // transparent margin would show up as a gap. scripts/make-icons.js draws that variant
       // full-bleed with the mark inside the safe circle.
       { src: "/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+      // Android 13+ themed icons: the launcher recolours every tile to match the wallpaper, using
+      // this layer purely as an alpha mask. Without it the amber plate stays amber on a themed
+      // home screen and the game is the one tile ignoring the user's setting.
+      { src: "/icon-monochrome-512.png", sizes: "512x512", type: "image/png", purpose: "monochrome" },
     ],
   };
 }

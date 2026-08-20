@@ -19,6 +19,8 @@ const path = require("node:path");
 
 const AMBER = [0xf5, 0xa6, 0x23]; // --accent, same as lib/favicon.js's rect fill
 const DARK = [0x24, 0x15, 0x00]; // the glyph colour on that amber
+const PANEL = [0x14, 0x11, 0x0c]; // --panel, the plate for the dark variant
+const MONO = [0xff, 0xff, 0xff]; // Android tints the monochrome layer, so only its alpha matters
 
 // All geometry on a 0..100 canvas, so one set of numbers drives every size.
 const SHAPE = {
@@ -37,21 +39,29 @@ function inRoundRect(x, y, { x: rx, y: ry, w, h, r }) {
   return nx * nx + ny * ny <= r * r || (nx === 0 && ny === 0);
 }
 
-// The colour at a point, or null for "nothing here". `bleed` fills the whole canvas instead of
-// drawing a plate with a margin — that's what a maskable icon needs, because the launcher crops
-// it to whatever shape the OS uses and a transparent margin would show as a gap.
-function sample(x, y, bleed) {
-  const onPlate = bleed || inRoundRect(x, y, SHAPE.plate);
-  if (!onPlate) return null;
+// The colour at a point, or null for "nothing here".
+//
+//  • `bleed` fills the whole canvas instead of drawing a plate with a margin — that's what a
+//    maskable icon needs, because the launcher crops it to whatever shape the OS uses and a
+//    transparent margin would show as a gap.
+//  • `mono` drops the plate entirely and returns only the mark. Android 13+ themed icons take
+//    the monochrome layer as an alpha mask and tint it with the system palette, so a plate would
+//    swallow the whole tile and the RGB it comes back as is irrelevant.
+//  • `dark` swaps plate and mark: near-black plate, amber mark, for a dark home screen.
+function sample(x, y, { bleed = false, mono = false, dark = false } = {}) {
   const dRing = dist(x, y, SHAPE.ring.cx, SHAPE.ring.cy);
-  if (dRing <= SHAPE.ring.outer && dRing >= SHAPE.ring.inner) return DARK;
-  if (dist(x, y, SHAPE.dot.cx, SHAPE.dot.cy) <= SHAPE.dot.r) return DARK;
-  return AMBER;
+  const onMark =
+    (dRing <= SHAPE.ring.outer && dRing >= SHAPE.ring.inner) ||
+    dist(x, y, SHAPE.dot.cx, SHAPE.dot.cy) <= SHAPE.dot.r;
+  if (mono) return onMark ? MONO : null;
+  if (!(bleed || inRoundRect(x, y, SHAPE.plate))) return null;
+  if (dark) return onMark ? AMBER : PANEL;
+  return onMark ? DARK : AMBER;
 }
 
 const SS = 4; // subsamples per axis
 
-function render(size, { bleed = false } = {}) {
+function render(size, opts = {}) {
   const px = Buffer.alloc(size * size * 4);
   const scale = 100 / size;
   for (let py = 0; py < size; py++) {
@@ -59,7 +69,7 @@ function render(size, { bleed = false } = {}) {
       let r = 0, g = 0, b = 0, a = 0;
       for (let sy = 0; sy < SS; sy++) {
         for (let sx = 0; sx < SS; sx++) {
-          const c = sample((pxi + (sx + 0.5) / SS) * scale, (py + (sy + 0.5) / SS) * scale, bleed);
+          const c = sample((pxi + (sx + 0.5) / SS) * scale, (py + (sy + 0.5) / SS) * scale, opts);
           if (!c) continue;
           r += c[0]; g += c[1]; b += c[2]; a += 255; // premultiplied: misses contribute nothing
         }
@@ -125,16 +135,26 @@ function png(size, rgba) {
 // 192 and 512 are what the manifest advertises; Android wants a 512 maskable before it will
 // offer the install prompt, and iOS ignores the manifest entirely and reads apple-touch-icon,
 // which must be opaque because iOS composites transparency onto black.
+//
+// The monochrome layer is what Android 13+ uses for themed icons, where the launcher recolours
+// every icon to match the wallpaper. Without it the amber plate stays amber on a themed home
+// screen and the game is the one tile that ignores the user's setting.
+//
+// The dark apple-touch variant is speculative and deliberately harmless: a media-query'd
+// apple-touch-icon is not something Apple documents, so Safari may well ignore the link and fall
+// back to the default one. It costs 2KB and a line of markup to be right if it doesn't.
 const OUT = [
   { file: "icon-192.png", size: 192 },
   { file: "icon-512.png", size: 512 },
   { file: "icon-maskable-512.png", size: 512, bleed: true },
+  { file: "icon-monochrome-512.png", size: 512, mono: true },
   { file: "apple-icon.png", size: 180, bleed: true },
+  { file: "apple-icon-dark.png", size: 180, bleed: true, dark: true },
 ];
 
 const dir = path.join(__dirname, "..", "public");
-for (const { file, size, bleed } of OUT) {
-  const buf = png(size, render(size, { bleed }));
+for (const { file, size, ...opts } of OUT) {
+  const buf = png(size, render(size, opts));
   fs.writeFileSync(path.join(dir, file), buf);
   console.log(`${file}  ${size}x${size}  ${buf.length} bytes`);
 }

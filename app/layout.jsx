@@ -18,7 +18,16 @@ export const metadata = {
   // The SVG data URI stays the browser-tab favicon; iOS ignores the manifest entirely and reads
   // apple-touch-icon, which has to be a real opaque raster (iOS composites transparency onto
   // black). Both PNGs come from scripts/make-icons.js.
-  icons: { icon: FAVICON, apple: "/apple-icon.png" },
+  icons: {
+    icon: FAVICON,
+    // The dark variant is deliberately speculative: a media-query'd apple-touch-icon isn't
+    // something Apple documents, so Safari may ignore the second link and use the first. It costs
+    // 2KB to be right if it doesn't, and nothing breaks if it does — the default stays first.
+    apple: [
+      { url: "/apple-icon.png" },
+      { url: "/apple-icon-dark.png", media: "(prefers-color-scheme: dark)" },
+    ],
+  },
   openGraph: {
     type: "website",
     siteName: SITE.siteName,

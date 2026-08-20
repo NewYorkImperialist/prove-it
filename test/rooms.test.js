@@ -562,13 +562,19 @@ describe("rooms.js — heartbeat tuning", () => {
   });
 
   test("a silently dropped client is caught by the heartbeat and pauses the match", async () => {
-    // Its own server with a tiny heartbeat: the real PING_OPTIONS would mean waiting up to 10s.
-    // What this pins down is that the pause/grace machinery is reached by the ping timeout at
-    // all — which is why the numbers asserted above are what decide how fast a real drop shows.
-    await withOwnServer({ socketOptions: { pingInterval: 40, pingTimeout: 40 } }, async ({ api, open }) => {
+    // A mechanism test, not a regression guard: what it pins down is that the pause/grace
+    // machinery is reached by the ping timeout AT ALL, which is why the numbers asserted above are
+    // what decide how fast a real drop shows. Its own server, because the real PING_OPTIONS would
+    // mean waiting up to 10s here.
+    //
+    // 60/150 rather than 40/40. Detection is still sub-second, but the suite shares a machine with
+    // twenty others: a 40ms timeout is shorter than an ordinary event-loop stall under that load,
+    // so the server would time out the IDLE client too and the interleaving stopped matching what
+    // this test asserts. It failed exactly that way in CI, and locally only at --test-concurrency=2.
+    await withOwnServer({ socketOptions: { pingInterval: 60, pingTimeout: 150 } }, async ({ api, open }) => {
       const a = await open(), b = await open();
       const created = await emit(a, "createRoom", { name: "Alice" });
-      await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+      const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
       await emit(a, "startMatch", {});
       const room = api.rooms.get(created.code);
       assert.equal(!!room.game.paused, false);
@@ -576,10 +582,12 @@ describe("rooms.js — heartbeat tuning", () => {
       // Dead air, not a close frame: the socket stays open, the client simply stops reading, so
       // it never answers a ping. This is the drop a phone in a tunnel actually produces.
       b.io.engine.transport.ws.pause();
-      await waitUntil(() => room.game.paused, { what: "the heartbeat to notice the dead socket" });
-      assert.equal(room.game.paused, true, "the heartbeat has to be what notices");
-      assert.equal(room.players.get([...room.players.keys()][1]).connected, false);
-      assert.equal(room.players.size, 2, "…and the seat is still held for the grace window");
+      // Poll every consequence rather than asserting it on a fixed tick — they land in separate
+      // turns of the loop, and which one you observe first isn't something to depend on.
+      await waitUntil(() => room.game && room.game.paused, { what: "the heartbeat to notice the dead socket" });
+      await waitUntil(() => room.players.get(joined.you) && !room.players.get(joined.you).connected,
+        { what: "the dropped player to be marked offline" });
+      assert.equal(room.players.has(joined.you), true, "…and the seat is still held for the grace window");
     });
   });
 });

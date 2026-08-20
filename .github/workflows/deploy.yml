@@ -8,6 +8,12 @@ name: Deploy
 #   → GitHub → Settings → Secrets and variables → Actions → New repository secret
 # (Note this is a *GitHub* secret, used to authenticate the deploy. The server's runtime cost
 # guard needs the same token as a *Fly* secret as well — see the note in fly.toml.)
+#
+# Also needs a repository secret named OWNER_KEY, matching the OWNER_KEY already set as a Fly
+# secret (the one that gates /admin) — run this in your own terminal, not through an assistant,
+# since gh will read the value straight off your paste without it ever touching this workflow's
+# logs or git history:
+#   gh secret set OWNER_KEY --repo NewYorkImperialist/prove-it
 
 on:
   push:
@@ -31,6 +37,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
+      # Same banner the admin dashboard's own "1-min restart" button sends — gives anyone
+      # mid-run a heads-up before the machine restarts out from under them. Best-effort: a
+      # missing/wrong OWNER_KEY or a hiccup here shouldn't block the actual deploy.
+      - name: Warn active players before the restart
+        run: |
+          curl -sf -G "https://proveit.fly.dev/admin/announce" \
+            --data-urlencode "key=${{ secrets.OWNER_KEY }}" \
+            --data-urlencode "msg=⚠️ Server updating in ~1 minute — finish your round!" \
+          || echo "::warning::pre-deploy announcement failed (continuing anyway)"
       # --remote-only builds the image on Fly's builders, so this job needs no Docker setup.
       - run: flyctl deploy --remote-only
         env:

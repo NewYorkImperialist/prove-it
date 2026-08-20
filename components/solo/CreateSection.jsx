@@ -7,6 +7,7 @@ import { Divider } from "@/components/ui/Card";
 import Seg, { Stepper } from "@/components/ui/Seg";
 import { SoloButton, SoloCard, SoloTitle, SoloSub, SoloErr } from "./SoloBits";
 import CategorySelect from "./CategorySelect";
+import { fmtClock } from "@/lib/format";
 
 const ROUND_OPTIONS = [1, 3, 5, 10].map((n) => ({ value: n, label: String(n) }));
 const TIME_PRESETS = [20, 30, 45, 60, 90].map((s) => ({ value: s, label: s + "s" }));
@@ -36,6 +37,23 @@ export default function CreateSection({ solo, onBack }) {
       <BackButton onClick={onBack} />
       <SoloTitle>Play solo</SoloTitle>
       <SoloSub>Name as many as you can before the clock runs out, then dare a friend to beat your score.</SoloSub>
+
+      {solo.resumeInfo ? (
+        <div className="mb-4 rounded-xl border border-accent bg-accdim p-3">
+          <p className="m-0 mb-2 text-[13px] text-ink">
+            You left a run of <b>{solo.resumeInfo.def.rounds[solo.resumeInfo.cur]}</b> in progress —{" "}
+            {Math.max(0, solo.resumeInfo.namedIds.length)} named, {fmtClock(Math.max(0, Math.round((solo.resumeInfo.deadline - Date.now()) / 1000)))} left.
+          </p>
+          <div className="flex gap-2">
+            <SoloButton className="mt-0! w-auto! shrink-0 px-5" onClick={solo.resumeRun}>
+              Resume
+            </SoloButton>
+            <SoloButton variant="ghost" className="mt-0! w-auto! shrink-0 px-5" onClick={solo.dismissResume}>
+              Discard
+            </SoloButton>
+          </div>
+        </div>
+      ) : null}
 
       <FieldLabel htmlFor="byName">Your name</FieldLabel>
       <TextInput id="byName" type="text" maxLength={20} placeholder="e.g. Jayden" value={solo.byName} onChange={(e) => solo.setByName(e.target.value)} className="text-base!" />

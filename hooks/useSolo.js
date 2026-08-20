@@ -83,6 +83,8 @@ export function useSolo({ onExitToMenu }) {
   const [joinInfo, setJoinInfo] = useState(null);
   const [joinName, setJoinName] = useState("");
   const [joinErr, setJoinErr] = useState("");
+  const [saveErr, setSaveErr] = useState("");
+  const [resumeInfo, setResumeInfo] = useState(null); // a snapshot found on boot, offered on the create screen
 
   const visitorId = useMemo(() => (typeof window === "undefined" ? null : store.visitorId()), []);
 
@@ -91,6 +93,39 @@ export function useSolo({ onExitToMenu }) {
     setByName(n);
     setJoinName(n);
   }, []);
+
+  // A finished run's result POST can fail with nothing telling the player — they still see
+  // "Your run is in!" client-side while the server never heard about it (this is exactly what
+  // happened to a player's perfect World Capitals run during a deploy: the request landed mid
+  // server-restart and silently died). Retries with backoff, and keeps the payload in
+  // localStorage until the server actually confirms it, so it survives a reload too.
+  const trySaveResult = useCallback(async (challengeId, payload) => {
+    store.savePendingResult(challengeId, payload);
+    setSaveErr("");
+    const delays = [0, 1500, 4000, 9000]; // 4 attempts, ~15s of retrying before giving up
+    for (const d of delays) {
+      if (d) await new Promise((r) => setTimeout(r, d));
+      const res = await postJSON(`/challenge/${challengeId}/result`, payload);
+      if (res.ok) {
+        store.clearPendingResult();
+        return true;
+      }
+    }
+    setSaveErr("Couldn't save your run to the leaderboard — check your connection. It's kept safe on this device; tap to try again.");
+    return false;
+  }, []);
+
+  // The done screen's "tap to retry" button, and the same thing tried once, quietly, whenever
+  // the app boots — so a run that failed to save last visit still gets another shot even if the
+  // player never comes back to that screen.
+  const retryPendingResult = useCallback(() => {
+    const pending = store.getPendingResult();
+    if (pending) trySaveResult(pending.challengeId, pending.payload);
+  }, [trySaveResult]);
+
+  useEffect(() => {
+    retryPendingResult();
+  }, [retryPendingResult]);
 
   useEffect(() => () => clearInterval(tid.current), []);
 
@@ -169,21 +204,51 @@ export function useSolo({ onExitToMenu }) {
     endRound();
   }, [curRef, timeLeftRef, endRound]);
 
+  // A round's whole recoverable state, in localStorage: which run, which round, what's already
+  // named, and a real deadline (not a countdown) so a reload — or the server restarting mid-run
+  // for a deploy — deducts however long you were actually away instead of resetting the clock.
+  const snapshotRun = useCallback(
+    (secsOverride) => {
+      if (!challengeIdRef.current || !defRef.current) return;
+      const secs = secsOverride != null ? secsOverride : timeLeftRef.current;
+      store.saveResumeRun({
+        challengeId: challengeIdRef.current,
+        def: defRef.current,
+        cur: curRef.current,
+        scores: scores.current,
+        times: times.current,
+        wpms: wpms.current,
+        namedIds: [...named.current],
+        deadline: Date.now() + secs * 1000,
+        flagSel: flagSelRef.current,
+        runGid: runGid.current,
+        isGeoChallenge: isGeoChallenge.current,
+        playOrigin: playOrigin.current,
+        isDaily: isDailyRef.current,
+        dailyDate,
+        savedAt: Date.now(),
+      });
+    },
+    [challengeIdRef, defRef, curRef, timeLeftRef, flagSelRef, isDailyRef, dailyDate],
+  );
+
+  // `resumeData` (optional): `{ namedIds, secsLeft }` from a saved snapshot — picks the round
+  // back up instead of starting it fresh (see resumeRun()).
   const startRound = useCallback(
-    (i) => {
+    (i, resumeData) => {
       setCur(i);
-      named.current = new Set();
+      named.current = new Set(resumeData ? resumeData.namedIds : []);
       guesses.current = [];
       rChars.current = 0;
       rT0.current = 0;
       setWpm(0);
-      setCount(0);
-      setChips([]);
+      setCount(named.current.size);
       setCmsg("");
       setRemOn(false);
-      setFlagSel(0);
-      if (i === 0) runGid.current = genGid(); // one id per run, threading every round's guesses
+      setFlagSel(resumeData ? resumeData.flagSel || 0 : 0);
+      if (i === 0 && !resumeData) runGid.current = genGid(); // one id per run, threading every round's guesses
       const cat = roundCatsRef.current[i];
+      setChips(resumeData ? cat.entries.filter((e) => named.current.has(e.id)).map((e) => e.display) : []);
       setScreen("sprint");
 
       // Geography visuals: "map" categories light shapes up (chips stay), "fill" categories
@@ -195,8 +260,10 @@ export function useSolo({ onExitToMenu }) {
       setFillProgress({ filled: 0, total: 0 });
 
       // Per-round time: the recommended-per-round sentinel (timer 0) uses each category's length.
+      // curRoundSecs is always the FULL budget (never shortened by a resume) — finishRoundEarly's
+      // elapsed-time math (curRoundSecs - timeLeft) only comes out right if it stays the total.
       curRoundSecs.current = defRef.current && Number(defRef.current.timer) === 0 ? recommendedTime(cat.name) : perRoundRef.current;
-      setTimeLeft(curRoundSecs.current);
+      setTimeLeft(resumeData ? resumeData.secsLeft : curRoundSecs.current);
       clearInterval(tid.current);
       tid.current = setInterval(() => {
         const next = timeLeftRef.current - 1;
@@ -208,8 +275,10 @@ export function useSolo({ onExitToMenu }) {
       // The board itself is built by the effect below, once React has mounted its container.
       setGeoRound(gm ? { cat, mode: gm, key: i } : null);
       if (!gm && geoRef.current) geoRef.current.teardown();
+
+      if (!resumeData) snapshotRun(curRoundSecs.current);
     },
-    [setCur, setCount, setGeoMode, setFlagSel, setTimeLeft, timeLeftRef, roundCatsRef, defRef, perRoundRef, endRound],
+    [setCur, setCount, setGeoMode, setFlagSel, setTimeLeft, timeLeftRef, roundCatsRef, defRef, perRoundRef, endRound, snapshotRun],
   );
 
   // D3 needs a real, mounted node to draw into, so the geography board is set up after the
@@ -296,6 +365,7 @@ export function useSolo({ onExitToMenu }) {
           guesses.current.push({ display: entry.display, verdict: "ok", at: Date.now() });
           bumpTimer();
           setFlagSel(nextUnsolvedFlag(cat0, flagSelRef.current));
+          snapshotRun();
           if (named.current.size >= cat0.entries.length) finishRoundEarly(); // got them all
           return false;
         }
@@ -323,6 +393,7 @@ export function useSolo({ onExitToMenu }) {
           setCmsg("");
           guesses.current.push({ display: q, verdict: "ok", at: Date.now() });
           bumpTimer();
+          snapshotRun();
           if (filled >= total) finishRoundEarly();
           return false;
         }
@@ -351,6 +422,7 @@ export function useSolo({ onExitToMenu }) {
         bumpTimer();
         if (mapActive.current && geoRef.current) geoRef.current.light(m.id);
         setChips((c) => [m.display, ...c]);
+        snapshotRun();
         if (named.current.size >= cat.entries.length) finishRoundEarly(); // got them all
         return false;
       }
@@ -368,18 +440,19 @@ export function useSolo({ onExitToMenu }) {
       flash("✗ not on the list");
       return false;
     },
-    [geoModeRef, roundCatsRef, curRef, flagSelRef, setFlagSel, setCount, flash, bumpTimer, finishRoundEarly],
+    [geoModeRef, roundCatsRef, curRef, flagSelRef, setFlagSel, setCount, flash, bumpTimer, finishRoundEarly, snapshotRun],
   );
 
   /* ---------------- finishing ---------------- */
   const challengeUrl = useCallback(() => `${window.location.origin}/challenge.html?id=${challengeIdRef.current}`, [challengeIdRef]);
 
-  const finish = useCallback(async () => {
+  const finish = useCallback(() => {
     const total = scores.current.reduce((a, n) => a + (n || 0), 0);
     const list = wpms.current.filter((n) => n != null);
     const avgWpm = list.length ? Math.round(list.reduce((a, n) => a + n, 0) / list.length) : 0;
     const rounds = roundCatsRef.current.length;
     setScreen("done");
+    store.clearResumeRun(); // the run is over — nothing left to resume
 
     if (isDailyRef.current) {
       // Retro-arcade order: show the score and streak first, then let them opt in by name.
@@ -398,7 +471,9 @@ export function useSolo({ onExitToMenu }) {
       return;
     }
 
-    await postJSON(`/challenge/${challengeIdRef.current}/result`, {
+    // Fire-and-retry, not fire-and-forget: setDone() below shouldn't wait on the network, but the
+    // save itself needs to survive more than one silent failed attempt (see trySaveResult).
+    trySaveResult(challengeIdRef.current, {
       name: store.getSoloName(),
       scores: scores.current,
       wpms: wpms.current,
@@ -423,7 +498,7 @@ export function useSolo({ onExitToMenu }) {
         : `You named ${total} across ${rounds} rounds at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`,
       board: single ? { kind: "category", name: single.name } : { kind: "challenge", id: challengeIdRef.current },
     });
-  }, [roundCatsRef, isDailyRef, challengeIdRef, dailyDate, visitorId]);
+  }, [roundCatsRef, isDailyRef, challengeIdRef, dailyDate, visitorId, trySaveResult]);
 
   const nextRound = useCallback(() => {
     if (curRef.current + 1 >= roundCatsRef.current.length) finish();
@@ -450,6 +525,51 @@ export function useSolo({ onExitToMenu }) {
     },
     [defRef, setRoundCats, setCur],
   );
+
+  // A run interrupted by a reload, a closed tab, or the server restarting mid-round leaves a
+  // snapshot behind (see snapshotRun). Offer it once on boot rather than jumping straight back
+  // in — a stale one (long since expired, or from a much older visit) is just discarded.
+  useEffect(() => {
+    const snap = store.getResumeRun();
+    if (!snap) return;
+    const graceMs = 10 * 60 * 1000; // still offered up to 10 minutes past its own deadline
+    const tooOld = Date.now() - snap.savedAt > 6 * 60 * 60 * 1000; // or if it's just from ages ago
+    if (Date.now() > snap.deadline + graceMs || tooOld) {
+      store.clearResumeRun();
+      return;
+    }
+    setResumeInfo(snap);
+  }, []);
+
+  const dismissResume = useCallback(() => {
+    store.clearResumeRun();
+    setResumeInfo(null);
+  }, []);
+
+  const resumeRun = useCallback(() => {
+    const snap = resumeInfo;
+    if (!snap) return;
+    setResumeInfo(null);
+    playOrigin.current = snap.playOrigin || "solo";
+    isGeoChallenge.current = !!snap.isGeoChallenge;
+    runGid.current = snap.runGid || genGid();
+    setIsDaily(!!snap.isDaily);
+    if (snap.isDaily) setDailyDate(snap.dailyDate || "");
+    setChallengeId(snap.challengeId);
+    setDef(snap.def);
+    const cats = (snap.def.rounds || []).map(findCat).filter(Boolean);
+    if (!cats.length || !cats[snap.cur]) {
+      store.clearResumeRun();
+      setCreateErr("That run's categories aren't available anymore.");
+      return;
+    }
+    setRoundCats(cats);
+    scores.current = snap.scores || [];
+    times.current = snap.times || [];
+    wpms.current = snap.wpms || [];
+    const secsLeft = Math.max(0, Math.round((snap.deadline - Date.now()) / 1000));
+    startRound(snap.cur, { namedIds: snap.namedIds || [], flagSel: snap.flagSel, secsLeft });
+  }, [resumeInfo, setChallengeId, setDef, setRoundCats, setIsDaily, startRound]);
 
   const initCreate = useCallback(() => {
     setIsDaily(false);
@@ -596,6 +716,7 @@ export function useSolo({ onExitToMenu }) {
   // Back to the beginning (a fresh build screen), no page reload.
   const backToStart = useCallback(() => {
     clearInterval(tid.current);
+    store.clearResumeRun(); // an explicit exit means this run's abandoned, not interrupted
     setChallengeId(null);
     setDef(null);
     window.history.replaceState({}, "", "/");
@@ -604,6 +725,7 @@ export function useSolo({ onExitToMenu }) {
 
   const leaveRun = useCallback(() => {
     clearInterval(tid.current);
+    store.clearResumeRun();
     onExitToMenu();
   }, [onExitToMenu]);
 
@@ -637,6 +759,8 @@ export function useSolo({ onExitToMenu }) {
     count, countLabel, chips, timeLeft, clock: fmtClock(Math.max(0, timeLeft)), wpm, cmsg, shakeTick,
     geoMode, remOn, mapEl, missed, missedOpen, setMissedOpen, between, done, countdown,
     joinInfo, joinName, setJoinName, joinErr, setJoinErr,
+    saveErr, retryPendingResult,
+    resumeInfo, resumeRun, dismissResume,
     flagSel, selectFlag: setFlagSel, moveFlagSel, namedIds: named.current,
     // actions
     initCreate, initJoin, initDaily, createChallenge, startSolo, startGeoChallenge, startFlagQuiz, startPlaying, runCountdown,

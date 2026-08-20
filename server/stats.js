@@ -405,8 +405,12 @@ async function categoryLeaderboard(catName, limit = 50) {
 const GEO_REF_PACE = 3; // seconds/answer scoring a neutral 1.0× (faster → toward 2×, slower → toward 0.5×)
 async function geoGoat(limit = 50) {
   const CATEGORY_GROUPS = require("../data/categories.js");
+  const { FLAG_CAT_NAMES } = require("../lib/flags.js");
   const geoCats = new Map(); // geography category name → total item count
   if (CATEGORY_GROUPS.Geography) for (const c of CATEGORY_GROUPS.Geography.cats) geoCats.set(c.name, (c.items || []).length);
+  // Flags quizzes aren't real categories.js entries (see lib/flags.js), but they're geography
+  // knowledge same as the rest of this board, so they count toward it too.
+  for (const name of FLAG_CAT_NAMES) geoCats.set(name, 0);
   const chs = await q(`SELECT id, rounds, timer FROM challenges`);
   const roundsById = {}, timerById = {};
   for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } timerById[c.id] = c.timer; }

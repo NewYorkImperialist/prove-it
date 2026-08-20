@@ -53,7 +53,7 @@ export default function DoneSection({ solo, onExitToMenu }) {
         type="button"
         onClick={onExitToMenu}
         title="Home"
-        className="fixed top-3 right-3 z-[60] flex cursor-pointer items-center justify-center rounded-full border border-line bg-panel2 p-1.5 shadow-[0_8px_24px_rgba(0,0,0,.35)] transition hover:border-accent"
+        className="fixed top-3 left-3 z-[60] flex cursor-pointer items-center justify-center rounded-full border border-line bg-panel2 p-1.5 shadow-[0_8px_24px_rgba(0,0,0,.35)] transition hover:border-accent"
       >
         <LogoBadge className="h-[26px]! w-[26px]! text-sm!" />
       </button>
@@ -62,6 +62,15 @@ export default function DoneSection({ solo, onExitToMenu }) {
         <p className="m-0 mb-3 text-[17px] font-bold text-accent">{d.verdict}</p>
         <BigNumber>{d.total}</BigNumber>
         <SoloSub>{d.sub}</SoloSub>
+
+        {!d.daily && solo.saveErr ? (
+          <div className="mb-3 rounded-xl border border-bad bg-[rgba(229,72,77,.1)] p-3">
+            <p className="m-0 mb-2 text-[13px] text-bad">{solo.saveErr}</p>
+            <SoloButton variant="ghost" className="mt-0!" onClick={solo.retryPendingResult}>
+              Retry saving
+            </SoloButton>
+          </div>
+        ) : null}
 
         {d.daily ? (
           <div>

@@ -24,11 +24,13 @@ export default function HomeCard({ leaving, dailyPlayed, onSolo, onDaily, onMult
         Play Solo
       </Button>
 
-      {/* Glowing amber while today is unplayed; quiet with a "come back tomorrow" tooltip once done. */}
+      {/* Glowing amber while today is unplayed; quiet with a "come back tomorrow" tooltip once
+          done. The tooltip is the styled ::after below — a native `title` with the same text on
+          top of it meant hovering produced two tooltips saying the same thing. */}
       <Button
         variant="secondary"
         onClick={onDaily}
-        title={dailyPlayed ? "You played! Check back tomorrow." : undefined}
+        aria-label={dailyPlayed ? "Daily Challenge — you played! Check back tomorrow." : undefined}
         className={cx(
           FULL,
           dailyPlayed

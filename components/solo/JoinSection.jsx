@@ -5,17 +5,14 @@ import TextInput, { FieldLabel } from "@/components/ui/Field";
 import { SoloButton, SoloCard, SoloErr } from "./SoloBits";
 import ChallengeBoard from "@/components/leaderboard/ChallengeBoard";
 
-// Landing on a friend's ?id= link: what they set up, and what you're trying to beat.
+// Landing on a ?id= link: what was set up, and what you're trying to beat. The same card also
+// catches a reload of your OWN run (info.mine), which is not a challenge from a stranger.
 export default function JoinSection({ solo, onBack }) {
   const [showBoard, setShowBoard] = useState(false);
   const info = solo.joinInfo;
-
-  const start = () => {
-    const n = solo.joinName.trim().slice(0, 20);
-    if (!n) return solo.setJoinErr("Enter your name first.");
-    solo.setJoinErr("");
-    solo.startPlaying(n);
-  };
+  const rounds = info ? `${info.nRounds} ${info.nRounds === 1 ? "round" : "rounds"}` : "";
+  // "recommended time ." had a stray space, and one round isn't "45s each".
+  const clock = !info ? "" : info.timer === 0 ? "recommended time per round" : `${info.timer}s${info.nRounds > 1 ? " each" : ""}`;
 
   return (
     <SoloCard>
@@ -23,16 +20,37 @@ export default function JoinSection({ solo, onBack }) {
       <div className="mb-3.5 rounded-xl border border-accent bg-accdim px-4 py-3.5 text-[15px]">
         {!info ? (
           "Loading challenge…"
+        ) : info.mine === "played" ? (
+          <>
+            <b className="text-accent">This is your challenge.</b> You&apos;ve played it — your score is on the board below. Play{" "}
+            <b>{rounds}</b>
+            {info.genre ? (
+              <>
+                {" "}of <b>{info.genre}</b>
+              </>
+            ) : null}{" "}
+            again ({clock}), or send this link to a friend.
+          </>
+        ) : info.mine === "playing" ? (
+          <>
+            <b className="text-accent">This is your run.</b> Reloading the page ended it — a round against the clock can&apos;t be
+            picked back up, and nothing was scored. Play <b>{rounds}</b>
+            {info.genre ? (
+              <>
+                {" "}of <b>{info.genre}</b>
+              </>
+            ) : null}{" "}
+            again ({clock}), or send this link to a friend.
+          </>
         ) : (
           <>
-            <b className="text-accent">{info.by}</b> challenged you to name as many as you can across <b>{info.nRounds}</b> round
-            {info.nRounds > 1 ? "s" : ""}
+            <b className="text-accent">{info.by}</b> challenged you to name as many as you can across <b>{rounds}</b>
             {info.genre ? (
               <>
                 {" "}of <b>{info.genre}</b>
               </>
             ) : null}
-            , {info.timer === 0 ? "recommended time" : <b>{info.timer}s</b>} {info.timer === 0 ? "" : "each"}. Try to beat them!
+            , {clock}. Try to beat them!
           </>
         )}
       </div>
@@ -56,13 +74,15 @@ export default function JoinSection({ solo, onBack }) {
       <TextInput id="joinName" type="text" maxLength={20} placeholder="e.g. Sam" value={solo.joinName} onChange={(e) => solo.setJoinName(e.target.value)} className="text-base!" />
       <SoloErr>{solo.joinErr}</SoloErr>
 
-      <SoloButton onClick={start} disabled={!info}>
-        Start the challenge
+      <SoloButton onClick={() => solo.startJoin(solo.joinName)} disabled={!info || !!solo.busy}>
+        {solo.busy === "joining" ? "Starting…" : info && info.mine ? "Play it again" : "Start the challenge"}
       </SoloButton>
       <SoloButton variant="ghost" onClick={() => setShowBoard(true)}>
         View leaderboard
       </SoloButton>
-      {showBoard ? (
+      {/* Already played it (a reload of your own finished run): the board is the point, so it's
+          open from the start rather than behind another click. */}
+      {showBoard || (info && info.mine === "played") ? (
         <div className="mt-4">
           <ChallengeBoard id={solo.challengeId} visitorId={solo.visitorId} />
         </div>

@@ -4,12 +4,41 @@ import { CATS, GENRES, findCat, nonSprint, recommendedTime, shuffle, pickGenreRo
 import { norm, nearMiss, findEntry } from "@/lib/solo-matching";
 import { hasGeoBoard, geoMode as geoModeOf } from "@/lib/geo-cats";
 import { fmtClock, todayEastern, prevDate } from "@/lib/format";
-import { getJSON, postJSON } from "@/lib/browser/api";
+import { getJSON, postJSON, isNameBlocked } from "@/lib/browser/api";
 import { ownerKeyIfCrowned, submitDailyResult } from "@/lib/browser/daily";
 import * as store from "@/lib/browser/storage";
 import { useStateRef } from "@/hooks/useStateRef";
 
 const genGid = () => "s-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+// Which challenge THIS tab started, remembered for the length of the tab. A run pushes its
+// ?id= into the address bar (that's the shareable link), so a reload used to come back through
+// the deep-link path and greet the player with their own run as a stranger's — "Tester
+// challenged you to name as many as you can…". sessionStorage is the right scope: per tab,
+// gone when the tab is, and it can't leak into the link you send a friend.
+const OWN_RUN_KEY = "solo_own_run";
+const OWN_RUN_DONE_KEY = "solo_own_run_done";
+const markOwnRun = (id, played = false) => {
+  try {
+    window.sessionStorage.setItem(played ? OWN_RUN_DONE_KEY : OWN_RUN_KEY, id);
+  } catch {
+    /* private mode: we just lose the "this was yours" framing */
+  }
+};
+// "" (not ours) | "playing" (reloaded mid-run — the run is gone) | "played" (already finished it).
+const ownRunState = (id) => {
+  if (!id) return "";
+  try {
+    if (window.sessionStorage.getItem(OWN_RUN_DONE_KEY) === id) return "played";
+    return window.sessionStorage.getItem(OWN_RUN_KEY) === id ? "playing" : "";
+  } catch {
+    return "";
+  }
+};
+
+// One wording for a rejected name, shared by the builder and the join screen (the daily's
+// opt-in box in DoneSection says the same thing).
+const BLOCKED_NAME = "That name isn't allowed — try a different one.";
 
 const MAX_WPM = 300; // faster than anyone sustains — past this it was pasted, not typed
 const PASTE_CHARS = 12; // one input event adding more than this at once wasn't typing either
@@ -343,6 +372,25 @@ export function useSolo({ onExitToMenu }) {
   /* ---------------- finishing ---------------- */
   const challengeUrl = useCallback(() => `${window.location.origin}/challenge.html?id=${challengeIdRef.current}`, [challengeIdRef]);
 
+  // POST the finished run. Returns the server's answer so the caller can tell the player the
+  // truth: routes/challenge.js really does answer { ok: false } when persistence is off or the
+  // challenge row has gone, and this used to be awaited and thrown away under a flat
+  // "Your run is in!".
+  const saveRun = useCallback(
+    () =>
+      postJSON(`/challenge/${challengeIdRef.current}/result`, {
+        name: store.getSoloName(),
+        scores: scores.current,
+        wpms: wpms.current,
+        times: times.current,
+        visitorId,
+        ownerKey: ownerKeyIfCrowned(),
+        gid: runGid.current,
+        mode: playOrigin.current,
+      }),
+    [challengeIdRef, visitorId],
+  );
+
   const finish = useCallback(async () => {
     const total = scores.current.reduce((a, n) => a + (n || 0), 0);
     const list = wpms.current.filter((n) => n != null);
@@ -367,31 +415,41 @@ export function useSolo({ onExitToMenu }) {
       return;
     }
 
-    await postJSON(`/challenge/${challengeIdRef.current}/result`, {
-      name: store.getSoloName(),
-      scores: scores.current,
-      wpms: wpms.current,
-      times: times.current,
-      visitorId,
-      ownerKey: ownerKeyIfCrowned(),
-      gid: runGid.current,
-      mode: playOrigin.current,
-    });
+    const res = await saveRun();
+    markOwnRun(challengeIdRef.current, true); // a reload from here must not claim the run was lost
     // A single-category run shows that category's all-time board — more meaningful than the
     // one-off link board.
     const single = rounds === 1 ? roundCatsRef.current[0] : null;
+    // "You named 1 US States" — a bare count in front of a plural category name only reads
+    // when there's more than one.
+    const named = single
+      ? total === 1
+        ? `You named 1 answer in ${single.name}`
+        : `You named ${total} ${single.name}`
+      : `You named ${total} across ${rounds} ${rounds === 1 ? "round" : "rounds"}`;
+    const savedSub = single
+      ? `${named} at ${avgWpm} wpm avg.`
+      : `${named} at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`;
     setDone({
       daily: false,
       total,
       avgWpm,
       rounds,
-      verdict: "Your run is in!",
-      sub: single
-        ? `You named ${total} ${single.name} at ${avgWpm} wpm avg.`
-        : `You named ${total} across ${rounds} rounds at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`,
+      saved: !!res.ok,
+      savedSub, // what the sub becomes if a retry lands
+      verdict: res.ok ? "Your run is in!" : "Run over — but it wasn't saved",
+      sub: res.ok ? savedSub : `${named} at ${avgWpm} wpm avg. ${res.error || "The leaderboard didn't accept the run, so nothing was recorded."}`,
       board: single ? { kind: "category", name: single.name } : { kind: "challenge", id: challengeIdRef.current },
     });
-  }, [roundCatsRef, isDailyRef, challengeIdRef, dailyDate, visitorId]);
+  }, [roundCatsRef, isDailyRef, challengeIdRef, dailyDate, saveRun]);
+
+  // "Try again" on the result screen after a failed write — same run, same ids, so a retry
+  // that lands is indistinguishable from having saved first time.
+  const retrySave = useCallback(async () => {
+    const res = await saveRun();
+    if (res.ok) setDone((d) => (d ? { ...d, saved: true, verdict: "Your run is in!", sub: d.savedSub || d.sub } : d));
+    return res;
+  }, [saveRun]);
 
   const nextRound = useCallback(() => {
     if (curRef.current + 1 >= roundCatsRef.current.length) finish();
@@ -419,11 +477,14 @@ export function useSolo({ onExitToMenu }) {
     [defRef, setRoundCats, setCur],
   );
 
-  const initCreate = useCallback(() => {
+  // `msg` is shown on the builder. The daily / dead-link failures used to set the error and
+  // THEN come through here, which wiped it — you were dropped back on "Play solo" with no idea
+  // why, even though the server had answered with a real reason.
+  const initCreate = useCallback((msg) => {
     setIsDaily(false);
     playOrigin.current = "solo";
     setByName(store.getSoloName());
-    setCreateErr("");
+    setCreateErr(typeof msg === "string" ? msg : "");
     setScreen("create");
   }, [setIsDaily]);
 
@@ -434,14 +495,22 @@ export function useSolo({ onExitToMenu }) {
       playOrigin.current = "solo";
       const by = byName.trim().slice(0, 20);
       if (!by) return setCreateErr("Enter your name first.");
-      store.setSoloName(by);
       if (seconds != null) clampPerRound(seconds);
       setBusy("starting");
+      // Pre-check the name here (routes/challenge.js's /name-check) instead of letting the
+      // server's cleanName() swap it for "Anon" and leaving the player to wonder why the
+      // leaderboard says "Anon (you)".
+      if (await isNameBlocked(by)) {
+        setBusy("");
+        return setCreateErr(BLOCKED_NAME);
+      }
+      store.setSoloName(by);
       const res = await postJSON("/challenge", { type: "custom", genre: "", rounds, by, timer: seconds != null ? seconds : perRoundRef.current });
       setBusy("");
       if (!res.ok) return setCreateErr(res.error || "Could not start.");
       setChallengeId(res.id);
       setDef({ id: res.id, rounds, by, type: "custom", timer: seconds != null ? seconds : perRoundRef.current });
+      markOwnRun(res.id);
       window.history.replaceState({}, "", "?id=" + res.id);
       startPlaying(by);
     },
@@ -452,33 +521,40 @@ export function useSolo({ onExitToMenu }) {
     setCreateErr("");
     const by = byName.trim().slice(0, 20);
     if (!by) return setCreateErr("Enter your name first.");
-    store.setSoloName(by);
     const rounds = (mode === "genre" ? pickGenreRounds(genre, numRounds) : customRounds).filter(Boolean);
     if (!rounds.length) return setCreateErr("Pick at least one category.");
     const timer = recTimes ? 0 : perRoundRef.current; // 0 = recommended time per round
     setBusy("creating");
+    if (await isNameBlocked(by)) { // same pre-check as quick play — never silently become "Anon"
+      setBusy("");
+      return setCreateErr(BLOCKED_NAME);
+    }
+    store.setSoloName(by);
     const res = await postJSON("/challenge", { type: mode, genre: mode === "genre" ? genre : "", rounds, by, timer });
     setBusy("");
     if (!res.ok) return setCreateErr(res.error || "Could not create challenge.");
     setChallengeId(res.id);
     setDef({ id: res.id, rounds, by, type: mode, timer });
+    markOwnRun(res.id);
     window.history.replaceState({}, "", "?id=" + res.id);
     startPlaying(by);
   }, [byName, mode, genre, numRounds, customRounds, recTimes, perRoundRef, setChallengeId, setDef, startPlaying]);
 
-  // Opened someone's ?id= link.
+  // Opened a ?id= link — someone else's, or (after a reload mid-run) our own.
   const initJoin = useCallback(
     async (id) => {
       setIsDaily(false);
-      playOrigin.current = "link"; // a friend's link is kept out of the solo geography boards
+      const mine = ownRunState(id);
+      playOrigin.current = mine ? "solo" : "link"; // a friend's link is kept out of the solo geography boards
       setChallengeId(id);
       setScreen("join");
       setJoinInfo(null);
       setDef(null);
       const c = await getJSON(`/challenge/${id}`);
       if (!c.ok) {
-        setCreateErr("That challenge link is invalid or expired · build a new one.");
-        initCreate();
+        // The message has to be set AFTER initCreate, which clears it — otherwise a dead or
+        // expired link just dumped you on "Play solo" with nothing said.
+        initCreate("That challenge link is invalid or expired · build a new one.");
         return;
       }
       const d = { id: c.id, rounds: c.rounds || [], by: c.by, type: c.type, genre: c.genre, timer: c.timer == null ? 45 : c.timer }; // preserve 0
@@ -486,6 +562,7 @@ export function useSolo({ onExitToMenu }) {
       setPerRound(d.timer || 45);
       setJoinInfo({
         by: d.by || "A friend",
+        mine, // "playing" / "played": your own run, reloaded — not a stranger's challenge
         nRounds: d.rounds.length,
         genre: d.genre,
         timer: d.timer,
@@ -495,8 +572,25 @@ export function useSolo({ onExitToMenu }) {
         }),
       });
       setJoinName(store.getSoloName());
+      setJoinErr("");
     },
     [setIsDaily, setChallengeId, setDef, setPerRound, initCreate],
+  );
+
+  // "Start the challenge" on a join card: the name goes on a leaderboard, so pre-check it here
+  // too rather than letting the server quietly file the run under "Anon".
+  const startJoin = useCallback(
+    async (rawName) => {
+      const n = String(rawName || "").trim().slice(0, 20);
+      if (!n) return setJoinErr("Enter your name first.");
+      setJoinErr("");
+      setBusy("joining");
+      const blocked = await isNameBlocked(n);
+      setBusy("");
+      if (blocked) return setJoinErr(BLOCKED_NAME);
+      startPlaying(n);
+    },
+    [startPlaying],
   );
 
   const initDaily = useCallback(async () => {
@@ -508,8 +602,9 @@ export function useSolo({ onExitToMenu }) {
     const d = await getJSON("/daily");
     if (!d.ok) {
       setIsDaily(false);
-      setCreateErr(d.error || "Daily isn't available right now.");
-      initCreate();
+      // Same ordering trap as initJoin: initCreate() clears createErr, so the server's real
+      // reason ("Daily needs persistence (not configured).") has to travel through it.
+      initCreate(d.error || "Daily isn't available right now.");
       return;
     }
     setChallengeId(d.id);
@@ -580,7 +675,7 @@ export function useSolo({ onExitToMenu }) {
     geoMode, remOn, mapEl, missed, missedOpen, setMissedOpen, between, done, countdown,
     joinInfo, joinName, setJoinName, joinErr, setJoinErr,
     // actions
-    initCreate, initJoin, initDaily, createChallenge, startSolo, startPlaying, runCountdown,
+    initCreate, initJoin, initDaily, createChallenge, startSolo, startPlaying, startJoin, retrySave, runCountdown,
     startRound, submit, noteTyping, giveUp, nextRound, toggleRemaining, backToStart, leaveRun, challengeUrl, submitDaily,
     todayEastern,
   };

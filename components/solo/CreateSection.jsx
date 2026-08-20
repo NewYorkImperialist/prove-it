@@ -1,5 +1,5 @@
 "use client";
-import { GENRES, GENRE_EMOJI, recommendedTime, CATS, nonSprint, shuffle } from "@/lib/solo-catalog";
+import { GENRES, GENRE_EMOJI, recommendedTime, genreRoundLimit, quickPlayPool, CATS, shuffle } from "@/lib/solo-catalog";
 import { BackButton } from "@/components/ui/Button";
 import TextInput, { FieldLabel, Select } from "@/components/ui/Field";
 import { Divider } from "@/components/ui/Card";
@@ -11,7 +11,7 @@ import { cx } from "@/lib/browser/cx";
 const ROUND_OPTIONS = [1, 3, 5, 10].map((n) => ({ value: n, label: String(n) }));
 const TIME_PRESETS = [20, 30, 45, 60, 90].map((s) => ({ value: s, label: s + "s" }));
 const INCREMENTS = [
-  { value: 0, label: "0" },
+  { value: 0, label: "none" },
   { value: 2, label: "+2s" },
   { value: 5, label: "+5s" },
 ];
@@ -23,10 +23,15 @@ const MODES = [
 // The solo builder: quick play, pick-a-category, or the full multi-round setup behind
 // "Advanced settings".
 export default function CreateSection({ solo, onBack }) {
+  // Quick play is one short round: the pool leaves out the big enumerations, whose recommended
+  // time is up to 15 minutes — the button says "Quick play" and nothing warned you otherwise.
   const quickPlay = () => {
-    const c = shuffle(CATS.filter((x) => !nonSprint(x)))[0] || CATS[0];
+    const c = shuffle(quickPlayPool())[0] || CATS[0];
     solo.startSolo([c.name], recommendedTime(c.name));
   };
+  // Genre rounds never repeat a category, so a genre with fewer categories than the round count
+  // plays a shorter run — say so here rather than at the ready screen.
+  const genreCap = solo.mode === "genre" ? genreRoundLimit(solo.genre) : 0;
 
   return (
     <SoloCard>
@@ -91,7 +96,7 @@ export default function CreateSection({ solo, onBack }) {
 
           {solo.mode === "genre" ? (
             <div>
-              <FieldLabel htmlFor="genreSel">Genre (a random category each round)</FieldLabel>
+              <FieldLabel htmlFor="genreSel">Genre (a different category each round)</FieldLabel>
               <Select id="genreSel" value={solo.genre} onChange={(e) => solo.setGenre(e.target.value)}>
                 {GENRES.map((g) => (
                   <option key={g} value={g}>
@@ -99,13 +104,18 @@ export default function CreateSection({ solo, onBack }) {
                   </option>
                 ))}
               </Select>
+              {genreCap && solo.numRounds > genreCap ? (
+                <div className="mt-1.5 font-mono text-[11px] text-muted">
+                  {solo.genre} has {genreCap} categories · this run will be {genreCap} rounds
+                </div>
+              ) : null}
             </div>
           ) : (
             <div>
               <FieldLabel>Pick each round&apos;s category</FieldLabel>
               {solo.customRounds.map((name, i) => (
                 <div key={i} className="mb-2">
-                  <div className="mb-1 font-mono text-[11px] text-muted">Question {i + 1}</div>
+                  <div className="mb-1 font-mono text-[11px] text-muted">Round {i + 1}</div>
                   <CategorySelect
                     value={name}
                     onChange={(v) => solo.setCustomRounds(solo.customRounds.map((x, j) => (j === i ? v : x)))}

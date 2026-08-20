@@ -2,7 +2,7 @@
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 const CATEGORY_GROUPS = require("../data/categories.js");
-const { CATS, GENRES, GEO_MISC, findCat, nonSprint, recommendedTime, pickGenreRounds, geoBoardCats, buildCat } = require("../lib/solo-catalog.js");
+const { CATS, GENRES, findCat, nonSprint, recommendedTime, QUICK_MAX_SECONDS, quickPlayPool, genreRoundLimit, pickGenreRounds, geoBoardCats, buildCat } = require("../lib/solo-catalog.js");
 
 describe("the solo catalogue", () => {
   test("flattens every non-hidden category into { name, group, emoji, entries }", () => {
@@ -20,16 +20,20 @@ describe("the solo catalogue", () => {
     for (const g of hidden) assert.equal(CATS.some((c) => c.group === g), false);
   });
 
-  test("splits Geography: categories with a board stay put, the rest become Geography Misc", () => {
-    assert.ok(CATS.some((c) => c.group === "Geography" && c.name === "Countries of the World"));
-    const misc = CATS.filter((c) => c.group === GEO_MISC);
-    assert.ok(misc.length > 0);
-    for (const c of misc) assert.equal(geoBoardCats().includes(c.name), false);
+  test("only ever names groups that exist in data/categories.js — no pseudo-groups", () => {
+    const real = new Set(Object.keys(CATEGORY_GROUPS));
+    for (const c of CATS) assert.ok(real.has(c.group), `${c.name} is filed under invented group ${c.group}`);
+    assert.equal(GENRES.includes("Geography Misc"), false); // players were shown this one
   });
 
-  test("orders the genres with Geography first, then Geography Misc", () => {
+  test("orders Geography first, boards before the boardless geography categories", () => {
     assert.equal(GENRES[0], "Geography");
-    assert.equal(GENRES[1], GEO_MISC);
+    const geo = CATS.filter((c) => c.group === "Geography");
+    const boards = geoBoardCats();
+    const lastBoard = geo.reduce((n, c, i) => (boards.includes(c.name) ? i : n), -1);
+    const firstBoardless = geo.findIndex((c) => !boards.includes(c.name));
+    assert.ok(lastBoard >= 0 && firstBoardless > lastBoard, "a boardless geography category sorted above a board one");
+    assert.equal(CATS[0].group, "Geography");
   });
 
   test("aliases all match one entry, and the first name is the one displayed", () => {
@@ -76,11 +80,37 @@ describe("pickGenreRounds", () => {
   test("skips non-sprint categories", () => {
     for (const name of pickGenreRounds("Pop Culture", 5)) assert.equal(nonSprint(findCat(name)), false);
   });
-  test("repeat-fills when the genre has fewer categories than rounds asked for", () => {
-    const rounds = pickGenreRounds("Geography", 200);
-    assert.equal(rounds.length, 200);
+  test("never repeats a category — the builder promises a different one each round", () => {
+    for (const genre of GENRES) {
+      const rounds = pickGenreRounds(genre, 10);
+      assert.equal(new Set(rounds).size, rounds.length, `${genre} repeated a category`);
+    }
+  });
+  test("a genre smaller than the round count plays a shorter run, and says how short", () => {
+    const small = GENRES.find((g) => genreRoundLimit(g) < 10);
+    assert.ok(small, "expected at least one genre with fewer than 10 usable categories");
+    assert.equal(pickGenreRounds(small, 10).length, genreRoundLimit(small));
+    assert.equal(pickGenreRounds("Geography", 200).length, genreRoundLimit("Geography"));
   });
   test("an unknown genre yields nothing rather than throwing", () => {
     assert.deepEqual(pickGenreRounds("Nope", 3), []);
+    assert.equal(genreRoundLimit("Nope"), 0);
+  });
+});
+
+describe("quickPlayPool", () => {
+  test("is every sprintable category short enough for one quick round", () => {
+    const pool = quickPlayPool();
+    assert.ok(pool.length > 20);
+    for (const c of pool) {
+      assert.equal(nonSprint(c), false, c.name);
+      assert.ok(recommendedTime(c.name) <= QUICK_MAX_SECONDS, `${c.name} wants ${recommendedTime(c.name)}s`);
+    }
+  });
+  test("leaves out the 15-minute enumerations Quick play used to hand out", () => {
+    const names = quickPlayPool().map((c) => c.name);
+    assert.equal(names.includes("Countries of the World"), false);
+    assert.equal(names.includes("World Capitals"), false);
+    assert.equal(names.includes("Car Brands"), true);
   });
 });

@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import TextInput, { FieldLabel } from "@/components/ui/Field";
 import { SoloButton, SoloCard, SoloSub, SoloErr, BigNumber } from "./SoloBits";
 import ChallengeBoard from "@/components/leaderboard/ChallengeBoard";
@@ -22,13 +22,20 @@ export default function DoneSection({ solo, onExitToMenu }) {
   const [copied, copy] = useCopied(2200);
   const [shakeTick, setShakeTick] = useState(0);
   const [shaking, endShake] = useReplay(shakeTick);
+  const [retrying, setRetrying] = useState(false);
+  const nameRef = useRef(null);
 
   if (!d) return null;
   const url = solo.challengeUrl();
 
   const addMe = async () => {
     setNameErr("");
-    if (!name.trim()) return;
+    // An empty box used to do nothing at all — no error, no focus, no clue the click landed.
+    if (!name.trim()) {
+      setShakeTick((n) => n + 1);
+      nameRef.current?.focus();
+      return setNameErr("Enter a name to put on the board.");
+    }
     setSaving(true);
     const res = await solo.submitDaily(name);
     setSaving(false);
@@ -39,20 +46,39 @@ export default function DoneSection({ solo, onExitToMenu }) {
     if (res.ok) {
       setSaved(true);
       setReload((r) => r + 1);
+      return;
     }
+    // submitDailyResult used to hardcode { ok: true } and swallow a failed write.
+    setNameErr(res.error || "Couldn't reach the leaderboard — try again.");
+  };
+
+  const retry = async () => {
+    setRetrying(true);
+    const res = await solo.retrySave();
+    setRetrying(false);
+    if (res.ok) setReload((r) => r + 1);
   };
 
   return (
     <SoloCard>
-      <p className="m-0 mb-3 text-[17px] font-bold text-accent">{d.verdict}</p>
+      <p className={cx("m-0 mb-3 text-[17px] font-bold", d.saved === false ? "text-bad" : "text-accent")}>{d.verdict}</p>
       <BigNumber>{d.total}</BigNumber>
       <SoloSub>{d.sub}</SoloSub>
+
+      {/* A failed write is worth a second attempt: same run, same ids, so a retry that lands is
+          indistinguishable from having saved first time. */}
+      {d.saved === false ? (
+        <SoloButton variant="ghost" className="mt-0!" disabled={retrying} onClick={retry}>
+          {retrying ? "Saving…" : "Try saving again"}
+        </SoloButton>
+      ) : null}
 
       {d.daily ? (
         <div>
           <FieldLabel htmlFor="dailyName">Put your name on today&apos;s leaderboard</FieldLabel>
           <div className="flex items-stretch gap-2.5">
             <TextInput
+              ref={nameRef}
               id="dailyName"
               type="text"
               maxLength={20}
@@ -68,7 +94,9 @@ export default function DoneSection({ solo, onExitToMenu }) {
           </div>
           <SoloErr>{nameErr}</SoloErr>
           <SoloSub className="mt-2 mb-0">
-            {d.streak > 1 ? `Current streak: ${d.streak} days. Come back tomorrow to keep it.` : "Play again tomorrow to start a streak."}
+            {d.streak > 1
+              ? `Current streak: ${d.streak} days. Come back tomorrow to keep it.`
+              : "Day 1 of your streak. Come back tomorrow to make it 2."}
           </SoloSub>
         </div>
       ) : null}

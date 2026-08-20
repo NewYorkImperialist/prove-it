@@ -1,6 +1,7 @@
 "use strict";
-// The small shared helpers the client renders from: emoji shortcodes, clock formatting, and the
-// geography board lookup.
+// The small shared helpers the client renders from: emoji shortcodes, clock formatting, the
+// geography board lookup, and the /name-check pre-check (lib/browser/api.js is an ES module, so
+// it comes in through a dynamic import).
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 const { emojify, EMOJI } = require("../lib/emoji.js");
@@ -83,5 +84,48 @@ describe("geography boards", () => {
   test("everything else gets no board", () => {
     assert.equal(geoMode("Natural Disasters"), null);
     assert.equal(hasGeoBoard("Car Brands"), false);
+  });
+});
+
+describe("isNameBlocked", () => {
+  // /name-check answers { ok: true } for an allowed name and { ok: false } for a blocked one.
+  const withFetch = async (impl, fn) => {
+    const real = globalThis.fetch;
+    globalThis.fetch = impl;
+    try {
+      const { isNameBlocked } = await import("../lib/browser/api.js");
+      return await fn(isNameBlocked);
+    } finally {
+      globalThis.fetch = real;
+    }
+  };
+  const json = (body) => async () => ({ json: async () => body });
+
+  test("a name the server rejects is blocked", async () => {
+    await withFetch(json({ ok: false }), async (isNameBlocked) => {
+      assert.equal(await isNameBlocked("something vile"), true);
+    });
+  });
+  test("a name the server allows is not blocked", async () => {
+    await withFetch(json({ ok: true }), async (isNameBlocked) => {
+      assert.equal(await isNameBlocked("Jayden"), false);
+    });
+  });
+  test("fails OPEN when the request itself fails — a hiccup must not reject a clean name", async () => {
+    await withFetch(async () => { throw new Error("offline"); }, async (isNameBlocked) => {
+      assert.equal(await isNameBlocked("Jayden"), false);
+    });
+  });
+  test("fails open on a non-JSON response too (a proxy error page, say)", async () => {
+    await withFetch(async () => ({ json: async () => { throw new Error("not json"); } }), async (isNameBlocked) => {
+      assert.equal(await isNameBlocked("Jayden"), false);
+    });
+  });
+  test("sends the name url-encoded", async () => {
+    let seen = null;
+    await withFetch(async (url) => { seen = url; return { json: async () => ({ ok: true }) }; }, async (isNameBlocked) => {
+      await isNameBlocked("Ann & Bob");
+      assert.equal(seen, "/name-check?name=Ann%20%26%20Bob");
+    });
   });
 });

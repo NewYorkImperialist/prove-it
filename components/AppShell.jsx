@@ -5,7 +5,7 @@ import { useCardRouter } from "@/hooks/useCardRouter";
 import { useMultiplayer } from "@/hooks/useMultiplayer";
 import { useSolo } from "@/hooks/useSolo";
 import { useAppHeight } from "@/hooks/useAppHeight";
-import { playedDailyToday } from "@/lib/browser/daily";
+import { playedDailyToday, todaysDailyId } from "@/lib/browser/daily";
 import { ConnBadge, OnlineBadge, AnnounceBanner } from "@/components/StatusBadges";
 import HomeCard from "@/components/home/HomeCard";
 import MpSetupCard from "@/components/mp/MpSetupCard";
@@ -21,7 +21,7 @@ import OilRain from "@/components/fx/OilRain";
 // The whole client, in one place: the lobby cards, the match screen, the solo overlay and the
 // leaderboard modal, plus the badges that float above all of them.
 export default function AppShell() {
-  const { conn, online, announce, dismissAnnounce } = useSocketCtx();
+  const { socket, conn, online, announce, dismissAnnounce } = useSocketCtx();
   const router = useCardRouter("home");
   const mp = useMultiplayer({ router });
   const [lbOpen, setLbOpen] = useState(false);
@@ -38,6 +38,16 @@ export default function AppShell() {
     setDailyPlayed(playedDailyToday());
   }, [solo.done, lbOpen]);
 
+  // rooms.js tags the session as single-player when this fires, which is where the owner
+  // dashboard's "N went to single-player" comes from — nothing ever emitted it, so it read 0.
+  const enteredSolo = useCallback(() => {
+    try {
+      socket?.emit("enterSingleplayer");
+    } catch {
+      /* analytics only — never block getting into a run */
+    }
+  }, [socket]);
+
   // A shared ?id= challenge link opens straight into the solo join screen.
   const deepLink = useRef(null);
   if (deepLink.current === null) {
@@ -47,16 +57,27 @@ export default function AppShell() {
   useEffect(() => {
     if (bootedDeepLink.current || !deepLink.current) return;
     bootedDeepLink.current = true;
-    solo.initJoin(deepLink.current);
+    enteredSolo();
+    // The daily's own share link carries the daily's id. Routing it through initJoin left
+    // isDaily false, so the day recorded no streak, published the score with none of the
+    // opt-in the menu flow asks for, and let the same day be replayed for a second row.
+    if (deepLink.current === todaysDailyId()) {
+      if (playedDailyToday()) return setLbOpen(true); // played → standings, same as the menu
+      solo.initDaily();
+    } else {
+      solo.initJoin(deepLink.current);
+    }
     router.go("solo");
-  }, [solo, router]);
+  }, [solo, router, enteredSolo]);
 
   const openSolo = () => {
+    enteredSolo();
     solo.initCreate();
     router.leaveTo("solo");
   };
   const openDaily = () => {
     if (playedDailyToday()) return setLbOpen(true); // played → leaderboard only, no replay
+    enteredSolo();
     solo.initDaily();
     router.leaveTo("solo");
   };

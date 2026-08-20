@@ -31,7 +31,7 @@ describe("the race screen", () => {
   test("while live, a still-active racer can type answers", () => {
     const v = view();
     assert.equal(v.enable, true);
-    assert.equal(v.placeholder, "Name a Countries…");
+    assert.equal(v.placeholder, "Name one: Countries…");
     assert.equal(v.statusText, "Racing! You have 4 so far.");
   });
   test("a racer who has left can't", () => {
@@ -73,6 +73,13 @@ describe("the race screen", () => {
     assert.equal(view({ skipVotes: 1 }).skipLabel, "Skip category (1/2)");
   });
 
+  test("a plural category name still reads as English", () => {
+    // Almost every name in data/categories.js is plural, so "Name a …" was wrong nearly always.
+    const v = view({ category: { name: "Countries in Oceania", group: "Geography", emoji: "🌍" } });
+    assert.equal(v.placeholder, "Name one: Countries in Oceania…");
+    assert.equal(/Name a /.test(v.placeholder), false);
+  });
+
   test("the countdown just says to get ready", () => {
     assert.equal(view({ phase: "countdown" }).statusText, "Get ready…");
     assert.match(view({ phase: "countdown", isTiebreaker: true }).statusText, /Sudden death/);
@@ -92,7 +99,8 @@ describe("round end", () => {
   test("an endless match can be voted to an end, counting only active racers", () => {
     const v = view({ phase: "roundover", winsNeeded: null, endVotes: 1 });
     assert.deepEqual(actions(v), ["raceVoteEnd"]);
-    assert.equal(v.actions[0].label, "End game (1/2)"); // Cy has left, so 2 not 3
+    // "match", not "game": the vote ends the match, and that's what the log and the status say.
+    assert.equal(v.actions[0].label, "End match (1/2)"); // Cy has left, so 2 not 3
   });
 });
 
@@ -163,8 +171,14 @@ describe("raceClockDeadline", () => {
 });
 
 describe("raceFormatLine", () => {
-  test("shows the round and the match format", () => {
-    assert.equal(raceFormatLine(base), "Round 2 · Best of 3");
+  test("shows the round and the number of wins that actually ends the match", () => {
+    assert.equal(raceFormatLine(base), "Round 2 · First to 2 wins");
+  });
+  test("never says 'best of' — with 3+ racers a best-of-5 can run nine rounds", () => {
+    // winsNeeded (ceil(format/2)) is the only number that ends the match, so it's the one shown.
+    const line = raceFormatLine({ ...base, format: 5, winsNeeded: 3 });
+    assert.equal(line, "Round 2 · First to 3 wins");
+    assert.equal(/[Bb]est of/.test(line), false);
   });
   test("an endless match says so", () => {
     assert.equal(raceFormatLine({ ...base, winsNeeded: null }), "Round 2 · Endless");
@@ -172,17 +186,17 @@ describe("raceFormatLine", () => {
   test("appends every modifier in play", () => {
     assert.equal(
       raceFormatLine({ ...base, increment: 5, suddenDeath: true, isTiebreaker: true }),
-      "Round 2 · Best of 3 · +5s to your own clock per answer · sudden death on ties · Tiebreaker!",
+      "Round 2 · First to 2 wins · +5s to your own clock per answer · sudden death on ties · Tiebreaker!",
     );
   });
   test("spells out the clock ceiling when the server advertises one", () => {
     assert.equal(
       raceFormatLine({ ...base, increment: 5, clockCap: 90 }),
-      "Round 2 · Best of 3 · +5s to your own clock per answer (max 1:30 a round)",
+      "Round 2 · First to 2 wins · +5s to your own clock per answer (max 1:30 a round)",
     );
   });
   test("a cap is only mentioned alongside an increment that could reach it", () => {
-    assert.equal(raceFormatLine({ ...base, increment: 0, clockCap: 90 }), "Round 2 · Best of 3");
+    assert.equal(raceFormatLine({ ...base, increment: 0, clockCap: 90 }), "Round 2 · First to 2 wins");
   });
 });
 

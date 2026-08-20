@@ -157,12 +157,20 @@ function snapshot(room) {
     // deadline = the LAST clock still running (what a spectator counts down to); each player
     // reads their own out of `deadlines`. Same information the running counts already carry.
     deadline: g.deadline || null, deadlines: { ...g.deadlines }, timer: g.timer, increment: g.increment || 0,
-    clockCap: g.timer * MAX_CLOCK_FACTOR, // longest a single clock (so, a whole round) can run
+    // Longest a single clock (so, a whole round) can run. It has to be THIS round's ceiling, not
+    // one recomputed from g.timer: raising the timer mid-round moves g.timer while clockCeiling
+    // stays frozen at the round's start, so the recomputed version advertised "max 2:00 a round"
+    // on a round extendClock still cut off at 60s. Before a round is live there's no ceiling yet,
+    // so the pending timer is the honest answer.
+    clockCap: g.roundClockCap ?? g.timer * MAX_CLOCK_FACTOR,
     format: g.format, winsNeeded: g.winsNeeded, suddenDeath: !!g.suddenDeath, isTiebreaker: !!g.isTiebreaker,
     roundWins: g.order.map((id) => ({ id, name: g.names[id], wins: g.roundWins[id] || 0, active: g.activeIds.has(id) })),
     // score-only: a running count per player, NEVER the actual items they've named — that's
     // only ever sent once, in the "raceReveal" event, after the round's timer has ended.
-    liveScores: g.order.map((id) => ({ id, name: g.names[id], score: g.activeIds.has(id) ? (g.liveScores[id] || 0) : null,
+    // crown rides along with the name (as it does in the duel's snapshot): setCrown resyncs to
+    // refresh the in-game labels, and without it the owner's 👑 vanished the moment the lobby did.
+    liveScores: g.order.map((id) => ({ id, name: g.names[id], crown: !!room.players.get(id)?.crown,
+      score: g.activeIds.has(id) ? (g.liveScores[id] || 0) : null,
       active: g.activeIds.has(id), done: g.doneIds.has(id) })),
     // Whose clock has already expired this round — the rest of the room is waiting on the others.
     racing: [...g.activeIds].filter((id) => !g.doneIds.has(id)).length,
@@ -195,6 +203,7 @@ function startMatch(io, room) {
     current: null, phase: "starting", deadline: null, timeout: null,
     deadlines: {}, doneIds: new Set(), pausedClocks: null, // per-player round clocks
     clockCeiling: null, pausedCeiling: null, // set per round in startLiveRound; caps the increment
+    roundClockCap: null, // seconds the ceiling above is worth — what the banner advertises
     answers: {}, liveScores: {}, misses: {}, missSeq: 0, lastReveal: null, matchWinnerId: null,
     paused: false, endVotes: new Set(), skipVotes: new Set(),
     startedAt: Date.now(),
@@ -217,7 +226,7 @@ function beginRound(io, room, opts = {}) {
   g.endVotes = new Set(); // votes are a per-round intent check, not sticky across rounds
   g.skipVotes = new Set();
   g.deadlines = {}; g.doneIds = new Set(); g.pausedClocks = null;
-  g.clockCeiling = null; g.pausedCeiling = null;
+  g.clockCeiling = null; g.pausedCeiling = null; g.roundClockCap = null;
   for (const id of g.activeIds) { g.answers[id] = new Map(); g.liveScores[id] = 0; g.misses[id] = []; }
   g.phase = "countdown";
   log(io, room, "system", null, g.isTiebreaker ? `Sudden death! Round ${g.round} · ${c.group}: ${c.name}` : `Round ${g.round} · ${c.group}: ${c.name}`);
@@ -233,19 +242,31 @@ function startLiveRound(io, room) {
   g.doneIds = new Set();
   g.deadlines = Object.fromEntries([...g.activeIds].map((id) => [id, start])); // same start for all
   g.clockCeiling = now + g.timer * 1000 * MAX_CLOCK_FACTOR; // no increment may push a clock past this
+  g.roundClockCap = g.timer * MAX_CLOCK_FACTOR; // the same ceiling as a duration, for the banner
   g.pausedCeiling = null;
   armRoundClock(io, room);
   emit(io, room);
 }
 
+// Who can actually win this round: everyone, or — in a sudden-death round — only the players who
+// were tied for the top spot when it was called (v1 simplification, see the plan).
+function scoringPool(g) {
+  return (g.isTiebreaker && g.tiebreakerCandidates)
+    ? [...g.tiebreakerCandidates].filter((id) => g.activeIds.has(id))
+    : [...g.activeIds];
+}
+
 // Snapshot of everyone's current answers/misses, used for both the initial (non-final) reveal
-// and every subsequent update as misses get approved or the round gets finalized.
-function currentPerPlayer(room) {
+// and every subsequent update as misses get approved or the round gets finalized. `eligible` says
+// whether that player's score could win the round — without it the reveal card crowned the
+// tiebreaker's winner above a bigger score from someone who was never in the tiebreaker.
+function currentPerPlayer(room, eligible = new Set(scoringPool(room.game))) {
   const g = room.game;
   return [...g.activeIds].map((id) => {
     const mine = g.answers[id] || new Map();
     return {
       id, name: g.names[id], score: g.liveScores[id] || 0,
+      eligible: eligible.has(id),
       got: [...mine.values()].map((v) => v.display),
       misses: (g.misses[id] || []).map((m) => ({ id: m.id, text: m.text })),
       missedCount: Math.max(0, g.current.entries.length - mine.size),
@@ -261,9 +282,11 @@ function endLiveRound(io, room) {
   const g = room.game;
   // Every clock is spent, so this is the first moment anyone's answers may leave the server.
   for (const id of g.activeIds) g.doneIds.add(id);
-  g.deadlines = {}; g.clockCeiling = null; g.pausedCeiling = null;
+  g.deadlines = {}; g.clockCeiling = null; g.pausedCeiling = null; g.roundClockCap = null;
   g.lastReveal = {
     round: g.round, category: { name: g.current.name, group: g.current.group, emoji: g.current.emoji },
+    // tiebreaker: this round was a sudden-death round, so only `eligible` players could win it.
+    tiebreaker: !!(g.isTiebreaker && g.tiebreakerCandidates),
     perPlayer: currentPerPlayer(room), final: false, roundWinnerIds: [], tie: false, suddenDeathTriggered: false,
   };
   io.to(room.code).emit("raceReveal", g.lastReveal);
@@ -300,29 +323,29 @@ function handleApproveMiss(io, room, socket, targetId, missId) {
 function finalizeRound(io, room) {
   clearTimer(room);
   const g = room.game;
-  // In a sudden-death round, everyone plays again, but only the players who were tied
-  // for the top spot last round decide the tiebreaker (v1 simplification — see plan).
-  const pool = (g.isTiebreaker && g.tiebreakerCandidates)
-    ? [...g.tiebreakerCandidates].filter((id) => g.activeIds.has(id))
-    : [...g.activeIds];
+  // In a sudden-death round everyone plays again, but only these players decide the tiebreaker.
+  const pool = scoringPool(g);
+  const eligible = new Set(pool); // read now: a fresh tie below re-picks g.tiebreakerCandidates
+  const wasTiebreaker = !!(g.isTiebreaker && g.tiebreakerCandidates);
   let maxScore = 0;
   for (const id of pool) maxScore = Math.max(maxScore, g.liveScores[id] || 0);
   const topScorers = pool.filter((id) => (g.liveScores[id] || 0) === maxScore);
 
+  // g.isTiebreaker is deliberately NOT cleared here: the reveal and the roundover state go out
+  // below, and clearing it first dropped "· Tiebreaker!" from the banner on the one screen that
+  // has to explain why the top scorer didn't win. beginRound sets it for the next round anyway.
   let roundWinnerIds = [], tie = false, suddenDeathTriggered = false;
   if (pool.length === 1) {
     roundWinnerIds = pool; g.roundWins[pool[0]] = (g.roundWins[pool[0]] || 0) + 1;
-    g.isTiebreaker = false; g.tiebreakerCandidates = null;
   } else if (topScorers.length === 1) {
     roundWinnerIds = topScorers; g.roundWins[topScorers[0]] = (g.roundWins[topScorers[0]] || 0) + 1;
-    g.isTiebreaker = false; g.tiebreakerCandidates = null;
   } else {
     tie = true;
     if (g.suddenDeath) { suddenDeathTriggered = true; g.tiebreakerCandidates = new Set(topScorers); }
-    else { g.isTiebreaker = false; g.tiebreakerCandidates = null; }
   }
 
-  g.lastReveal = { ...g.lastReveal, perPlayer: currentPerPlayer(room), final: true, roundWinnerIds, tie, suddenDeathTriggered };
+  g.lastReveal = { ...g.lastReveal, tiebreaker: wasTiebreaker,
+    perPlayer: currentPerPlayer(room, eligible), final: true, roundWinnerIds, tie, suddenDeathTriggered };
   const winnerNames = roundWinnerIds.map((id) => g.names[id]).join(", ");
   log(io, room, "system", null, roundWinnerIds.length
     ? `${winnerNames} ${roundWinnerIds.length > 1 ? "win" : "wins"} the round with ${maxScore}!`
@@ -411,7 +434,7 @@ function handleVoteEnd(io, room, socket) {
   if (g.endVotes.has(pid)) return;
   g.endVotes.add(pid);
   if (checkVoteThresholds(io, room)) return;
-  log(io, room, "system", null, `${g.names[pid]} wants to end the game (${g.endVotes.size}/${g.activeIds.size}).`);
+  log(io, room, "system", null, `${g.names[pid]} wants to end the match (${g.endVotes.size}/${g.activeIds.size}).`);
   emit(io, room);
 }
 
@@ -453,7 +476,8 @@ function passEndVote(io, room) {
   clearTimer(room);
   if (winners.length === 1) return matchOver(io, room, winners[0], "vote-end");
   g.phase = "matchover"; g.deadline = null; g.matchWinnerId = null; g.paused = false;
-  log(io, room, "system", null, "Game ended by vote · it's a tie!");
+  g.isTiebreaker = false; g.tiebreakerCandidates = null; // as in matchOver: no round is in progress
+  log(io, room, "system", null, "Match ended by vote · it's a tie!");
   report(room, "end", { winnerId: null, reason: "vote-end" });
   emit(io, room);
 }
@@ -465,6 +489,7 @@ function matchOver(io, room, winnerId, reason) {
   // winner of a forfeit kept reading "waiting up to 30s for them to reconnect…" with no Play
   // again or Leave button, because race-view lets a paused game blank out every action.
   g.phase = "matchover"; g.deadline = null; g.matchWinnerId = winnerId || null; g.paused = false;
+  g.isTiebreaker = false; g.tiebreakerCandidates = null; // no round is in progress to be a tiebreaker
   log(io, room, "system", null, winnerId ? `${g.names[winnerId]} wins the match!` : "Match over.");
   report(room, "end", { winnerId: winnerId || null, reason: reason || "win" });
   io.to(room.code).emit("raceMatchOver", {

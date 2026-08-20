@@ -12,26 +12,38 @@ export default function RaceReveal({ reveal: r, myId, onApproveMiss }) {
     .filter(Boolean)
     .join(", ");
 
+  // A sudden-death round is only played FOR the players who were tied for the lead: everyone
+  // races, but the server scores nobody else (race-engine.js finalizeRound). Saying so is what
+  // stops the card reading "Alice won the round!" straight above "Cara — 5 correct".
+  const tb = !!r.tiebreaker;
+  const benched = (p) => tb && p.eligible === false;
+
   const title = !r.final
     ? "Reviewing answers…"
     : r.tie
       ? r.suddenDeathTriggered
         ? "Tied — sudden death! One more round to break it."
         : "Round tied — no one scores this one."
-      : `${winnerNames} won the round!`;
+      : tb
+        ? `${winnerNames} won the tiebreaker!`
+        : `${winnerNames} won the round!`;
 
-  const rows = r.perPlayer.slice().sort((a, b) => b.score - a.score);
+  // Whoever could actually win it first, then by score — a bigger score from a player who wasn't
+  // in the tiebreaker isn't the top of this round.
+  const rows = r.perPlayer.slice().sort((a, b) => Number(benched(a)) - Number(benched(b)) || b.score - a.score);
 
   return (
     <div className="max-w-full self-stretch rounded-[10px] border border-line2 bg-panel2 px-3.5 py-2.5 text-[13px]">
       <div className="mb-1 font-extrabold">{title}</div>
       <div className="mb-1.5 text-xs text-muted">
         {r.category.emoji} {r.category.name}
+        {tb ? " · sudden death: only the players tied for the lead could win this round" : ""}
       </div>
       {rows.map((p) => (
-        <div key={p.id}>
+        <div key={p.id} className={benched(p) ? "opacity-60" : undefined}>
           <div className="my-1">
-            <b className="text-gold">{p.name}</b> — {p.score} correct
+            <b className="text-gold">{p.name}</b>
+            {benched(p) ? <span className="text-muted"> (not in the tiebreaker)</span> : null} — {p.score} correct
             {p.got.length ? <span className="text-muted">: {p.got.join(", ")}</span> : null}
           </div>
           {!r.final && p.misses && p.misses.length ? (

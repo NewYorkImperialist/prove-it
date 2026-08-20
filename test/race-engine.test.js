@@ -79,6 +79,17 @@ describe("handleAnswer", () => {
     assert.equal(me.score, 1);
   });
 
+  test("the broadcast roster carries the owner's crown, so it survives the lobby", () => {
+    // setCrown resyncs mid-match precisely to refresh these labels (rooms.js), but the race
+    // snapshot used to drop the flag, so the 👑 showed in the lobby and never in a match.
+    const io = makeIO(); const room = liveRoom();
+    room.players.get("p1").crown = true;
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    const scores = io.lastOfType("raceState").liveScores;
+    assert.equal(scores.find((p) => p.id === "p1").crown, true);
+    assert.equal(scores.find((p) => p.id === "p2").crown, false);
+  });
+
   test("a wrong/unrecognized answer is a silent miss — accepted:false, no throw", () => {
     const io = makeIO(); const room = liveRoom();
     let ack; engine.handleAnswer(io, room, sock("p1"), "nonsense", (r) => (ack = r));
@@ -231,6 +242,22 @@ describe("per-player clocks", () => {
     assert.ok(room.game.clockCeiling >= room.game.deadlines.p1 + 29000);
     assert.ok(room.game.clockCeiling <= room.game.deadlines.p1 + 31000);
     assert.equal(io.lastOfType("raceState").clockCap, 60); // seconds, for the banner to explain
+  });
+
+  test("raising the timer mid-round doesn't advertise a cap the round can't reach", () => {
+    // The ceiling is frozen at the round's start, so a cap recomputed from the live g.timer
+    // promised "max 2:00 a round" while extendClock still cut every clock off at 60s.
+    const io = makeIO(); const room = liveRoom({ timer: 30, increment: 5 });
+    room.game.deadlines = {}; room.game.clockCeiling = null; room.game.phase = "countdown";
+    engine.startLiveRound(io, room);
+    const ceiling = room.game.clockCeiling;
+
+    engine.applyLiveSettings(io, room, { timer: 60 }); // host doubles the timer mid-round
+
+    assert.equal(room.game.clockCeiling, ceiling, "this round's real ceiling doesn't move");
+    assert.equal(io.lastOfType("raceState").clockCap, 60); // still the cap actually in force
+    engine.endLiveRound(io, room); // …and the new timer's cap applies from the next round
+    assert.equal(io.lastOfType("raceState").clockCap, 120);
   });
 
   // The case the ceiling exists for: a big category, a generous increment, and one player who
@@ -402,6 +429,60 @@ describe("round end scoring (via startLiveRound's timer)", () => {
   });
 });
 
+describe("a sudden-death round's reveal", () => {
+  test("says it was a tiebreaker, and marks who could actually win it", () => {
+    // Only the players tied for the lead score a tiebreaker, so the round's winner can sit below
+    // a bigger score from someone who was never in it. The reveal has to say which is which, or
+    // the card reads "P1 won the round!" above "P3 — 3 correct".
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2", "p3"], suddenDeath: true });
+    room.game.isTiebreaker = true;
+    room.game.tiebreakerCandidates = new Set(["p1", "p2"]);
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    for (const w of ["alpha", "beta", "gamma"]) engine.handleAnswer(io, room, sock("p3"), w, () => {});
+
+    engine.endLiveRound(io, room);
+
+    const reveal = io.lastOfType("raceReveal");
+    assert.equal(reveal.tiebreaker, true);
+    assert.deepEqual(reveal.roundWinnerIds, ["p1"]); // p3 scored 3 but wasn't in the tiebreaker
+    assert.equal(reveal.perPlayer.find((p) => p.id === "p1").eligible, true);
+    assert.equal(reveal.perPlayer.find((p) => p.id === "p2").eligible, true);
+    assert.equal(reveal.perPlayer.find((p) => p.id === "p3").eligible, false);
+    assert.equal(room.game.roundWins.p3, 0);
+  });
+
+  test("the roundover state still says Tiebreaker, on the one screen that has to explain it", () => {
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2", "p3"], suddenDeath: true });
+    room.game.isTiebreaker = true;
+    room.game.tiebreakerCandidates = new Set(["p1", "p2"]);
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    engine.endLiveRound(io, room);
+    assert.equal(room.game.phase, "roundover");
+    assert.equal(io.lastOfType("raceState").isTiebreaker, true);
+  });
+
+  test("an ordinary round's reveal isn't flagged, and everyone in it is eligible", () => {
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2", "p3"] });
+    engine.handleAnswer(io, room, sock("p2"), "alpha", () => {});
+    engine.endLiveRound(io, room);
+    const reveal = io.lastOfType("raceReveal");
+    assert.equal(reveal.tiebreaker, false);
+    assert.ok(reveal.perPlayer.every((p) => p.eligible));
+  });
+
+  test("a decided match isn't a tiebreaker any more", (t) => {
+    const io = makeIO(); const room = liveRoom({ format: 3, suddenDeath: true });
+    room.game.roundWins.p1 = 1; // one win away from winsNeeded=2
+    room.game.isTiebreaker = true;
+    room.game.tiebreakerCandidates = new Set(["p1", "p2"]);
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    engine.endLiveRound(io, room);
+    t.mock.timers.tick(7000); // RESULT_MS pause → the match ends
+    assert.equal(room.game.phase, "matchover");
+    assert.equal(io.lastOfType("raceState").isTiebreaker, false);
+  });
+});
+
 describe("match format → win condition", () => {
   test("best-of-3 needs 2 round wins to end the match", () => {
     const io = makeIO(); const room = liveRoom({ format: 3 });
@@ -432,6 +513,27 @@ describe("match format → win condition", () => {
     assert.ok(over);
     assert.equal(over.winnerId, "p1");
     assert.equal(room.game.phase, "matchover");
+  });
+});
+
+// What the in-game settings note promises: the increment lands immediately, the timer waits.
+describe("applyLiveSettings mid-match", () => {
+  test("a new increment is paid on the very next answer of the round in progress", () => {
+    const io = makeIO(); const room = liveRoom({ increment: 0 });
+    const before = room.game.deadlines.p1;
+    engine.applyLiveSettings(io, room, { increment: 5 });
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    assert.ok(room.game.deadlines.p1 >= before + 4900, "the increment doesn't wait for the next round");
+  });
+
+  test("a new timer only takes effect when the next round is dealt", () => {
+    const io = makeIO(); const room = liveRoom({ timer: 30 });
+    const before = room.game.deadlines.p1;
+    engine.applyLiveSettings(io, room, { timer: 60 });
+    assert.equal(room.game.deadlines.p1, before); // clocks already dealt keep their time
+    room.game.phase = "countdown";
+    engine.startLiveRound(io, room);
+    assert.ok(room.game.deadlines.p1 > Date.now() + 59_000);
   });
 });
 

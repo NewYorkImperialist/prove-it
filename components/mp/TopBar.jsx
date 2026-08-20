@@ -219,7 +219,12 @@ export default function TopBar({ mp, roster, roomLabel, canSkip, skipLabel, onLe
               <Seg options={TIMERS} value={raceGs.timer} onChange={(timer) => mp.setRaceSettings({ timer })} />
               <GroupTitle>Increment</GroupTitle>
               <Seg options={INCREMENTS} value={raceGs.increment || 0} onChange={(increment) => mp.setRaceSettings({ increment })} />
-              <div className="mt-2.5 text-xs text-muted">Applies from the next round. Match format is locked for this match.</div>
+              {/* The increment is applied to g.increment the moment it lands, so the very next
+                  answer of the round in progress already pays it; only the timer waits for
+                  startLiveRound. Match format really is locked (applyLiveSettings ignores it). */}
+              <div className="mt-2.5 text-xs text-muted">
+                A new increment counts from your next answer; a new timer starts with the next round. Match format is locked for this match.
+              </div>
             </>
           ) : null}
         </div>

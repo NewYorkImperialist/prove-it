@@ -50,11 +50,17 @@ describe("proving", () => {
     const v = view({ phase: "proving", claim: 5, proven: 2, turnId: ME });
     assert.deepEqual(actions(v), ["giveUp"]);
     assert.equal(v.statusText, "Proving 2/5");
-    assert.equal(v.placeholder, "Name a Countries…");
+    assert.equal(v.placeholder, "Name one: Countries…");
   });
   test("typing speed is folded into the line when the server reports it", () => {
     const v = view({ phase: "proving", claim: 5, proven: 2, wpm: 44, turnId: ME });
     assert.equal(v.statusText, "Proving 2/5 · 44 wpm");
+  });
+  test("a plural category name still reads as English", () => {
+    // Almost every name in data/categories.js is plural, so "Name a …" was wrong nearly always.
+    const v = view({ phase: "proving", claim: 5, turnId: ME, category: { name: "Cereals" } });
+    assert.equal(v.placeholder, "Name one: Cereals…");
+    assert.equal(/Name a /.test(v.placeholder), false);
   });
   test("the challenger watches the same counter", () => {
     const v = view({ phase: "proving", claim: 5, proven: 2, turnId: OPP });
@@ -86,7 +92,8 @@ describe("between rounds", () => {
   test("an endless game also offers the end-game vote, with its tally", () => {
     const v = view({ phase: "roundover", intermission: true, target: null, endVotes: 1 });
     assert.deepEqual(actions(v), ["nextRound", "voteEnd"]);
-    assert.equal(v.actions[1].label, "End game (1/2)");
+    // "match", not "game": the vote hands off to matchOver, and the result line says "the match".
+    assert.equal(v.actions[1].label, "End match (1/2)");
   });
 });
 
@@ -95,8 +102,8 @@ describe("match over", () => {
     assert.deepEqual(actions(view({ phase: "matchover", matchWinnerId: ME })), ["leave"]);
     assert.deepEqual(actions(view({ phase: "matchover", matchWinnerId: ME }, { iAmHost: true })), ["rematch", "leave"]);
   });
-  test("a tie says so", () => {
-    assert.equal(view({ phase: "matchover", matchWinnerId: null }).statusText, "Game over · it's a tie!");
+  test("a tie says so — and calls the thing that ended a match, like the winner line does", () => {
+    assert.equal(view({ phase: "matchover", matchWinnerId: null }).statusText, "Match over · it's a tie!");
   });
 });
 

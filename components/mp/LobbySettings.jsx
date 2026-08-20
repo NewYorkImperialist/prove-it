@@ -23,9 +23,13 @@ export const ADVANCE = [
   { value: true, label: "Auto" },
   { value: false, label: "Manual (press P)" },
 ];
+// A race match ends at ceil(format/2) round wins, and a race seats up to 8 — so "Best of 5" was
+// a lie past two players: four players can take nine rounds to get anyone to three wins, and a
+// tie with sudden death off scores nobody. The value stays 3|5|null (race-engine.js validates
+// those); only the label changed, to the number of wins that actually ends the match.
 export const FORMATS = [
-  { value: 3, label: "Best of 3" },
-  { value: 5, label: "Best of 5" },
+  { value: 3, label: "First to 2" },
+  { value: 5, label: "First to 3" },
   { value: null, label: "Endless" },
 ];
 

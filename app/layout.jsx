@@ -15,7 +15,10 @@ const plexMono = IBM_Plex_Mono({ subsets: ["latin"], weight: ["400", "500", "600
 export const metadata = {
   title: SITE.home.title,
   description: SITE.home.description,
-  icons: { icon: FAVICON },
+  // The SVG data URI stays the browser-tab favicon; iOS ignores the manifest entirely and reads
+  // apple-touch-icon, which has to be a real opaque raster (iOS composites transparency onto
+  // black). Both PNGs come from scripts/make-icons.js.
+  icons: { icon: FAVICON, apple: "/apple-icon.png" },
   openGraph: {
     type: "website",
     siteName: SITE.siteName,
@@ -31,6 +34,11 @@ export const metadata = {
     images: [`${SITE.ogImage.url}?v=${SITE.ogImage.v}`],
   },
 };
+
+// Launched from an iOS home screen this is what makes the game open without Safari's chrome.
+// statusBarStyle is "black" rather than "black-translucent" on purpose: translucent puts the page
+// under the status bar, and none of these layouts reserve safe-area insets for that.
+export const appleWebApp = { capable: true, title: SITE.pwa.shortName, statusBarStyle: "black" };
 
 export const viewport = { themeColor: SITE.themeColor, width: "device-width", initialScale: 1 };
 

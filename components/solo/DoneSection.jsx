@@ -12,8 +12,8 @@ import { geoChallengeCats } from "@/lib/solo-catalog";
 import * as store from "@/lib/browser/storage";
 import { cx } from "@/lib/browser/cx";
 
-// The result screen, and the shareable link that turns it into a challenge. The daily adds an
-// opt-in name entry for the public board plus your streak.
+// The result screen, and the shareable link that turns it into a challenge. Every run gets a
+// chance to (re)name its leaderboard entry here — the daily also shows the streak.
 export default function DoneSection({ solo, onExitToMenu }) {
   const d = solo.done;
   const [name, setName] = useState(() => store.getSoloName());
@@ -33,7 +33,7 @@ export default function DoneSection({ solo, onExitToMenu }) {
     setNameErr("");
     if (!name.trim()) return;
     setSaving(true);
-    const res = await solo.submitDaily(name);
+    const res = await (d.daily ? solo.submitDaily(name) : solo.renameRun(name));
     setSaving(false);
     if (res.blocked) {
       setShakeTick((n) => n + 1);
@@ -72,30 +72,30 @@ export default function DoneSection({ solo, onExitToMenu }) {
           </div>
         ) : null}
 
-        {d.daily ? (
-          <div>
-            <FieldLabel htmlFor="dailyName">Put your name on today&apos;s leaderboard</FieldLabel>
-            <div className="flex items-stretch gap-2.5">
-              <TextInput
-                id="dailyName"
-                type="text"
-                maxLength={20}
-                placeholder="Your name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                onAnimationEnd={endShake}
-                className={cx("min-w-0 flex-1 text-base!", shaking && "animate-shake border-bad!")}
-              />
-              <SoloButton className="mt-0! w-auto! shrink-0 px-5" disabled={saving} onClick={addMe}>
-                {saving ? "Saving…" : saved ? "Update" : "Add me"}
-              </SoloButton>
-            </div>
-            <SoloErr>{nameErr}</SoloErr>
+        <div>
+          <FieldLabel htmlFor="boardName">{d.daily ? "Put your name on today's leaderboard" : "Your name on this leaderboard"}</FieldLabel>
+          <div className="flex items-stretch gap-2.5">
+            <TextInput
+              id="boardName"
+              type="text"
+              maxLength={20}
+              placeholder="Your name"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onAnimationEnd={endShake}
+              className={cx("min-w-0 flex-1 text-base!", shaking && "animate-shake border-bad!")}
+            />
+            <SoloButton className="mt-0! w-auto! shrink-0 px-5" disabled={saving} onClick={addMe}>
+              {saving ? "Saving…" : d.daily && !saved ? "Add me" : "Update"}
+            </SoloButton>
+          </div>
+          <SoloErr>{nameErr}</SoloErr>
+          {d.daily ? (
             <SoloSub className="mt-2 mb-0">
               {d.streak > 1 ? `Current streak: ${d.streak} days. Come back tomorrow to keep it.` : "Play again tomorrow to start a streak."}
             </SoloSub>
-          </div>
-        ) : null}
+          ) : null}
+        </div>
 
         <div className="mt-3">
           {d.board.kind === "category" ? (
@@ -135,20 +135,9 @@ export default function DoneSection({ solo, onExitToMenu }) {
           <SoloButton variant="ghost" className="mt-3!" onClick={() => setReload((r) => r + 1)}>
             Refresh leaderboard
           </SoloButton>
-          {d.geoChallenge ? (
-            <>
-              <SoloButton variant="ghost" className="mt-3!" onClick={() => solo.startGeoChallenge()}>
-                Play a different geography?
-              </SoloButton>
-              <SoloButton variant="ghost" className="mt-3!" onClick={() => solo.backToStart()}>
-                Back to menu
-              </SoloButton>
-            </>
-          ) : (
-            <SoloButton variant="ghost" className="mt-3!" onClick={() => (d.daily ? onExitToMenu() : solo.backToStart())}>
-              {d.daily ? "Back to menu" : "New challenge"}
-            </SoloButton>
-          )}
+          <SoloButton variant="ghost" className="mt-3!" onClick={() => (d.daily ? onExitToMenu() : solo.backToStart())}>
+            {d.daily ? "Back to menu" : "New challenge"}
+          </SoloButton>
         </div>
       </SoloCard>
     </>

@@ -4,7 +4,7 @@ import { CATS, GENRES, findCat, nonSprint, recommendedTime, shuffle, pickGenreRo
 import { norm, nearMiss, findEntry } from "@/lib/solo-matching";
 import { hasGeoBoard, geoMode as geoModeOf } from "@/lib/geo-cats";
 import { fmtClock, todayEastern, prevDate } from "@/lib/format";
-import { getJSON, postJSON } from "@/lib/browser/api";
+import { getJSON, postJSON, isNameBlocked } from "@/lib/browser/api";
 import { ownerKeyIfCrowned, submitDailyResult } from "@/lib/browser/daily";
 import * as store from "@/lib/browser/storage";
 import { useStateRef } from "@/hooks/useStateRef";
@@ -37,8 +37,8 @@ export function useSolo({ onExitToMenu }) {
   const [dailyDate, setDailyDate] = useState("");
   // Where this run came from — keeps a friend's shared link out of the solo geography boards.
   const playOrigin = useRef("solo");
-  // Set only by startGeoChallenge() — lets the done screen offer "play a different geography?"
-  // instead of the generic "new challenge" link.
+  // Set only by startGeoChallenge() — lets the done screen offer its "play a specific one next"
+  // category picker instead of the generic "new challenge" link.
   const isGeoChallenge = useRef(false);
   const [roundCats, setRoundCats, roundCatsRef] = useStateRef([]);
   const [cur, setCur, curRef] = useStateRef(0);
@@ -747,6 +747,22 @@ export function useSolo({ onExitToMenu }) {
     [challengeIdRef, visitorId],
   );
 
+  // Every non-daily run already saved itself (and a name) the moment it finished — this is just
+  // for fixing that name afterward. Unlike submitDaily, there's no run to (re)submit: the score
+  // is already on the board under this visitorId, so a rename just needs to update it there, the
+  // same /challenge/rename call the daily "add me" flow uses to fix every board in one go.
+  const renameRun = useCallback(
+    async (name) => {
+      const n = String(name || "").trim().slice(0, 20);
+      if (!n) return { ok: false };
+      if (await isNameBlocked(n)) return { ok: false, blocked: true };
+      store.setSoloName(n);
+      await postJSON("/challenge/rename", { name: n, visitorId, ownerKey: ownerKeyIfCrowned() });
+      return { ok: true, name: n };
+    },
+    [visitorId],
+  );
+
   // The number under the clock: raw count, "x / total" for the enumerations, or the fill grid's
   // own progress.
   const countLabel =
@@ -774,7 +790,7 @@ export function useSolo({ onExitToMenu }) {
     flagSel, selectFlag: setFlagSel, moveFlagSel, namedIds: named.current,
     // actions
     initCreate, initJoin, initDaily, createChallenge, startSolo, startGeoChallenge, startPlaying, runCountdown,
-    startRound, submit, giveUp, nextRound, toggleRemaining, backToStart, leaveRun, challengeUrl, submitDaily,
+    startRound, submit, giveUp, nextRound, toggleRemaining, backToStart, leaveRun, challengeUrl, submitDaily, renameRun,
     todayEastern,
   };
 }

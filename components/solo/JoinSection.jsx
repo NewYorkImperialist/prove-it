@@ -4,12 +4,17 @@ import { BackButton } from "@/components/ui/Button";
 import TextInput, { FieldLabel } from "@/components/ui/Field";
 import { SoloButton, SoloCard, SoloErr } from "./SoloBits";
 import ChallengeBoard from "@/components/leaderboard/ChallengeBoard";
+import { fmtClock } from "@/lib/format";
 
 // Landing on a ?id= link: what was set up, and what you're trying to beat. The same card also
 // catches a reload of your OWN run (info.mine), which is not a challenge from a stranger.
 export default function JoinSection({ solo, onBack }) {
   const [showBoard, setShowBoard] = useState(false);
   const info = solo.joinInfo;
+  // A mid-run reload keeps ?id= in the URL, so it lands HERE rather than on the create screen —
+  // which is the only place the resume offer used to be rendered. The snapshot was sitting in
+  // storage the whole time while this card told you the run couldn't be picked back up.
+  const resume = solo.resumeInfo && solo.resumeInfo.challengeId === solo.challengeId ? solo.resumeInfo : null;
   const rounds = info ? `${info.nRounds} ${info.nRounds === 1 ? "round" : "rounds"}` : "";
   // "recommended time ." had a stray space, and one round isn't "45s each".
   const clock = !info ? "" : info.timer === 0 ? "recommended time per round" : `${info.timer}s${info.nRounds > 1 ? " each" : ""}`;
@@ -32,16 +37,29 @@ export default function JoinSection({ solo, onBack }) {
             again ({clock}), or send this link to a friend.
           </>
         ) : info.mine === "playing" ? (
-          <>
-            <b className="text-accent">This is your run.</b> Reloading the page ended it — a round against the clock can&apos;t be
-            picked back up, and nothing was scored. Play <b>{rounds}</b>
-            {info.genre ? (
-              <>
-                {" "}of <b>{info.genre}</b>
-              </>
-            ) : null}{" "}
-            again ({clock}), or send this link to a friend.
-          </>
+          resume ? (
+            <>
+              <b className="text-accent">This is your run.</b> You left it in progress — pick it up below, or start{" "}
+              <b>{rounds}</b>
+              {info.genre ? (
+                <>
+                  {" "}of <b>{info.genre}</b>
+                </>
+              ) : null}{" "}
+              again ({clock}).
+            </>
+          ) : (
+            <>
+              <b className="text-accent">This is your run.</b> It&apos;s too late to pick this one back up, and nothing was
+              scored. Play <b>{rounds}</b>
+              {info.genre ? (
+                <>
+                  {" "}of <b>{info.genre}</b>
+                </>
+              ) : null}{" "}
+              again ({clock}), or send this link to a friend.
+            </>
+          )
         ) : (
           <>
             <b className="text-accent">{info.by}</b> challenged you to name as many as you can across <b>{rounds}</b>
@@ -54,6 +72,24 @@ export default function JoinSection({ solo, onBack }) {
           </>
         )}
       </div>
+
+      {/* Same offer the create screen makes, on the screen a mid-run reload actually lands on. */}
+      {resume ? (
+        <div className="mb-1 rounded-xl border border-accent bg-accdim p-3">
+          <p className="m-0 mb-2 text-[13px] text-ink">
+            <b>{resume.def.rounds[resume.cur]}</b> — {Math.max(0, resume.namedIds.length)} named,{" "}
+            {fmtClock(Math.max(0, Math.round((resume.deadline - Date.now()) / 1000)))} left.
+          </p>
+          <div className="flex gap-2">
+            <SoloButton className="mt-0! w-auto! shrink-0 px-5" onClick={solo.resumeRun}>
+              Resume
+            </SoloButton>
+            <SoloButton variant="ghost" className="mt-0! w-auto! shrink-0 px-5" onClick={solo.dismissResume}>
+              Discard
+            </SoloButton>
+          </div>
+        </div>
+      ) : null}
 
       <ul className="m-0 mt-2.5 list-none p-0">
         {(info?.rounds || []).map((r, i) => (

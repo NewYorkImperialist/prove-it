@@ -3,9 +3,12 @@
 // Off-list answers awaiting a ruling. The challenger (the judge) gets Accept/Reject plus a
 // Reject-all shortcut; the prover just sees that they're pending.
 const ROW = "flex items-center gap-2 rounded-[10px] border px-2.5 py-2";
-// Accept and Reject do opposite things to someone else's round and used to be 34px tall with an
-// 8px gap between them — a mis-tap on a phone was one thumb-width away, and it isn't undoable.
+// Accept and Reject do opposite things to someone else's round, and Reject can't be undone (only
+// an accepted answer can be taken back, via revokeGrant). They used to be 34px tall and 8px apart,
+// which is a mis-tap waiting to happen on a phone. The height was raised; REJECT_GAP is the other
+// half — the 8px row gap alone still put the destructive one a thumb-width from the safe one.
 const BTN = "min-h-11 shrink-0 cursor-pointer rounded-lg border-none px-3 py-[7px] text-[13px] font-bold";
+const REJECT_GAP = "ml-2.5";
 
 function JudgeRow({ answer, onJudge }) {
   return (
@@ -14,7 +17,7 @@ function JudgeRow({ answer, onJudge }) {
       <button type="button" className={`${BTN} bg-accent2 text-onaccent2`} onClick={() => onJudge(answer.id, true)}>
         ✓ Accept
       </button>
-      <button type="button" className={`${BTN} bg-bad text-white`} onClick={() => onJudge(answer.id, false)}>
+      <button type="button" className={`${BTN} ${REJECT_GAP} bg-bad text-white`} onClick={() => onJudge(answer.id, false)}>
         ✗ Reject
       </button>
     </div>

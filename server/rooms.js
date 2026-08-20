@@ -18,7 +18,7 @@ const isValidIncrement = (n) => Number.isInteger(n) && n >= 0 && n <= 30; // bon
 const MAX_PLAYERS = 2; // the 1v1 duel is always exactly 2
 const MAX_RACE_PLAYERS = 8; // race rooms allow a small group
 const MIN_RACE_PLAYERS = 2;
-const GRACE_MS = 30000; // time to reconnect before forfeiting
+const { GRACE_MS } = require("../lib/match-rules.js"); // shared with the view builders, which say the number out loud
 const CHAT_MIN_GAP_MS = 400; // anti-spam gap between one player's chat messages
 // A display name is refused, not silently replaced: the client renders this string next to the
 // name field (createRoom/joinRoom/spectateRoom/quickMatchJoin all surface `error`), so the

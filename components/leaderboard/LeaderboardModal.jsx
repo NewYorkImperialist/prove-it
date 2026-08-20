@@ -89,9 +89,12 @@ export default function LeaderboardModal({ onClose, visitorId }) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      {/* overflow-x-hidden: the boards scroll sideways on their own (see LbTable). Letting the
-          modal body do it too dragged this close button and the tabs off-screen with the table. */}
-      <div className="relative max-h-[88vh] w-[min(94vw,520px)] overflow-y-auto overflow-x-hidden rounded-2xl border border-line bg-panel px-4 pt-6 pb-[26px] shadow-[0_24px_70px_rgba(0,0,0,.6)] desk:px-6">
+      {/* A flex column with a fixed head and a scrolling body. The card itself used to be the
+          scroller, which dragged the close button (absolute, inside it) up out of sight on a long
+          board — and the backdrop either side is only ~10px at 320, so there was no way out but
+          Escape. overflow-x-hidden on the body because the boards scroll sideways themselves
+          (see LbTable); letting the body do it too took the button off horizontally as well. */}
+      <div className="relative flex max-h-[88vh] w-[min(94vw,520px)] flex-col overflow-hidden rounded-2xl border border-line bg-panel px-4 pt-6 pb-[26px] shadow-[0_24px_70px_rgba(0,0,0,.6)] desk:px-6">
         <button
           type="button"
           title="Close"
@@ -104,7 +107,7 @@ export default function LeaderboardModal({ onClose, visitorId }) {
           ×
         </button>
 
-        <div className="mt-0.5 mr-11 mb-3.5 flex gap-1.5">
+        <div className="mt-0.5 mr-11 mb-3.5 flex shrink-0 gap-1.5">
           {TABS.map((t) => (
             <button
               key={t.key}
@@ -120,6 +123,7 @@ export default function LeaderboardModal({ onClose, visitorId }) {
           ))}
         </div>
 
+        <div className="-mx-4 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 desk:-mx-6 desk:px-6">
         {tab === "cat" ? (
           <select value={catName} onChange={(e) => setCatName(e.target.value)} className="mb-3 w-full cursor-pointer rounded-[10px] border border-line2 bg-bg py-[9px] pr-[38px] pl-3 text-sm text-ink outline-none">
             {geoCats.map((n) => (
@@ -172,6 +176,7 @@ export default function LeaderboardModal({ onClose, visitorId }) {
             {copied ? "Copied — send it to a friend!" : "Share your score & invite friends"}
           </Button>
         ) : null}
+        </div>
       </div>
     </div>
   );

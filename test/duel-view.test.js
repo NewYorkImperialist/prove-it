@@ -155,6 +155,22 @@ describe("frozen while an opponent reconnects", () => {
   });
 });
 
+// The pause banner says the number out loud. It used to be a literal "30s" in each view while the
+// server counted GRACE_MS in rooms.js — right by luck, and quietly wrong the moment either moved.
+describe("the reconnect banner quotes the server's real grace window", () => {
+  const { GRACE_MS } = require("../lib/match-rules.js");
+  const { GRACE_MS: SERVER_GRACE } = require("../server/rooms.js");
+
+  test("the server counts down the same window the views advertise", () => {
+    assert.equal(SERVER_GRACE, GRACE_MS, "rooms.js and the view builders disagree about the grace window");
+  });
+
+  test("the banner names it rather than hardcoding a number", () => {
+    const paused = duelView({ ...base, phase: "proving", paused: true }, ME);
+    assert.match(paused.statusText, new RegExp(`up to ${Math.round(GRACE_MS / 1000)}s`));
+  });
+});
+
 describe("duelAutoMode", () => {
   test("my move puts the box in answer mode", () => {
     for (const phase of ["opening", "bidding", "proving"]) {

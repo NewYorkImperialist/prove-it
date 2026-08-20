@@ -138,7 +138,10 @@ function snapshot(room) {
   const g = room.game;
   return {
     phase: g.phase, round: g.round,
-    category: { name: g.current.name, group: g.current.group, emoji: g.current.emoji, size: g.current.entries.length },
+    // No `size`: it was in every snapshot and read by nothing, and the answer count is exactly
+    // the thing a claim is a bluff about. The "There are only N" refusal for an `exact` category
+    // is computed server-side in beginRound's ack instead.
+    category: { name: g.current.name, group: g.current.group, emoji: g.current.emoji },
     claim: g.claim, holderId: g.holderId, turnId: g.turnId, challengerId: g.challengerId || null, deadline: g.deadline || null,
     proven: g.proven ? total(g) : 0,
     wpm: g.wpm || 0, // live typing speed of whoever's proving (see bumpWpm)

@@ -665,6 +665,9 @@ export function useSolo({ onExitToMenu }) {
     const cats = (snap.def.rounds || []).map(findCat).filter(Boolean);
     if (!cats.length || !cats[snap.cur]) {
       store.clearResumeRun();
+      // setCreateErr only renders on the builder, and resuming can now be offered from the join
+      // screen too — so go where the explanation is, or it's a dead button.
+      setScreen("create");
       setCreateErr("That run's categories aren't available anymore.");
       return;
     }

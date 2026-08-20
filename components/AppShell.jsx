@@ -8,6 +8,7 @@ import { useAppHeight } from "@/hooks/useAppHeight";
 import { playedDailyToday, todaysDailyId } from "@/lib/browser/daily";
 import { ConnBadge, OnlineBadge, AnnounceBanner } from "@/components/StatusBadges";
 import HomeCard from "@/components/home/HomeCard";
+import GeoCard from "@/components/geo/GeoCard";
 import MpSetupCard from "@/components/mp/MpSetupCard";
 import RaceSetupCard from "@/components/mp/RaceSetupCard";
 import WaitingRoom from "@/components/mp/WaitingRoom";
@@ -70,9 +71,8 @@ export default function AppShell() {
     router.go("solo");
   }, [solo, router, enteredSolo]);
 
-  // ?geo=1 drops straight into the Create screen's Geography challenge picker — no menu-hunting
-  // to find it, but it still lands on the picker (pre-filled with a random pick) rather than
-  // committing to a category before you've had a chance to change it.
+  // ?geo=1 opens the Geography screen directly — it used to open the solo builder and point at
+  // its Geography dropdown, which no longer exists (that row was the same feature twice).
   const autoGeo = useRef(null);
   if (autoGeo.current === null) {
     autoGeo.current = typeof window === "undefined" ? false : new URLSearchParams(window.location.search).get("geo") === "1";
@@ -81,14 +81,29 @@ export default function AppShell() {
   useEffect(() => {
     if (bootedAutoGeo.current || !autoGeo.current || deepLink.current) return; // a ?id= link takes priority
     bootedAutoGeo.current = true;
+    enteredSolo();
     solo.initCreate();
-    router.go("solo");
-  }, [solo, router]);
+    router.go("geo");
+  }, [solo, router, enteredSolo]);
 
   const openSolo = () => {
     enteredSolo();
     solo.initCreate();
     router.leaveTo("solo");
+  };
+  const openGeography = () => {
+    enteredSolo(); // a geography board is a solo run, so the session is tagged the same way
+    // Primes byName from storage and clears any error left over from a previous solo attempt —
+    // the Geography card renders solo.createErr, so a stale one would show up there.
+    solo.initCreate();
+    router.leaveTo("geo");
+  };
+  const playGeoBoard = (catName) => {
+    enteredSolo();
+    // The solo screens live under the "solo" view, and startGeoChallenge lands on the ready
+    // screen — so the router has to move with it, or the run starts behind the Geography card.
+    router.go("solo");
+    solo.startGeoChallenge(catName);
   };
   const openDaily = () => {
     if (playedDailyToday()) return setLbOpen(true); // played → leaderboard only, no replay
@@ -113,6 +128,7 @@ export default function AppShell() {
           dailyPlayed={dailyPlayed}
           onSolo={openSolo}
           onDaily={openDaily}
+          onGeography={openGeography}
           onMultiplayer={() => {
             mp.setErr("home", "");
             router.leaveTo("mpsetup");
@@ -123,6 +139,10 @@ export default function AppShell() {
           }}
           onLeaderboards={() => setLbOpen(true)}
         />
+      ) : null}
+
+      {router.view === "geo" ? (
+        <GeoCard leaving={router.leaving} solo={solo} onBack={backToMenu} onPlay={playGeoBoard} />
       ) : null}
 
       {router.view === "mpsetup" ? <MpSetupCard leaving={router.leaving} mp={mp} onBack={backToMenu} /> : null}

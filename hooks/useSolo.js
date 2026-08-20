@@ -237,6 +237,10 @@ export function useSolo({ onExitToMenu }) {
     if (cat && /^Geography/.test(cat.group)) {
       if (geoModeRef.current === "fill" && geoRef.current) items = geoRef.current.missedFill().map((m) => ({ q: m.q, a: m.a }));
       else items = cat.entries.filter((e) => !named.current.has(e.id)).map((e) => ({ q: e.display }));
+      // Feeds the Geography screen's "N of 27 boards cleared". Recorded per ROUND, not per run, so
+      // a geography board inside a mixed custom run counts the same as one played on its own.
+      const total = geoModeRef.current === "fill" && geoRef.current ? geoRef.current.total() : cat.entries.length;
+      store.recordGeoBoard(cat.name, countRef.current, total);
     }
     setMissed(items);
     setMissedOpen(true);

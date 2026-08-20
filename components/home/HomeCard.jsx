@@ -8,7 +8,7 @@ import { cx } from "@/lib/browser/cx";
 
 const FULL = "mt-2.5 w-full p-[13px]";
 
-export default function HomeCard({ leaving, dailyPlayed, onSolo, onDaily, onMultiplayer, onRace, onLeaderboards }) {
+export default function HomeCard({ leaving, dailyPlayed, onSolo, onDaily, onGeography, onMultiplayer, onRace, onLeaderboards }) {
   return (
     <Card leaving={leaving}>
       <div className="mb-3 flex items-center gap-3">
@@ -39,6 +39,13 @@ export default function HomeCard({ leaving, dailyPlayed, onSolo, onDaily, onMult
         )}
       >
         Daily Challenge
+      </Button>
+
+      {/* Geography is its own mode, not a category: 27 boards across maps, flags, borders and
+          capitals, each with its own leaderboard. It used to be a dropdown on the solo builder,
+          directly under the one that already listed all 282 categories. */}
+      <Button variant="secondary" className={FULL} onClick={onGeography}>
+        🌍 Geography
       </Button>
 
       <Button variant="secondary" className={FULL} onClick={onMultiplayer}>

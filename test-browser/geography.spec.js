@@ -167,6 +167,38 @@ test.describe("the Geography screen", () => {
   });
 });
 
+// The share stub bounces /challenge.html?geo=<board> to /?geo=<board>. AppShell compared that
+// value with "1", so a shared board link showed the right preview card and then dropped the
+// clicker on the main menu.
+test.describe("following a shared board link", () => {
+  test("a board name opens that board's mode, not the menu and not the mode list", async ({ page }) => {
+    await page.addInitScript(() => {
+      try { window.localStorage.setItem("ch_name", "Tester"); } catch { /* private mode */ }
+    });
+    await page.goto("/?geo=" + encodeURIComponent("Flags of Europe"));
+    await expect(page.getByRole("heading", { name: /Geography/ })).toBeVisible();
+    // Landed inside the Flags list: its regions are showing, and the mode tiles are gone.
+    await expect(page.getByText(/\d+ answers ·/).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /Capitals/ })).toHaveCount(0);
+    await expect(page.getByText("Europe", { exact: true })).toBeVisible();
+  });
+
+  test("the link never starts the run on its own — the clock is not spent by a click-through", async ({ page }) => {
+    await page.addInitScript(() => {
+      try { window.localStorage.setItem("ch_name", "Tester"); } catch { /* private mode */ }
+    });
+    await page.goto("/?geo=" + encodeURIComponent("Countries of the World"));
+    await expect(page.getByRole("heading", { name: /Geography/ })).toBeVisible();
+    // Still the picker: no timer, no answer box.
+    await expect(page.getByPlaceholder(/Type a name and hit Enter/)).toHaveCount(0);
+  });
+
+  test("a plain ?geo=1 still opens the mode list, as it always did", async ({ page }) => {
+    await openGeography(page);
+    for (const m of MODES) await expect(modeTile(page, m)).toBeVisible();
+  });
+});
+
 test.describe("the home card with Geography on it", () => {
   test("Geography is present, highlighted and flagged new — with no emoji", async ({ page }) => {
     await page.goto("/");

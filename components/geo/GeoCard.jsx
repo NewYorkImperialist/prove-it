@@ -4,7 +4,7 @@ import Card, { CardTitle, CardSub, GroupTitle, ErrorLine } from "@/components/ui
 import Button, { BackButton } from "@/components/ui/Button";
 import TextInput, { FieldLabel } from "@/components/ui/Field";
 import GoatBoard from "@/components/leaderboard/GoatBoard";
-import { MODES, boardsFor, allBoards } from "@/lib/geo-boards";
+import { MODES, boardsFor, allBoards, findBoard } from "@/lib/geo-boards";
 import { fmtClock } from "@/lib/format";
 import * as store from "@/lib/browser/storage";
 import { cx } from "@/lib/browser/cx";
@@ -13,8 +13,12 @@ import { cx } from "@/lib/browser/cx";
 // solo builder. Two steps: pick a mode, then pick a region. The board categories are still in
 // solo's "Pick a category" list — that one is the exhaustive index, this is the front door, and a
 // custom multi-round run still needs to be able to include a map.
-export default function GeoCard({ leaving, solo, onBack, onPlay }) {
-  const [mode, setMode] = useState(null);
+export default function GeoCard({ leaving, solo, initialBoard, onBack, onPlay }) {
+  // A shared board link (/?geo=<board>) opens on that board's mode, so the player lands looking at
+  // the board they were sent rather than at the mode list. It deliberately does NOT start the run:
+  // these are timed, and starting a clock because someone followed a link would spend the attempt
+  // before they were ready.
+  const [mode, setMode] = useState(() => findBoard(initialBoard)?.mode || null);
   const [nameErr, setNameErr] = useState("");
   const nameRef = useRef(null);
 

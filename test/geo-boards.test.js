@@ -2,7 +2,7 @@
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 
-const { MODES, modeOf, regionLabel, boardsFor, allBoards } = require("../lib/geo-boards.js");
+const { MODES, modeOf, regionLabel, boardsFor, allBoards, findBoard } = require("../lib/geo-boards.js");
 const { CATS, FLAG_CATS, geoBoardCats } = require("../lib/solo-catalog.js");
 const { hasGeoBoard } = require("../lib/geo-cats.js");
 
@@ -72,6 +72,33 @@ describe("the Geography screen's mode × region arrangement", () => {
     for (const b of allBoards()) {
       assert.ok(b.answers > 0, `${b.name} claims ${b.answers} answers`);
       assert.ok(b.seconds > 0, `${b.name} has no recommended time`);
+    }
+  });
+});
+
+// A shared board link carries the board name through a URL and back, and AppShell used to test it
+// with `=== "1"` — so every shared board link opened the main menu while the preview card promised
+// a specific board.
+describe("turning a shared board name back into a board", () => {
+  test("finds every board the front door can link to, with its mode", () => {
+    for (const b of allBoards()) {
+      const hit = findBoard(b.name);
+      assert.ok(hit, `${b.name} can't be found by name`);
+      assert.equal(hit.mode, b.mode);
+    }
+  });
+
+  test("matches regardless of case and surrounding space, because a URL round-trip mangles both", () => {
+    assert.equal(findBoard("flags of europe").name, "Flags of Europe");
+    assert.equal(findBoard("  Flags of Europe  ").name, "Flags of Europe");
+    assert.equal(findBoard("FLAGS OF EUROPE").name, "Flags of Europe");
+  });
+
+  // "1" is the plain entry point (/?geo=1) and names no board: it has to fall back to the mode
+  // list rather than resolve to something arbitrary.
+  test("anything that isn't a board is null, including the literal 1", () => {
+    for (const v of ["1", "", "   ", "Countries of Narnia", null, undefined, 0, {}, []]) {
+      assert.equal(findBoard(v), null, `${JSON.stringify(v)} resolved to a board`);
     }
   });
 });

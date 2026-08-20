@@ -71,11 +71,17 @@ export default function AppShell() {
     router.go("solo");
   }, [solo, router, enteredSolo]);
 
-  // ?geo=1 opens the Geography screen directly — it used to open the solo builder and point at
+  // ?geo= opens the Geography screen directly — it used to open the solo builder and point at
   // its Geography dropdown, which no longer exists (that row was the same feature twice).
+  //
+  // The value is kept rather than tested against "1", because a shared board link carries the
+  // board's name: /challenge.html?geo=Flags+of+Europe bounces to /?geo=Flags+of+Europe. This was
+  // an `=== "1"` comparison, so every shared board link landed the clicker on the main menu while
+  // the crawler preview promised them a specific board. GeoCard turns the name into the mode to
+  // open; a plain ?geo=1 doesn't name a board and just gets the mode list, exactly as before.
   const autoGeo = useRef(null);
   if (autoGeo.current === null) {
-    autoGeo.current = typeof window === "undefined" ? false : new URLSearchParams(window.location.search).get("geo") === "1";
+    autoGeo.current = typeof window === "undefined" ? "" : new URLSearchParams(window.location.search).get("geo") || "";
   }
   const bootedAutoGeo = useRef(false);
   useEffect(() => {
@@ -144,7 +150,7 @@ export default function AppShell() {
       ) : null}
 
       {router.view === "geo" ? (
-        <GeoCard leaving={router.leaving} solo={solo} onBack={backToMenu} onPlay={playGeoBoard} />
+        <GeoCard leaving={router.leaving} solo={solo} initialBoard={autoGeo.current} onBack={backToMenu} onPlay={playGeoBoard} />
       ) : null}
 
       {router.view === "mpsetup" ? <MpSetupCard leaving={router.leaving} mp={mp} onBack={backToMenu} /> : null}

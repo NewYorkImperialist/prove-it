@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CATS, GENRES, findCat, nonSprint, recommendedTime, shuffle, pickGenreRounds } from "@/lib/solo-catalog";
+import { CATS, GENRES, findCat, nonSprint, recommendedTime, shuffle, pickGenreRounds, geoChallengeCats } from "@/lib/solo-catalog";
 import { norm, nearMiss, findEntry } from "@/lib/solo-matching";
 import { hasGeoBoard, geoMode as geoModeOf } from "@/lib/geo-cats";
 import { fmtClock, todayEastern, prevDate } from "@/lib/format";
@@ -727,8 +727,11 @@ export function useSolo({ onExitToMenu }) {
   // screen's "play a specific one" follow-up).
   const startGeoChallenge = useCallback((catName) => {
     setCreateErr("");
-    const cat = catName || pickGenreRounds("Geography", 1)[0];
-    if (!cat) return setCreateErr("No geography categories available right now.");
+    // Draw from the board-having pool, not the Geography group: pickGenreRounds("Geography") also
+    // holds the plain typing lists (Major Rivers, Deserts, Seas and Oceans), so a random
+    // "Geography Challenge" could land on a round with nothing to draw at all.
+    const cat = catName || shuffle(geoChallengeCats())[0];
+    if (!cat) return setCreateErr("No geography boards available right now.");
     startSolo([cat], recommendedTime(cat), true);
   }, [startSolo]);
 

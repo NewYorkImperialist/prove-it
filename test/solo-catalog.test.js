@@ -198,3 +198,36 @@ describe("quickPlayPool", () => {
     assert.equal(names.includes("Car Brands"), true);
   });
 });
+
+// The Geography Challenge exists to put you on a map, a flag grid or a borders quiz. Picking the
+// group by name instead meant the picker (and the random pick) also offered the group's ordinary
+// typing lists, which have nothing to draw.
+describe("geoChallengeCats", () => {
+  const { geoChallengeCats, geoBoardCats, CATS } = require("../lib/solo-catalog.js");
+  const { hasGeoBoard } = require("../lib/geo-cats.js");
+
+  test("offers only categories that actually have a board", () => {
+    const withoutBoard = geoChallengeCats().filter((n) => {
+      const c = CATS.find((x) => x.name === n);
+      return !hasGeoBoard(n) && !c?.isFlagQuiz && !c?.isBorderQuiz;
+    });
+    assert.deepEqual(withoutBoard, [], "these have no map, flag grid or borders quiz to draw");
+  });
+
+  test("in particular, none of the plain geography typing lists", () => {
+    const pool = geoChallengeCats();
+    for (const n of [
+      "Languages of the World", "Natural Disasters", "Major Rivers", "Famous Mountains",
+      "Deserts", "Seas and Oceans", "Tourist Attractions in America", "Major American Cities",
+    ]) {
+      assert.ok(!pool.includes(n), `"${n}" has no board and shouldn't be a Geography Challenge`);
+    }
+  });
+
+  test("and every board IS offered — including the small ones you can only reach deliberately", () => {
+    // Countries in Central America is 7 answers, so the under-12 sprint filter was hiding a real
+    // map from a picker where the player chooses on purpose.
+    assert.deepEqual([...geoChallengeCats()].sort(), [...geoBoardCats()].sort());
+    assert.ok(geoChallengeCats().includes("Countries in Central America"));
+  });
+});

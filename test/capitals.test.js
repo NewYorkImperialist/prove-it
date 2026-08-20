@@ -116,6 +116,22 @@ describe("the fill board agrees with the World Capitals category", () => {
     assert.deepEqual(missing, []);
   });
 
+  // The canonical checks above aren't enough on their own: the aliases have to match too. The
+  // fill board accepted "Wien", "Praha" and "La Habana" while the duel's category — a separate,
+  // hand-written alias list under the same category name and the same leaderboard — did not.
+  // data/categories.js's World Capitals items are generated from data/capitals.js now
+  // (tools/gen-capitals.js); this is what catches it if the two ever drift apart again.
+  test("both modes accept exactly the same set of spellings", () => {
+    const catAccepts = new Set();
+    for (const it of cat.items) for (const raw of Array.isArray(it) ? it : [it]) catAccepts.add(norm(raw));
+    const fillAccepts = new Set();
+    for (const rec of Object.values(CAPITALS)) for (const a of rec.a) fillAccepts.add(a);
+    const duelRejects = [...fillAccepts].filter((a) => !catAccepts.has(a));
+    const fillRejects = [...catAccepts].filter((a) => !fillAccepts.has(a));
+    assert.deepEqual(duelRejects, [], "the fill board accepts spellings the duel marks wrong");
+    assert.deepEqual(fillRejects, [], "the duel accepts spellings the fill board marks wrong");
+  });
+
   // …and the English name is what gets DISPLAYED, since that's what the study list teaches.
   test("a capital with a common English name displays it, not the endonym", () => {
     const expected = {

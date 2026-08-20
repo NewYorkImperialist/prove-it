@@ -37,15 +37,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: superfly/flyctl-actions/setup-flyctl@master
-      # Same banner the admin dashboard's own "1-min restart" button sends — gives anyone
-      # mid-run a heads-up before the machine restarts out from under them. Best-effort: a
-      # missing/wrong OWNER_KEY or a hiccup here shouldn't block the actual deploy.
-      - name: Warn active players before the restart
-        run: |
-          curl -sf -G "https://proveit.fly.dev/admin/announce" \
-            --data-urlencode "key=${{ secrets.OWNER_KEY }}" \
-            --data-urlencode "msg=⚠️ Server updating in ~1 minute — finish your round!" \
-          || echo "::warning::pre-deploy announcement failed (continuing anyway)"
       # --remote-only builds the image on Fly's builders, so this job needs no Docker setup.
       # CF_BEACON_TOKEN is optional: unset (as in any fork) simply ships no analytics beacon.
       # It's a --build-arg rather than an env var because Next inlines NEXT_PUBLIC_* while building.

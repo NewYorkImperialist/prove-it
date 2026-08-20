@@ -23,7 +23,6 @@ export function useSolo({ onExitToMenu }) {
   const [numRounds, setNumRounds] = useState(5);
   const [perRound, setPerRound, perRoundRef] = useStateRef(45);
   const [increment, setIncrement, incrementRef] = useStateRef(0);
-  const [recTimes, setRecTimes] = useState(false); // use each category's recommended length
   const [genre, setGenre] = useState(() => GENRES[0] || "");
   const [customRounds, setCustomRounds] = useState([]);
   const [quickCat, setQuickCat] = useState(() => (CATS[0] || {}).name || "");
@@ -38,6 +37,9 @@ export function useSolo({ onExitToMenu }) {
   const [dailyDate, setDailyDate] = useState("");
   // Where this run came from — keeps a friend's shared link out of the solo geography boards.
   const playOrigin = useRef("solo");
+  // Set only by startGeoChallenge() — lets the done screen offer "play a different geography?"
+  // instead of the generic "new challenge" link.
+  const isGeoChallenge = useRef(false);
   const [roundCats, setRoundCats, roundCatsRef] = useStateRef([]);
   const [cur, setCur, curRef] = useStateRef(0);
   const scores = useRef([]);
@@ -101,13 +103,6 @@ export function useSolo({ onExitToMenu }) {
   useEffect(() => {
     if (mode === "custom") rebuildCustomRounds(numRounds);
   }, [mode, numRounds, rebuildCustomRounds]);
-
-  // The recommended-time toggle only matters for geography — a Geography genre, or custom mode
-  // (where you'd hand-build a geography set). Hidden and forced off otherwise.
-  const recTimesVisible = mode === "custom" || (mode === "genre" && /^Geography/.test(genre));
-  useEffect(() => {
-    if (!recTimesVisible && recTimes) setRecTimes(false);
-  }, [recTimesVisible, recTimes]);
 
   const clampPerRound = useCallback((s) => setPerRound(Math.max(5, Math.min(1800, parseInt(s, 10) || 45))), [setPerRound]);
   const clampIncrement = useCallback((s) => setIncrement(Math.max(0, Math.min(30, parseInt(s, 10) || 0))), [setIncrement]);
@@ -361,6 +356,7 @@ export function useSolo({ onExitToMenu }) {
     const single = rounds === 1 ? roundCatsRef.current[0] : null;
     setDone({
       daily: false,
+      geoChallenge: isGeoChallenge.current,
       total,
       avgWpm,
       rounds,
@@ -407,10 +403,12 @@ export function useSolo({ onExitToMenu }) {
   }, [setIsDaily]);
 
   // Quick solo play: a real (DB-backed, shareable) run built from a fixed category list.
+  // `geo` marks a run started from startGeoChallenge() below (drives the done screen's CTA).
   const startSolo = useCallback(
-    async (rounds, seconds) => {
+    async (rounds, seconds, geo = false) => {
       setCreateErr("");
       playOrigin.current = "solo";
+      isGeoChallenge.current = geo;
       const by = byName.trim().slice(0, 20);
       if (!by) return setCreateErr("Enter your name first.");
       store.setSoloName(by);
@@ -427,14 +425,25 @@ export function useSolo({ onExitToMenu }) {
     [byName, clampPerRound, perRoundRef, setChallengeId, setDef, startPlaying],
   );
 
+  // One random geography category (the board/map ones — same pool the category leaderboards
+  // track) at its recommended time, so the run is fair and lands on that category's board with
+  // no setup. "Play a different geography?" on the done screen just calls this again.
+  const startGeoChallenge = useCallback(() => {
+    setCreateErr("");
+    const [catName] = pickGenreRounds("Geography", 1);
+    if (!catName) return setCreateErr("No geography categories available right now.");
+    startSolo([catName], recommendedTime(catName), true);
+  }, [startSolo]);
+
   const createChallenge = useCallback(async () => {
     setCreateErr("");
+    isGeoChallenge.current = false;
     const by = byName.trim().slice(0, 20);
     if (!by) return setCreateErr("Enter your name first.");
     store.setSoloName(by);
     const rounds = (mode === "genre" ? pickGenreRounds(genre, numRounds) : customRounds).filter(Boolean);
     if (!rounds.length) return setCreateErr("Pick at least one category.");
-    const timer = recTimes ? 0 : perRoundRef.current; // 0 = recommended time per round
+    const timer = perRoundRef.current;
     setBusy("creating");
     const res = await postJSON("/challenge", { type: mode, genre: mode === "genre" ? genre : "", rounds, by, timer });
     setBusy("");
@@ -443,7 +452,7 @@ export function useSolo({ onExitToMenu }) {
     setDef({ id: res.id, rounds, by, type: mode, timer });
     window.history.replaceState({}, "", "?id=" + res.id);
     startPlaying(by);
-  }, [byName, mode, genre, numRounds, customRounds, recTimes, perRoundRef, setChallengeId, setDef, startPlaying]);
+  }, [byName, mode, genre, numRounds, customRounds, perRoundRef, setChallengeId, setDef, startPlaying]);
 
   // Opened someone's ?id= link.
   const initJoin = useCallback(
@@ -549,7 +558,7 @@ export function useSolo({ onExitToMenu }) {
     screen, setScreen,
     // builder
     byName, setByName, mode, setMode, numRounds, setNumRounds, perRound, setPerRound: clampPerRound,
-    increment, setIncrement: clampIncrement, recTimes, setRecTimes, recTimesVisible,
+    increment, setIncrement: clampIncrement,
     genre, setGenre, customRounds, setCustomRounds, quickCat, setQuickCat, advOpen, setAdvOpen,
     createErr, busy,
     // run
@@ -559,7 +568,7 @@ export function useSolo({ onExitToMenu }) {
     geoMode, remOn, mapEl, missed, missedOpen, setMissedOpen, between, done, countdown,
     joinInfo, joinName, setJoinName, joinErr, setJoinErr,
     // actions
-    initCreate, initJoin, initDaily, createChallenge, startSolo, startPlaying, runCountdown,
+    initCreate, initJoin, initDaily, createChallenge, startSolo, startGeoChallenge, startPlaying, runCountdown,
     startRound, submit, giveUp, nextRound, toggleRemaining, backToStart, leaveRun, challengeUrl, submitDaily,
     todayEastern,
   };

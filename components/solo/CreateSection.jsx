@@ -6,7 +6,6 @@ import { Divider } from "@/components/ui/Card";
 import Seg, { Stepper } from "@/components/ui/Seg";
 import { SoloButton, SoloCard, SoloTitle, SoloSub, SoloErr } from "./SoloBits";
 import CategorySelect from "./CategorySelect";
-import { cx } from "@/lib/browser/cx";
 
 const ROUND_OPTIONS = [1, 3, 5, 10].map((n) => ({ value: n, label: String(n) }));
 const TIME_PRESETS = [20, 30, 45, 60, 90].map((s) => ({ value: s, label: s + "s" }));
@@ -55,6 +54,14 @@ export default function CreateSection({ solo, onBack }) {
         </SoloButton>
       </div>
 
+      <Divider>or</Divider>
+
+      {/* One random geography category at its own recommended time — no setup, and it lands
+          straight on that category's leaderboard. */}
+      <SoloButton variant="ghost" onClick={solo.startGeoChallenge} disabled={!!solo.busy}>
+        {solo.busy === "starting" ? "Starting…" : "Geography challenge"}
+      </SoloButton>
+
       <button
         type="button"
         onClick={() => solo.setAdvOpen(!solo.advOpen)}
@@ -73,17 +80,6 @@ export default function CreateSection({ solo, onBack }) {
           <FieldLabel>Time per round</FieldLabel>
           <Seg options={TIME_PRESETS} value={solo.perRound} onChange={solo.setPerRound} />
           <Stepper value={solo.perRound} onChange={solo.setPerRound} min={5} max={1800} step={5} ariaLess="less time" ariaMore="more time" />
-
-          {/* Fair leaderboards for the big enumerations: each category uses its own length. */}
-          {solo.recTimesVisible ? (
-            <SoloButton
-              variant="ghost"
-              className={cx("mt-2.5!", solo.recTimes && "border-accent! bg-accent! text-markfg!")}
-              onClick={() => solo.setRecTimes(!solo.recTimes)}
-            >
-              ⏱ Recommended time per round: {solo.recTimes ? "on" : "off"}
-            </SoloButton>
-          ) : null}
 
           <FieldLabel>Time increment per correct answer</FieldLabel>
           <Seg options={INCREMENTS} value={solo.increment} onChange={solo.setIncrement} />

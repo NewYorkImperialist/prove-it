@@ -87,13 +87,24 @@ export default function DoneSection({ solo, onExitToMenu }) {
         {copied ? (d.daily ? "Copied — send it to a friend!" : "Copied! Paste it to a friend") : d.daily ? "Copy invite + my score" : "Copy challenge link"}
       </SoloButton>
 
-      <div className="flex gap-2.5">
+      <div className="flex flex-wrap gap-2.5">
         <SoloButton variant="ghost" className="mt-3!" onClick={() => setReload((r) => r + 1)}>
           Refresh leaderboard
         </SoloButton>
-        <SoloButton variant="ghost" className="mt-3!" onClick={() => (d.daily ? onExitToMenu() : solo.backToStart())}>
-          {d.daily ? "Back to menu" : "New challenge"}
-        </SoloButton>
+        {d.geoChallenge ? (
+          <>
+            <SoloButton variant="ghost" className="mt-3!" onClick={solo.startGeoChallenge}>
+              Play a different geography?
+            </SoloButton>
+            <SoloButton variant="ghost" className="mt-3!" onClick={() => solo.backToStart()}>
+              Back to menu
+            </SoloButton>
+          </>
+        ) : (
+          <SoloButton variant="ghost" className="mt-3!" onClick={() => (d.daily ? onExitToMenu() : solo.backToStart())}>
+            {d.daily ? "Back to menu" : "New challenge"}
+          </SoloButton>
+        )}
       </div>
     </SoloCard>
   );

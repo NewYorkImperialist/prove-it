@@ -1,12 +1,20 @@
 "use client";
 import { cx } from "@/lib/browser/cx";
 
-// The filled badge with the dark two-circle glyph (◎) — the whole brand mark.
+// The brand mark: an amber two-circle glyph (◎) on a near-black plate, matching the home-screen
+// icons in public/ and the favicon.
+//
+// The amber edge is load-bearing, not decoration. Every surface this badge sits on is already
+// near-black (--bg on the home card, --panel in the multiplayer top bar), so a dark plate with no
+// border is a dark square on a dark background: the plate disappears and the glyph is left
+// floating. The border is what keeps it reading as a tile. Same trick, and same rgba amber, as
+// Crown below.
 export function LogoBadge({ className }) {
   return (
     <span
       className={cx(
-        "inline-grid shrink-0 place-items-center rounded-lg bg-[linear-gradient(140deg,#f5a623,#e0801a)] text-markfg leading-none [-webkit-text-stroke:.9px_#241500]",
+        "inline-grid shrink-0 place-items-center rounded-lg bg-[linear-gradient(140deg,#1c1710,#0e0b07)] text-accent leading-none [-webkit-text-stroke:.9px_#f5a623]",
+        "border border-[rgba(245,166,35,.55)]",
         "h-[30px] w-[30px] text-base",
         className,
       )}

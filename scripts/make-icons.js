@@ -1,5 +1,6 @@
 "use strict";
-// Generates the PWA / home-screen icons in public/ from the same mark as the favicon.
+// Generates the PWA / home-screen icons in public/ from the same mark as the favicon:
+// the amber target on a near-black plate.
 //
 // Why a script and not a checked-in binary someone hand-drew: lib/favicon.js is an inline SVG
 // data URI, so there was no raster icon anywhere in the repo, and a manifest needs real PNGs at
@@ -17,9 +18,8 @@ const zlib = require("node:zlib");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const AMBER = [0xf5, 0xa6, 0x23]; // --accent, same as lib/favicon.js's rect fill
-const DARK = [0x24, 0x15, 0x00]; // the glyph colour on that amber
-const PANEL = [0x14, 0x11, 0x0c]; // --panel, the plate for the dark variant
+const AMBER = [0xf5, 0xa6, 0x23]; // --accent, the mark
+const PANEL = [0x14, 0x11, 0x0c]; // --panel, the plate under it
 const MONO = [0xff, 0xff, 0xff]; // Android tints the monochrome layer, so only its alpha matters
 
 // All geometry on a 0..100 canvas, so one set of numbers drives every size.
@@ -47,16 +47,14 @@ function inRoundRect(x, y, { x: rx, y: ry, w, h, r }) {
 //  • `mono` drops the plate entirely and returns only the mark. Android 13+ themed icons take
 //    the monochrome layer as an alpha mask and tint it with the system palette, so a plate would
 //    swallow the whole tile and the RGB it comes back as is irrelevant.
-//  • `dark` swaps plate and mark: near-black plate, amber mark, for a dark home screen.
-function sample(x, y, { bleed = false, mono = false, dark = false } = {}) {
+function sample(x, y, { bleed = false, mono = false } = {}) {
   const dRing = dist(x, y, SHAPE.ring.cx, SHAPE.ring.cy);
   const onMark =
     (dRing <= SHAPE.ring.outer && dRing >= SHAPE.ring.inner) ||
     dist(x, y, SHAPE.dot.cx, SHAPE.dot.cy) <= SHAPE.dot.r;
   if (mono) return onMark ? MONO : null;
   if (!(bleed || inRoundRect(x, y, SHAPE.plate))) return null;
-  if (dark) return onMark ? AMBER : PANEL;
-  return onMark ? DARK : AMBER;
+  return onMark ? AMBER : PANEL;
 }
 
 const SS = 4; // subsamples per axis
@@ -139,17 +137,12 @@ function png(size, rgba) {
 // The monochrome layer is what Android 13+ uses for themed icons, where the launcher recolours
 // every icon to match the wallpaper. Without it the amber plate stays amber on a themed home
 // screen and the game is the one tile that ignores the user's setting.
-//
-// The dark apple-touch variant is speculative and deliberately harmless: a media-query'd
-// apple-touch-icon is not something Apple documents, so Safari may well ignore the link and fall
-// back to the default one. It costs 2KB and a line of markup to be right if it doesn't.
 const OUT = [
   { file: "icon-192.png", size: 192 },
   { file: "icon-512.png", size: 512 },
   { file: "icon-maskable-512.png", size: 512, bleed: true },
   { file: "icon-monochrome-512.png", size: 512, mono: true },
   { file: "apple-icon.png", size: 180, bleed: true },
-  { file: "apple-icon-dark.png", size: 180, bleed: true, dark: true },
 ];
 
 const dir = path.join(__dirname, "..", "public");

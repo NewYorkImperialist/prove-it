@@ -2,7 +2,10 @@
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 const CATEGORY_GROUPS = require("../data/categories.js");
-const { CATS, GENRES, GEO_MISC, findCat, nonSprint, recommendedTime, pickGenreRounds, geoBoardCats, buildCat } = require("../lib/solo-catalog.js");
+const {
+  CATS, GENRES, GEO_MISC, findCat, nonSprint, recommendedTime, pickGenreRounds, geoBoardCats, buildCat,
+  flagQuizCats,
+} = require("../lib/solo-catalog.js");
 
 describe("the solo catalogue", () => {
   test("flattens every non-hidden category into { name, group, emoji, entries }", () => {
@@ -64,6 +67,45 @@ describe("recommendedTime", () => {
   });
   test("everything else defaults to 45s", () => {
     assert.equal(recommendedTime("Car Brands"), 45);
+  });
+});
+
+describe("Flags quizzes", () => {
+  test("World plus one per continent, in that order", () => {
+    assert.deepEqual(flagQuizCats(), [
+      "Flags of the World", "Flags of Africa", "Flags of Asia", "Flags of Europe",
+      "Flags of North America", "Flags of South America", "Flags of Oceania",
+    ]);
+  });
+
+  test("each one has the same entry count as its Countries counterpart, and every entry has a flag code", () => {
+    const pairs = [
+      ["Flags of the World", "Countries of the World"], ["Flags of Africa", "Countries in Africa"],
+      ["Flags of Oceania", "Countries in Oceania"],
+    ];
+    for (const [flagName, countryName] of pairs) {
+      const flagCat = findCat(flagName);
+      assert.equal(flagCat.entries.length, findCat(countryName).entries.length);
+      for (const e of flagCat.entries) assert.match(e.flagCode, /^[a-z]{2}$/, `${e.display} in ${flagName}`);
+    }
+  });
+
+  test("stay out of CATS entirely — never shown in the generic picker or genre pools", () => {
+    for (const name of flagQuizCats()) assert.equal(CATS.some((c) => c.name === name), false);
+    assert.equal(CATS.some((c) => c.group === "Flags"), false);
+  });
+
+  test("still resolve via findCat, so a saved run's rounds replay correctly", () => {
+    assert.equal(findCat("Flags of Europe").group, "Flags");
+  });
+
+  test("get their own leaderboard alongside the geography boards", () => {
+    for (const name of flagQuizCats()) assert.ok(geoBoardCats().includes(name), name);
+  });
+
+  test("mirror their Countries counterpart's recommended time", () => {
+    assert.equal(recommendedTime("Flags of the World"), recommendedTime("Countries of the World"));
+    assert.equal(recommendedTime("Flags of Oceania"), recommendedTime("Countries in Oceania"));
   });
 });
 

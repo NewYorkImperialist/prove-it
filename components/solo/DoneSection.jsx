@@ -101,7 +101,7 @@ export default function DoneSection({ solo, onExitToMenu }) {
             <SoloButton
               variant="ghost"
               className="mt-0! w-auto! shrink-0 px-6"
-              onClick={() => nextGeoCat && solo.startGeoChallenge(undefined, nextGeoCat)}
+              onClick={() => nextGeoCat && solo.startGeoChallenge(nextGeoCat)}
             >
               Play
             </SoloButton>

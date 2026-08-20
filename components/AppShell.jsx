@@ -6,7 +6,6 @@ import { useMultiplayer } from "@/hooks/useMultiplayer";
 import { useSolo } from "@/hooks/useSolo";
 import { useAppHeight } from "@/hooks/useAppHeight";
 import { playedDailyToday } from "@/lib/browser/daily";
-import * as store from "@/lib/browser/storage";
 import { ConnBadge, OnlineBadge, AnnounceBanner } from "@/components/StatusBadges";
 import HomeCard from "@/components/home/HomeCard";
 import MpSetupCard from "@/components/mp/MpSetupCard";
@@ -52,8 +51,9 @@ export default function AppShell() {
     router.go("solo");
   }, [solo, router]);
 
-  // ?geo=1 drops straight into a Geography Challenge — no menu-hunting. If a name's already
-  // remembered it starts immediately; otherwise it lands on Create with the name field waiting.
+  // ?geo=1 drops straight into the Create screen's Geography challenge picker — no menu-hunting
+  // to find it, but it still lands on the picker (pre-filled with a random pick) rather than
+  // committing to a category before you've had a chance to change it.
   const autoGeo = useRef(null);
   if (autoGeo.current === null) {
     autoGeo.current = typeof window === "undefined" ? false : new URLSearchParams(window.location.search).get("geo") === "1";
@@ -64,8 +64,6 @@ export default function AppShell() {
     bootedAutoGeo.current = true;
     solo.initCreate();
     router.go("solo");
-    const savedName = store.getSoloName();
-    if (savedName) solo.startGeoChallenge(savedName);
   }, [solo, router]);
 
   const openSolo = () => {

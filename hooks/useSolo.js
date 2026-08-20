@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { CATS, GENRES, findCat, nonSprint, recommendedTime, shuffle, pickGenreRounds } from "@/lib/solo-catalog";
+import { CATS, GENRES, findCat, nonSprint, recommendedTime, shuffle, pickGenreRounds, flagQuizCats } from "@/lib/solo-catalog";
 import { norm, nearMiss, findEntry } from "@/lib/solo-matching";
 import { hasGeoBoard, geoMode as geoModeOf } from "@/lib/geo-cats";
 import { fmtClock, todayEastern, prevDate } from "@/lib/format";
@@ -57,6 +57,7 @@ export function useSolo({ onExitToMenu }) {
   const [cmsg, setCmsg] = useState("");
   const [shakeTick, setShakeTick] = useState(0);
   const [geoMode, setGeoMode, geoModeRef] = useStateRef(null); // "map" | "fill" | null
+  const [flagSel, setFlagSel, flagSelRef] = useStateRef(0); // index of the highlighted flag, in a Flags quiz round
   const mapActive = useRef(false);
   const [showTotal, setShowTotal] = useState(false);
   const [remOn, setRemOn] = useState(false);
@@ -143,7 +144,7 @@ export function useSolo({ onExitToMenu }) {
     }
     // After a geography round, list what you missed so you can study it for next time.
     let items = [];
-    if (cat && /^Geography/.test(cat.group)) {
+    if (cat && (/^Geography/.test(cat.group) || cat.isFlagQuiz)) {
       if (geoModeRef.current === "fill" && geoRef.current) items = geoRef.current.missedFill().map((m) => ({ q: m.q, a: m.a }));
       else items = cat.entries.filter((e) => !named.current.has(e.id)).map((e) => ({ q: e.display }));
     }
@@ -180,6 +181,7 @@ export function useSolo({ onExitToMenu }) {
       setChips([]);
       setCmsg("");
       setRemOn(false);
+      setFlagSel(0);
       if (i === 0) runGid.current = genGid(); // one id per run, threading every round's guesses
       const cat = roundCatsRef.current[i];
       setScreen("sprint");
@@ -189,7 +191,7 @@ export function useSolo({ onExitToMenu }) {
       const gm = hasGeoBoard(cat.name) ? geoModeOf(cat.name) : null;
       mapActive.current = false;
       setGeoMode(gm);
-      setShowTotal(!!gm); // "/ total" only for the enumerations, not misc geo like Natural Disasters
+      setShowTotal(!!gm || !!cat.isFlagQuiz); // "/ total" for the enumerations and flag quizzes
       setFillProgress({ filled: 0, total: 0 });
 
       // Per-round time: the recommended-per-round sentinel (timer 0) uses each category's length.
@@ -207,7 +209,7 @@ export function useSolo({ onExitToMenu }) {
       setGeoRound(gm ? { cat, mode: gm, key: i } : null);
       if (!gm && geoRef.current) geoRef.current.teardown();
     },
-    [setCur, setCount, setGeoMode, setTimeLeft, timeLeftRef, roundCatsRef, defRef, perRoundRef, endRound],
+    [setCur, setCount, setGeoMode, setFlagSel, setTimeLeft, timeLeftRef, roundCatsRef, defRef, perRoundRef, endRound],
   );
 
   // D3 needs a real, mounted node to draw into, so the geography board is set up after the
@@ -250,12 +252,67 @@ export function useSolo({ onExitToMenu }) {
     setTimeLeft((t) => t + incrementRef.current);
   }, [incrementRef, setTimeLeft]);
 
+  // Flags quiz: unlike every other round, an answer only counts against the ONE highlighted
+  // flag — naming a real country from the list that isn't this flag is still a miss, just a
+  // more informative one. Correct advances the highlight to the next unsolved flag.
+  const nextUnsolvedFlag = (cat, fromIdx) => {
+    for (let step = 1; step <= cat.entries.length; step++) {
+      const i = (fromIdx + step) % cat.entries.length;
+      if (!named.current.has(cat.entries[i].id)) return i;
+    }
+    return fromIdx; // every flag is solved — finishRoundEarly() is about to fire anyway
+  };
+
+  // Moves the highlighted flag left/right (also used for up/down — the grid reflows by screen
+  // width, so there's no reliable row math to do arrow-key-accurate 2D navigation with).
+  const moveFlagSel = useCallback(
+    (delta) => {
+      const cat = roundCatsRef.current[curRef.current];
+      if (!cat || !cat.isFlagQuiz) return;
+      setFlagSel((i) => Math.max(0, Math.min(cat.entries.length - 1, i + delta)));
+    },
+    [roundCatsRef, curRef, setFlagSel],
+  );
+
   // Returns true when the text should be KEPT in the box (a near-miss → let them re-spell).
   const submit = useCallback(
     (q) => {
       rChars.current += q.length;
       if (!rT0.current) rT0.current = Date.now();
       setWpm(liveWpm());
+
+      const cat0 = roundCatsRef.current[curRef.current];
+      if (cat0.isFlagQuiz) {
+        const entry = cat0.entries[flagSelRef.current];
+        const nq = norm(q);
+        if (entry.aliases.includes(nq)) {
+          if (named.current.has(entry.id)) {
+            flash("already got that one");
+            return false;
+          }
+          named.current.add(entry.id);
+          setCount((c) => c + 1);
+          setCmsg("");
+          guesses.current.push({ display: entry.display, verdict: "ok", at: Date.now() });
+          bumpTimer();
+          setFlagSel(nextUnsolvedFlag(cat0, flagSelRef.current));
+          if (named.current.size >= cat0.entries.length) finishRoundEarly(); // got them all
+          return false;
+        }
+        const other = findEntry(cat0, nq);
+        if (other) {
+          flash(named.current.has(other.id) ? "that one's already done, and not this flag anyway" : "that's on the list, but not this flag");
+          return false;
+        }
+        const near = nearMiss(nq, { entries: [entry] });
+        if (near) {
+          flash("almost — check your spelling");
+          return true; // keep the text so they can re-spell it
+        }
+        guesses.current.push({ display: q, verdict: "miss", at: Date.now() });
+        flash("✗ not this one");
+        return false;
+      }
 
       if (geoModeRef.current === "fill" && geoRef.current) {
         const r = geoRef.current.tryFill(q);
@@ -311,7 +368,7 @@ export function useSolo({ onExitToMenu }) {
       flash("✗ not on the list");
       return false;
     },
-    [geoModeRef, roundCatsRef, curRef, setCount, flash, bumpTimer, finishRoundEarly],
+    [geoModeRef, roundCatsRef, curRef, flagSelRef, setFlagSel, setCount, flash, bumpTimer, finishRoundEarly],
   );
 
   /* ---------------- finishing ---------------- */
@@ -404,17 +461,14 @@ export function useSolo({ onExitToMenu }) {
 
   // Quick solo play: a real (DB-backed, shareable) run built from a fixed category list.
   // `geo` marks a run started from startGeoChallenge() below (drives the done screen's CTA).
-  // `nameOverride` bypasses the byName state — used by the ?geo=1 deep link, which can fire
-  // before a name typed elsewhere has actually propagated through React state.
   const startSolo = useCallback(
-    async (rounds, seconds, geo = false, nameOverride) => {
+    async (rounds, seconds, geo = false) => {
       setCreateErr("");
       playOrigin.current = "solo";
       isGeoChallenge.current = geo;
-      const by = (nameOverride ?? byName).trim().slice(0, 20);
+      const by = byName.trim().slice(0, 20);
       if (!by) return setCreateErr("Enter your name first.");
       store.setSoloName(by);
-      if (nameOverride) setByName(by); // keep the field in sync if this came from a deep link
       if (seconds != null) clampPerRound(seconds);
       setBusy("starting");
       const res = await postJSON("/challenge", { type: "custom", genre: "", rounds, by, timer: seconds != null ? seconds : perRoundRef.current });
@@ -430,13 +484,26 @@ export function useSolo({ onExitToMenu }) {
 
   // One geography category (the board/map ones — same pool the category leaderboards track) at
   // its recommended time, so the run is fair and lands on that category's board with no setup.
-  // Random unless `catName` names a specific one (the done screen's "play a specific one" picker).
-  const startGeoChallenge = useCallback((nameOverride, catName) => {
+  // Random unless `catName` names a specific one (the Create screen's picker, or the done
+  // screen's "play a specific one" follow-up).
+  const startGeoChallenge = useCallback((catName) => {
     setCreateErr("");
     const cat = catName || pickGenreRounds("Geography", 1)[0];
     if (!cat) return setCreateErr("No geography categories available right now.");
-    startSolo([cat], recommendedTime(cat), true, nameOverride);
+    startSolo([cat], recommendedTime(cat), true);
   }, [startSolo]);
+
+  // World, or one continent — the flag-grid quizzes. Not a "geography challenge" run (no random
+  // pick, no "play a different geography?" CTA); it just reuses startSolo's plumbing as-is.
+  const startFlagQuiz = useCallback(
+    (catName) => {
+      setCreateErr("");
+      const cat = catName || flagQuizCats()[0];
+      if (!cat) return setCreateErr("No flags quiz available right now.");
+      startSolo([cat], recommendedTime(cat));
+    },
+    [startSolo],
+  );
 
   const createChallenge = useCallback(async () => {
     setCreateErr("");
@@ -570,8 +637,9 @@ export function useSolo({ onExitToMenu }) {
     count, countLabel, chips, timeLeft, clock: fmtClock(Math.max(0, timeLeft)), wpm, cmsg, shakeTick,
     geoMode, remOn, mapEl, missed, missedOpen, setMissedOpen, between, done, countdown,
     joinInfo, joinName, setJoinName, joinErr, setJoinErr,
+    flagSel, selectFlag: setFlagSel, moveFlagSel, namedIds: named.current,
     // actions
-    initCreate, initJoin, initDaily, createChallenge, startSolo, startGeoChallenge, startPlaying, runCountdown,
+    initCreate, initJoin, initDaily, createChallenge, startSolo, startGeoChallenge, startFlagQuiz, startPlaying, runCountdown,
     startRound, submit, giveUp, nextRound, toggleRemaining, backToStart, leaveRun, challengeUrl, submitDaily,
     todayEastern,
   };

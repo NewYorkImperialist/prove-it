@@ -22,7 +22,7 @@ export default function BetweenSection({ solo }) {
           <button
             type="button"
             onClick={() => solo.setMissedOpen(!solo.missedOpen)}
-            className="cursor-pointer border-none bg-transparent p-1.5 text-[13px] font-bold text-muted underline hover:text-accent"
+            className="min-h-10 cursor-pointer border-none bg-transparent px-2 py-1.5 text-[13px] font-bold text-muted underline hover:text-accent"
           >
             {solo.missedOpen ? "Hide" : "Show"} the {solo.missed.length} you missed {solo.missedOpen ? "▴" : "▾"}
           </button>

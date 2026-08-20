@@ -48,7 +48,7 @@ export default function HomeCard({ leaving, dailyPlayed, onSolo, onDaily, onMult
 
       <p className="mt-4 mb-0 text-center text-xs text-muted">
         Created by{" "}
-        <a href={SITE.credit.url} target="_blank" rel="noopener" className="font-semibold text-accent no-underline hover:underline">
+        <a href={SITE.credit.url} target="_blank" rel="noopener" className="inline-block py-2 font-semibold text-accent no-underline hover:underline">
           {SITE.credit.name}
         </a>
       </p>

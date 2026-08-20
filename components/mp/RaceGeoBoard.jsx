@@ -67,5 +67,7 @@ export default function RaceGeoBoard({ catName, mode, round, mine }) {
   if (!cat || failed) return null;
   // D3 owns this node, so React must not render children into it. A column: the map takes the
   // free space, the island fill-in boxes sit underneath it.
-  return <div ref={el} className="mx-3 my-1.5 flex min-h-[150px] min-w-0 flex-1 flex-col desk:mx-5 desk:my-2 desk:min-h-[200px]" />;
+  // short: a landscape phone matches `desk:` on width but is only ~390px tall, where reserving
+  // 200px for the board leaves nothing for the feed and the input bar.
+  return <div ref={el} className="mx-3 my-1.5 flex min-h-[150px] min-w-0 flex-1 flex-col desk:mx-5 desk:my-2 desk:min-h-[200px] short:my-1 short:min-h-[130px]" />;
 }

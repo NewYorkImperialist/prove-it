@@ -34,7 +34,10 @@ const GROUPS = Object.entries(CATEGORY_GROUPS).map(([key, g]) => ({ key, emoji: 
 // The category grid. Never lets the selection reach zero — unchecking the last one is a no-op.
 export function CategoryChecks({ groups, onChange, disabled, className }) {
   return (
-    <div className={cx("grid max-h-40 grid-cols-2 gap-2 overflow-y-auto", className)}>
+    // One column on the narrowest phones: two 110px columns can't hold "American Innovations",
+    // and a truncated group name is a worse trade than a taller list you were going to scroll
+    // anyway. (The in-game menu passes grid-cols-1! and forces one column at every width.)
+    <div className={cx("grid max-h-40 grid-cols-1 gap-2 overflow-y-auto min-[360px]:grid-cols-2", className)}>
       {GROUPS.map((g) => (
         <CheckTile
           key={g.key}

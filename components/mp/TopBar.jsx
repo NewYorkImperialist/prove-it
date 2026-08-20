@@ -8,7 +8,13 @@ import { useReplay } from "@/hooks/useReplay";
 import { cx } from "@/lib/browser/cx";
 
 const PILL = "cursor-pointer rounded-lg border border-line bg-panel2 font-bold text-muted transition duration-[120ms] hover:border-accent hover:bg-accent hover:text-white";
-const MENU = "absolute top-[46px] right-2 z-[6] rounded-xl border border-line bg-panel shadow-[0_16px_40px_rgba(0,0,0,.5)] desk:top-[52px] desk:right-4";
+// The dropdown hangs off a fixed, non-scrolling grid, so it has to bound its own height: at
+// 320×568 the menu ran 155px past the bottom of the screen and in landscape 339px, putting "Win
+// at" and "Next round" somewhere you could neither see nor reach. `max-h` + `overflow-y-auto`
+// keeps every item reachable, and `overscroll-contain` stops a flick at the end of the list from
+// scrolling the page behind it.
+const MENU =
+  "absolute top-[46px] right-2 z-[6] max-h-[calc(var(--app-height,100dvh)-58px)] overflow-y-auto overscroll-contain rounded-xl border border-line bg-panel shadow-[0_16px_40px_rgba(0,0,0,.5)] desk:top-[52px] desk:right-4 desk:max-h-[calc(var(--app-height,100dvh)-68px)]";
 
 // Close a dropdown on any click that isn't inside it or on its own trigger.
 function useDismiss(open, close, refs) {
@@ -27,9 +33,13 @@ function useDismiss(open, close, refs) {
 // gets the full sidebar instead).
 function TopScore({ roster }) {
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-[7px] overflow-hidden text-[13px] desk:hidden">
+    // This is the ONLY scoreboard on a phone — the full roster (Sidebar) is desktop-only. It used
+    // to be `overflow-hidden` with flex children free to shrink, so an 8-player race squeezed every
+    // name to 0px and the strip read "0· 0 0 0 0 0" — scores with nobody attached to them, and no
+    // way to scroll to the rest. Now it scrolls sideways and each entry keeps a legible floor.
+    <span className="flex min-w-0 flex-1 items-center gap-[7px] overflow-x-auto overscroll-x-contain text-[13px] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden desk:hidden">
       {roster.map((p, i) => (
-        <span key={p.id} className="flex min-w-0 items-center gap-1.5 whitespace-nowrap">
+        <span key={p.id} className="flex shrink-0 items-center gap-1.5 whitespace-nowrap">
           {i ? <span className="text-muted">·</span> : null}
           <span className={cx("max-w-[90px] truncate font-bold", p.turn && "text-accent2")}>
             {p.name}
@@ -120,7 +130,7 @@ export default function TopBar({ mp, roster, roomLabel, canSkip, skipLabel, onLe
           setCatOpen(false);
           setMenuOpen((o) => !o);
         }}
-        className={cx(PILL, "px-[11px] py-1.5 text-sm")}
+        className={cx(PILL, "min-h-10 shrink-0 px-3 py-1.5 text-sm")}
       >
         ⋯
       </button>

@@ -118,16 +118,21 @@ export default function GameScreen({ mp, onLeaveIntent }) {
       />
 
 
-      <div className="flex min-h-0 min-w-0 flex-col overflow-hidden">
+      {/* `relative` anchors the floating clock below: without it the nearest positioned ancestor
+          was the fixed grid above, so the clock's `top-2` measured from the top of the SCREEN and
+          painted it on top of the top bar's names and scores. */}
+      <div className="relative flex min-h-0 min-w-0 flex-col overflow-hidden">
         <div
-          className="mx-3 mt-[7px] rounded-[14px] border border-line px-[13px] py-2 desk:mx-5 desk:mt-4 desk:px-[22px] desk:py-[18px]"
+          // pr-[70px] keeps the category name clear of the floating clock pill on a phone; on a
+          // desktop the clock is in the column below, so the banner gets its padding back.
+          className="mx-3 mt-[7px] rounded-[14px] border border-line px-[13px] py-2 pr-[70px] desk:mx-5 desk:mt-4 desk:px-[22px] desk:py-[18px] short:py-2 short:pr-[70px]"
           style={{ background: "radial-gradient(120% 140% at 0 0,var(--color-accdim),transparent 55%),var(--color-panel2)" }}
         >
           <div className="hidden font-mono text-[11px] tracking-[1.4px] text-muted uppercase desk:block">
             {category ? `${category.emoji} ${category.group}` : "Category"}
           </div>
-          <div className="font-display text-sm leading-[1.25] font-bold tracking-[-.5px] desk:mt-[5px] desk:text-[27px]">{category ? category.name : "·"}</div>
-          <div className="mt-[3px] min-h-[18px] text-xs text-gold desk:mt-1.5 desk:text-sm">{claimLine}</div>
+          <div className="font-display text-sm leading-[1.25] font-bold tracking-[-.5px] desk:mt-[5px] desk:text-[27px] short:mt-0 short:text-sm">{category ? category.name : "·"}</div>
+          <div className="mt-[3px] min-h-[18px] text-xs text-gold desk:mt-1.5 desk:text-sm short:mt-[3px] short:text-xs">{claimLine}</div>
         </div>
 
         {boardMode ? <RaceGeoBoard catName={state.category.name} mode={boardMode} round={state.round} mine={mp.raceMine.got} /> : null}
@@ -141,8 +146,13 @@ export default function GameScreen({ mp, onLeaveIntent }) {
         {mp.clock.left != null ? (
           <div
             className={cx(
-              "absolute top-2 left-1/2 z-[5] -translate-x-1/2 rounded-[20px] border px-3 py-0.5 text-center text-sm font-bold tabular-nums",
-              "desk:static desk:mx-5 desk:mb-2 desk:translate-x-0 desk:rounded-[10px] desk:px-3 desk:py-2 desk:text-base",
+              // Floats in the banner's top-right on a phone (the banner reserves `pr` for it, so
+              // it never lands on the category name) and drops into the column on a desktop. A
+              // landscape phone is wide enough for `desk:` but only ~390px tall, so `short:`
+              // sends it back to floating rather than spending a row on it.
+              "absolute top-[9px] right-4 z-[5] rounded-[20px] border px-3 py-0.5 text-center text-sm font-bold tabular-nums",
+              "desk:static desk:mx-5 desk:mb-2 desk:rounded-[10px] desk:px-3 desk:py-2 desk:text-base",
+              "short:absolute short:top-[9px] short:right-4 short:mx-0 short:mb-0 short:rounded-[20px] short:py-0.5 short:text-sm",
               mp.clock.danger ? "border-[rgba(255,91,110,.4)] bg-[rgba(255,91,110,.1)] text-bad" : "border-line bg-accdim text-accent",
             )}
           >

@@ -19,7 +19,9 @@ export function SoloButton({ variant = "solid", className, ...rest }) {
 
 export function SoloCard({ children, className }) {
   return (
-    <section className={cx("w-[min(94vw,460px)] overflow-visible rounded-2xl border border-line bg-panel px-8 py-[34px] shadow-[0_24px_70px_rgba(0,0,0,.6)]", className)}>
+    // min-w-0 so a wide child (the 10-round results table) can't push the card past the viewport,
+    // and tighter side padding on a phone to leave that table more room before it has to scroll.
+    <section className={cx("w-[min(94vw,460px)] min-w-0 overflow-visible rounded-2xl border border-line bg-panel px-5 py-[34px] shadow-[0_24px_70px_rgba(0,0,0,.6)] desk:px-8", className)}>
       {children}
     </section>
   );

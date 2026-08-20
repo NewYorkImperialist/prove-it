@@ -58,7 +58,7 @@ export default function CreateSection({ solo, onBack }) {
       <button
         type="button"
         onClick={() => solo.setAdvOpen(!solo.advOpen)}
-        className="mx-auto mt-[18px] mb-0.5 block w-auto cursor-pointer border-none bg-transparent px-2.5 py-1.5 font-mono text-xs font-semibold tracking-[.4px] text-muted hover:text-accent"
+        className="mx-auto mt-[18px] mb-0.5 block min-h-11 w-auto cursor-pointer border-none bg-transparent px-2.5 py-1.5 font-mono text-xs font-semibold tracking-[.4px] text-muted hover:text-accent"
       >
         Advanced settings ▾
       </button>

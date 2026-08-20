@@ -52,7 +52,9 @@ export default function RaceReveal({ reveal: r, myId, onApproveMiss }) {
                           setApproved((s) => new Set(s).add(key));
                           onApproveMiss(p.id, m.id);
                         }}
-                        className="cursor-pointer rounded-md border-none bg-accent2 px-[9px] py-[3px] text-[11px] font-bold text-onaccent2 disabled:cursor-default disabled:opacity-50"
+                        // 21px tall, and a reveal can carry 25 of these packed into inline chips —
+                        // min-h-8 plus the chip's own padding gives a thumb something to aim at.
+                        className="min-h-8 shrink-0 cursor-pointer rounded-md border-none bg-accent2 px-2.5 py-1 text-[11px] font-bold text-onaccent2 disabled:cursor-default disabled:opacity-50"
                       >
                         Approve
                       </button>

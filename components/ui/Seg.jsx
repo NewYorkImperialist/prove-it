@@ -15,7 +15,10 @@ export default function Seg({ options, value, onChange, disabled = false, classN
             disabled={disabled}
             onClick={() => onChange(o.value)}
             className={cx(
-              "flex-1 cursor-pointer rounded-[10px] border p-[11px] text-sm font-bold transition duration-[120ms]",
+              // min-w-0 lets a five-option row (the solo time presets) actually fit a 320px card
+              // instead of sliding its last button off the edge of the screen; the padding gives
+              // way before the row does.
+              "min-w-0 flex-1 cursor-pointer rounded-[10px] border px-1.5 py-[11px] text-sm font-bold transition duration-[120ms] min-[380px]:px-[11px]",
               on ? "border-accent bg-accent text-markfg" : "border-line bg-panel2 text-ink",
             )}
           >

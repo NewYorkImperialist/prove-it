@@ -11,11 +11,14 @@ export default function ConfirmLeave({ isRace, onReturn, onForfeit }) {
             ? "The race continues without you — you won't be able to rejoin this match."
             : "If you forfeit, your opponent wins this match."}
         </p>
+        {/* The two outcomes are "carry on" and "lose the match", and they used to sit 10px apart
+            at identical size — a fat-finger away from each other. The gap and the quieter
+            treatment on Forfeit make the destructive one the deliberate choice. */}
         <div className="flex flex-col gap-2.5">
-          <button type="button" onClick={onReturn} className="cursor-pointer rounded-[10px] border-none bg-accent2 p-[13px] text-[15px] font-extrabold text-onaccent2">
+          <button type="button" onClick={onReturn} className="min-h-12 cursor-pointer rounded-[10px] border-none bg-accent2 p-[13px] text-[15px] font-extrabold text-onaccent2">
             Return to your game
           </button>
-          <button type="button" onClick={onForfeit} className="cursor-pointer rounded-[10px] border-none bg-bad p-[13px] text-[15px] font-extrabold text-white">
+          <button type="button" onClick={onForfeit} className="mt-3 min-h-11 cursor-pointer rounded-[10px] border border-bad bg-transparent p-[11px] text-sm font-bold text-bad">
             Forfeit
           </button>
         </div>

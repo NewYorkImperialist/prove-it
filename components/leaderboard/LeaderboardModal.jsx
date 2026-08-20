@@ -82,25 +82,29 @@ export default function LeaderboardModal({ onClose, visitorId }) {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="relative max-h-[88vh] w-[min(94vw,520px)] overflow-y-auto rounded-2xl border border-line bg-panel px-6 pt-6 pb-[26px] shadow-[0_24px_70px_rgba(0,0,0,.6)]">
+      {/* overflow-x-hidden: the boards scroll sideways on their own (see LbTable). Letting the
+          modal body do it too dragged this close button and the tabs off-screen with the table. */}
+      <div className="relative max-h-[88vh] w-[min(94vw,520px)] overflow-y-auto overflow-x-hidden rounded-2xl border border-line bg-panel px-4 pt-6 pb-[26px] shadow-[0_24px_70px_rgba(0,0,0,.6)] desk:px-6">
         <button
           type="button"
           title="Close"
           aria-label="Close"
           onClick={onClose}
-          className="absolute top-2.5 right-3.5 cursor-pointer border-none bg-transparent px-1 text-[26px] leading-none text-muted hover:text-accent"
+          // A 25×26 glyph is a miss waiting to happen on a phone, and the backdrop either side of
+          // the card is only ~10px wide at 320, so tapping "outside" isn't a real escape route.
+          className="absolute top-1 right-1 z-10 grid h-11 w-11 cursor-pointer place-items-center border-none bg-transparent text-[26px] leading-none text-muted hover:text-accent"
         >
           ×
         </button>
 
-        <div className="mt-0.5 mr-7 mb-3.5 flex gap-1.5">
+        <div className="mt-0.5 mr-11 mb-3.5 flex gap-1.5">
           {TABS.map((t) => (
             <button
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
               className={cx(
-                "flex-1 cursor-pointer rounded-[9px] border px-[5px] py-[9px] text-xs font-bold whitespace-nowrap",
+                "min-h-11 flex-1 cursor-pointer rounded-[9px] border px-[5px] py-[9px] text-xs font-bold whitespace-nowrap",
                 tab === t.key ? "border-accent bg-accent text-markfg" : "border-line2 bg-panel2 text-muted",
               )}
             >

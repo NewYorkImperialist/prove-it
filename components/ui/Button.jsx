@@ -43,7 +43,9 @@ export function BackButton({ children = "← Back", className, ...rest }) {
   return (
     <button
       type="button"
-      className={cx("mb-3.5 inline-flex cursor-pointer items-center gap-1.5 border-none bg-transparent p-0 text-[13px] font-bold text-muted hover:text-accent", className)}
+      // -ml-2 keeps it visually flush with the card's edge while the padding gives it a real
+      // hit area — it was a 45×19.5 target on every setup and solo screen.
+      className={cx("-ml-2 mb-2 inline-flex min-h-10 cursor-pointer items-center gap-1.5 border-none bg-transparent px-2 py-1 text-[13px] font-bold text-muted hover:text-accent", className)}
       {...rest}
     >
       {children}

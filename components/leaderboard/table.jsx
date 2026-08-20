@@ -6,25 +6,32 @@ import { cx } from "@/lib/browser/cx";
 // the player column in the display face, and the viewer's own row tinted amber.
 export function LbTable({ head, children }) {
   return (
-    <table className="mt-2 w-full border-collapse text-sm">
-      <thead>
-        <tr>
-          {head.map((h, i) => (
-            <th
-              key={i}
-              title={h.title}
-              className={cx(
-                "border-b border-line2 px-[9px] py-[7px] font-mono text-[10px] tracking-[.6px] text-muted uppercase",
-                i === 0 ? "text-left" : "text-right",
-              )}
-            >
-              {h.label ?? h}
-            </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>{children}</tbody>
-    </table>
+    // A 10-round board is 13 columns and ~730px wide, which no phone fits. The horizontal
+    // scroller has to be THIS wrapper: when the modal body did the scrolling instead, the close
+    // button and the tabs (absolutely positioned inside it) slid away with the table, so reaching
+    // the Score column meant losing every control. `w-max min-w-full` lets the table exceed the
+    // wrapper instead of squeezing its columns to nothing.
+    <div className="-mx-1 mt-2 overflow-x-auto overscroll-x-contain px-1">
+      <table className="w-max min-w-full border-collapse text-sm">
+        <thead>
+          <tr>
+            {head.map((h, i) => (
+              <th
+                key={i}
+                title={h.title}
+                className={cx(
+                  "border-b border-line2 px-[9px] py-[7px] font-mono text-[10px] tracking-[.6px] text-muted uppercase",
+                  i === 0 ? "text-left" : "text-right",
+                )}
+              >
+                {h.label ?? h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>{children}</tbody>
+      </table>
+    </div>
   );
 }
 

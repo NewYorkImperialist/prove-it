@@ -51,8 +51,11 @@ export default function Feed({ feed, scrollRef, myId, onApproveMiss, compact }) 
     <div
       ref={scrollRef}
       className={cx(
-        "flex min-h-0 flex-col gap-[7px] overflow-y-auto px-3 py-[9px] desk:gap-[9px] desk:px-5 desk:py-4",
-        compact ? "max-h-[24vh] shrink-0" : "flex-1",
+        // A landscape phone is wide enough for `desk:` but only ~390px tall, so the roomy desktop
+        // padding used to starve `flex-1` down to a single clipped 32px line. Tighter gaps and a
+        // min-height floor keep the transcript readable there.
+        "flex min-h-0 flex-col gap-[7px] overflow-y-auto px-3 py-[9px] desk:gap-[9px] desk:px-5 desk:py-4 short:gap-[7px] short:py-1.5",
+        compact ? "max-h-[24vh] shrink-0 short:max-h-[30vh]" : "min-h-[60px] flex-1",
       )}
     >
       {feed.map((entry) =>

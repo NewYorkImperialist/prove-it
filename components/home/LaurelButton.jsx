@@ -19,7 +19,7 @@ export default function LaurelButton({ onClick }) {
       onClick={onClick}
       title="Leaderboards"
       aria-label="Leaderboards"
-      className="ml-auto grid h-10 w-10 shrink-0 cursor-pointer place-items-center rounded-[11px] border border-line2 bg-panel2 p-0 text-gold transition duration-[140ms] hover:-translate-y-px hover:border-accent hover:text-accent"
+      className="ml-auto grid h-11 w-11 shrink-0 cursor-pointer place-items-center rounded-[11px] border border-line2 bg-panel2 p-0 text-gold transition duration-[140ms] hover:-translate-y-px hover:border-accent hover:text-accent"
     >
       <svg viewBox="0 0 24 24" fill="none" width="26" height="26" aria-hidden="true" className="block">
         {PATHS.map((d) => (

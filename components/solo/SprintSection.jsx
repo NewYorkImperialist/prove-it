@@ -38,7 +38,10 @@ export default function SprintSection({ solo, onBack }) {
     >
       <BackButton onClick={onBack}>← Back to lobby</BackButton>
 
-      <div className="mb-3 flex gap-[5px]">
+      {/* Every `short:` below buys height back for the board. In landscape (844×390) this header
+          was taller than the whole viewport, so the map's `flex-1 min-h-0` resolved to literally
+          zero and the player was asked to name 197 countries with no map and nothing to scroll. */}
+      <div className="mb-3 flex gap-[5px] short:mb-1.5">
         {solo.roundCats.map((_, j) => (
           <span
             key={j}
@@ -47,22 +50,23 @@ export default function SprintSection({ solo, onBack }) {
         ))}
       </div>
 
-      <div className="mb-2.5 flex items-center justify-between">
-        <div>
+      <div className="mb-2.5 flex items-center justify-between gap-3 short:mb-1">
+        <div className="min-w-0">
           <div className="font-mono text-[11px] tracking-[1.4px] text-muted uppercase">
             Round {solo.cur + 1} of {solo.roundCats.length} · {cat.emoji} {cat.group}
           </div>
-          <div className="font-display text-[22px] font-bold tracking-[-.3px]">{cat.name}</div>
+          {/* gap-3 + min-w-0 keep a long category name off the clock instead of butting into it. */}
+          <div className="font-display text-[22px] font-bold tracking-[-.3px] short:text-base">{cat.name}</div>
         </div>
-        <div className={cx("text-[28px] font-extrabold tabular-nums", solo.timeLeft <= 10 ? "text-bad" : "text-accent")}>{solo.clock}</div>
+        <div className={cx("shrink-0 text-[28px] font-extrabold tabular-nums short:text-xl", solo.timeLeft <= 10 ? "text-bad" : "text-accent")}>{solo.clock}</div>
       </div>
 
       <div className="flex items-baseline gap-3.5">
-        <span className="text-[40px] font-extrabold text-ink tabular-nums">{solo.countLabel}</span>
+        <span className="text-[40px] font-extrabold text-ink tabular-nums short:text-2xl">{solo.countLabel}</span>
         <span className="font-mono text-[11px] tracking-[1.4px] text-muted uppercase tabular-nums">{solo.wpm ? `${solo.wpm} wpm` : ""}</span>
       </div>
 
-      <div className="my-2 flex gap-2">
+      <div className="my-2 flex gap-2 short:my-1">
         {solo.geoMode === "map" ? (
           <SoloButton variant="ghost" className={cx("mt-0! p-[9px]! text-[13px]!", solo.remOn && "border-accent! bg-accent! text-markfg!")} onClick={solo.toggleRemaining}>
             {solo.remOn ? "Hide what's left" : "Show what's left"}
@@ -75,7 +79,11 @@ export default function SprintSection({ solo, onBack }) {
 
       {/* D3 owns this node (lib/browser/geomap.js), so React must not render children into it.
           A column: the map takes the free space and the island fill-in boxes sit underneath it. */}
-      <div ref={solo.mapEl} className={cx("w-full", mapMode ? "my-2 flex min-h-0 flex-1 flex-col" : "hidden")} />
+      {/* min-h floor: `flex-1 min-h-0` alone let the board collapse to 0px whenever the header
+          plus the input outgrew the viewport, which is exactly what happens in landscape. A floor
+          means the column overflows the card instead of silently deleting the board — and the map
+          is what the round is played on, so it wins the argument over the header. */}
+      <div ref={solo.mapEl} className={cx("w-full", mapMode ? "my-2 flex min-h-[150px] flex-1 flex-col short:my-1" : "hidden")} />
 
       <input
         ref={inputRef}
@@ -92,9 +100,10 @@ export default function SprintSection({ solo, onBack }) {
         }}
         onKeyDown={(e) => e.key === "Enter" && submit()}
         onAnimationEnd={endShake}
-        // Geography rounds: when the keyboard opens, pull the box down so the map stays in view.
+        // When the keyboard opens, pull the box back into the visible viewport. This used to run
+        // for geography rounds only, so on a plain round at 320px (or in landscape) the box you
+        // type into ended up below the fold and you had to scroll to find it mid-clock.
         onFocus={() => {
-          if (!mapMode) return;
           setTimeout(() => {
             try {
               inputRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });

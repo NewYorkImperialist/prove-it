@@ -136,6 +136,14 @@
   justify-content: safe center;
 }
 
+/* A landscape phone is WIDE but very short (844×390), so the width-only `desk:` line above hands
+   it the whole desktop game layout — 27px banner, static clock, roomy padding — inside a 390px
+   window. There is then nothing left for the board or the feed. `short:` targets that case so the
+   pieces that eat vertical space can opt back into the compact treatment; it's deliberately
+   height-only, so it also covers a tall phone once the on-screen keyboard has taken half the
+   screen. */
+@custom-variant short (@media (max-height: 560px));
+
 @layer base {
   html { background: var(--color-bg); }
   body {

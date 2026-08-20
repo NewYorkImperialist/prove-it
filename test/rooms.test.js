@@ -505,6 +505,60 @@ describe("rooms.js — display names go through the profanity filter", () => {
   });
 });
 
+// Two guests who never typed a name both used to arrive as the blank-name fallback, leaving the
+// roster, every chat line and the whole game log with two identical players — neither of them
+// able to find their own score.
+describe("rooms.js — display names are unique within a room", () => {
+  test("a second blank name is suffixed instead of colliding", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "", mode: "race" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "" });
+    assert.equal(joined.ok, true);
+    const players = [...roomsApi.rooms.get(created.code).players.values()].map((p) => p.name);
+    assert.equal(new Set(players).size, 2, `both players ended up named the same: ${players.join(" / ")}`);
+    assert.match(players[1], /2$/);
+  });
+
+  test("a deliberate duplicate is suffixed too, and stays inside the name cap", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alexandrina Victoria", mode: "race" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Alexandrina Victoria" });
+    assert.equal(joined.ok, true);
+    const players = [...roomsApi.rooms.get(created.code).players.values()].map((p) => p.name);
+    assert.equal(new Set(players).size, 2);
+    for (const n of players) assert.ok(n.length <= 20, `"${n}" is ${n.length} chars, past the 20-char cap`);
+  });
+
+  test("a spectator can't take a name a player is already using", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const spec = await emit(b, "spectateRoom", { code: created.code, name: "Alice" });
+    assert.equal(spec.ok, true);
+    const room = roomsApi.rooms.get(created.code);
+    assert.equal(room.players.get(created.you).name, "Alice");
+    assert.notEqual(room.spectators.get(spec.you).name, "Alice");
+  });
+
+  test("renaming yourself onto someone else's name is suffixed, not allowed to collide", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    const renamed = await emit(b, "setName", { name: "Alice" });
+    assert.equal(renamed.ok, true);
+    assert.notEqual(renamed.name, "Alice");
+    assert.equal(roomsApi.rooms.get(created.code).players.get(joined.you).name, renamed.name);
+  });
+
+  test("keeping your own name on a rename isn't treated as a collision with yourself", async () => {
+    const a = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const renamed = await emit(a, "setName", { name: "Alice" });
+    assert.equal(renamed.ok, true);
+    assert.equal(renamed.name, "Alice", "renaming to the name you already hold must not suffix it");
+    assert.equal(roomsApi.rooms.get(created.code).players.get(created.you).name, "Alice");
+  });
+});
+
 describe("rooms.js — chat rate limiting", () => {
   test("a message dropped by the rate limit tells the sender, and only the sender", async () => {
     const a = await connect(), b = await connect();

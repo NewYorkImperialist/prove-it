@@ -11,12 +11,12 @@ const MIN_TO_START = 2;
 const MAX_TO_START = 6;
 const DEFAULT_GRACE_MS = 8000;
 
-// deps: { newRoom, attach, broadcast, cleanName, nameRejected, DEFAULT_GROUPS } — all from
+// deps: { newRoom, attach, broadcast, cleanName, uniqueName, nameRejected, DEFAULT_GROUPS } — all from
 // rooms.js's closure, so a quick-match name goes through exactly the same trim/cap/profanity
 // gate as a name typed into a room code (this module used to clean names with its own copy of
 // the trim-and-truncate, which meant the filter didn't apply here).
 // graceMs is overridable (tests use a tiny value instead of waiting out the real 8s window).
-function createMatchmaking({ newRoom, attach, broadcast, cleanName, nameRejected, DEFAULT_GROUPS, graceMs = DEFAULT_GRACE_MS }) {
+function createMatchmaking({ newRoom, attach, broadcast, cleanName, uniqueName, nameRejected, DEFAULT_GROUPS, graceMs = DEFAULT_GRACE_MS }) {
   let queue = []; // [{ playerId, socket, name }]
   let timer = null;
   let startsAt = null; // when the armed batch pops (null = no countdown running)
@@ -54,8 +54,10 @@ function createMatchmaking({ newRoom, attach, broadcast, cleanName, nameRejected
       settings: { groups: [...DEFAULT_GROUPS], timer: 45, format: 5, suddenDeath: false, maxPlayers: MAX_TO_START, increment: 0 },
     });
     attach(room, host.socket, host.playerId);
+    // uniqueName, not e.name: a batch is exactly where two people who never typed a name meet,
+    // and "Jayden Lin fanboy" twice on one scoreboard is unreadable for both of them.
     for (const e of batch.slice(1)) {
-      room.players.set(e.playerId, { id: e.playerId, name: e.name, socketId: e.socket.id, connected: true });
+      room.players.set(e.playerId, { id: e.playerId, name: uniqueName(room, e.name, e.playerId), socketId: e.socket.id, connected: true });
       attach(room, e.socket, e.playerId);
     }
     broadcast(room);

@@ -690,6 +690,11 @@ export function useMultiplayer({ router }) {
             router.go("home");
           } else {
             myIdRef.current = res.you;
+            // The server decides the role here too: asking to spectate a code you still hold a
+            // seat in resumes you as a PLAYER (rooms.js doResume), which acks without a
+            // `spectator` field. Trusting the stored flag instead left a real player stuck in
+            // the read-only UI, losing every turn.
+            rememberSpectator(!!res.spectator);
             router.go(res.inGame ? "game" : "room");
           }
         });
@@ -727,9 +732,20 @@ export function useMultiplayer({ router }) {
 
     function maybeAutoJoinInvite() {
       if (triedInvite.current || !url.invite || myRoomRef.current) return;
+      const inviteName = store.getMpName().trim();
+      // Auto-joining with no stored name seated a first-time visitor as the house joke name
+      // (rooms.js cleanName) with no chance to say who they were. The setup card is already up
+      // with the code prefilled, so ask for a name there instead; a returning player with a
+      // stored name still goes straight in.
+      if (!inviteName) {
+        triedInvite.current = true;
+        return setErr("home", "Enter your name to join this room.");
+      }
       triedInvite.current = true;
-      socket.emit("joinRoom", { code: url.invite, name: store.getMpName(), playerId }, (res) => {
-        if (!res?.ok) return; // room gone/full → stay on the setup card with the code prefilled
+      socket.emit("joinRoom", { code: url.invite, name: inviteName, playerId }, (res) => {
+        // A full, closed or already-started room used to fail here in total silence — the invite
+        // dropped you on the setup card with no hint that the link itself was the problem.
+        if (!res?.ok) return setErr("home", res?.error || "Could not join that room.");
         myIdRef.current = res.you;
         rememberRoom(res.code);
         router.go("room");

@@ -16,8 +16,11 @@ function fakeSocket(id) {
 function makeDeps() {
   const rooms = [];
   const attached = [];
+  // Seats the host, exactly as rooms.js's newRoom does — otherwise uniqueName below sees an
+  // empty roster and the collision this dep exists to prevent can never happen in a test.
   const newRoom = ({ mode, hostId, hostName, socketId, settings }) => {
     const room = { code: `R${rooms.length}`, mode, hostId, hostName, socketId, settings, players: new Map() };
+    room.players.set(hostId, { id: hostId, name: cleanName(hostName), socketId, connected: true });
     rooms.push(room);
     return room;
   };
@@ -27,7 +30,14 @@ function makeDeps() {
   // pair of functions is what the real server passes in.
   const cleanName = (n) => String(n || "").trim().slice(0, 20) || "Jayden Lin fanboy";
   const nameRejected = (n) => (isBlocked(cleanName(n)) ? "That name isn't allowed — pick a different one." : null);
-  return { rooms, attached, newRoom, attach, broadcast, cleanName, nameRejected, DEFAULT_GROUPS: ["Geography"] };
+  const uniqueName = (room, n, selfPid) => {
+    const base = cleanName(n);
+    const taken = new Set([...room.players.values()].filter((p) => p.id !== selfPid).map((p) => p.name));
+    if (!taken.has(base)) return base;
+    for (let i = 2; i < 100; i++) { const c = `${base.slice(0, 17).trim()} ${i}`; if (!taken.has(c)) return c; }
+    return base;
+  };
+  return { rooms, attached, newRoom, attach, broadcast, cleanName, uniqueName, nameRejected, DEFAULT_GROUPS: ["Geography"] };
 }
 
 // Every quickMatchStatus a socket has been sent, oldest first.
@@ -133,6 +143,18 @@ describe("matchmaking queue", () => {
     // count down honestly instead.
     assert.ok(st.startsInMs > 4000 && st.startsInMs <= 5000);
     assert.ok(st.startsAt >= Date.now() + 4000);
+  });
+
+  test("two nameless players in one batch don't both become the blank-name fallback", (t) => {
+    const deps = makeDeps();
+    const mm = createMatchmaking({ ...deps, graceMs: 50 });
+    const s1 = fakeSocket("s1"), s2 = fakeSocket("s2");
+    mm.join(s1, {}, () => {});
+    mm.join(s2, {}, () => {});
+    t.mock.timers.tick(50);
+    const names = [...deps.rooms[0].players.values()].map((p) => p.name);
+    assert.equal(names.length, 2);
+    assert.equal(new Set(names).size, 2, `a quick-match batch seated two players called the same thing: ${names.join(" / ")}`);
   });
 
   test("a profane display name is refused rather than quietly queued", () => {

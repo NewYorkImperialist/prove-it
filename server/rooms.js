@@ -98,6 +98,23 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
   function nameRejected(name) {
     return isBlocked(cleanName(name)) ? NAME_REJECTED : null;
   }
+  // Two people who never typed a name both arrive as the house joke name, and then the roster,
+  // every chat line and the whole game log have no way to tell them apart — including for the
+  // player themselves, who can't find their own score. Suffix the later arrivals instead.
+  // Spectators share the namespace: their names show in the same roster and the same chat.
+  function uniqueName(room, name, selfPid) {
+    const base = cleanName(name);
+    const taken = new Set();
+    for (const p of room.players.values()) if (p.id !== selfPid) taken.add(p.name);
+    if (room.spectators) for (const s of room.spectators.values()) if (s.id !== selfPid) taken.add(s.name);
+    if (!taken.has(base)) return base;
+    // " 2" … " 99", trimmed to stay inside cleanName's 20-char cap.
+    for (let n = 2; n < 100; n++) {
+      const candidate = `${base.slice(0, 17).trim()} ${n}`;
+      if (!taken.has(candidate)) return candidate;
+    }
+    return base; // 98 duplicates of one name is not a case worth a third strategy
+  }
 
   function roomState(room) {
     return {
@@ -178,7 +195,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
   // room. Lives in its own module (matchmaking.js) but is tightly coupled to this closure's
   // room-creation/attach/broadcast primitives, so it's instantiated here rather than injected
   // from server.js the way engine/raceEngine are.
-  const matchmaking = createMatchmaking({ newRoom, attach, broadcast, cleanName, nameRejected, DEFAULT_GROUPS, graceMs: quickMatchGraceMs });
+  const matchmaking = createMatchmaking({ newRoom, attach, broadcast, cleanName, uniqueName, nameRejected, DEFAULT_GROUPS, graceMs: quickMatchGraceMs });
 
   function leaveCurrentRoom(socket) {
     const code = socket.data.roomCode, pid = socket.data.playerId;
@@ -260,7 +277,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       const badJoin = nameRejected(name);
       if (badJoin) return ack?.({ ok: false, error: badJoin });
       leaveCurrentRoom(socket);
-      room.players.set(pid, { id: pid, name: cleanName(name), socketId: socket.id, connected: true });
+      room.players.set(pid, { id: pid, name: uniqueName(room, name, pid), socketId: socket.id, connected: true });
       attach(room, socket, pid);
       console.log(`➕ joined room ${code}`);
       ack?.({ ok: true, code, you: pid, mode: room.mode });
@@ -287,7 +304,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       if (badSpec) return ack?.({ ok: false, error: badSpec }); // a spectator's name shows in the roster and in chat too
       leaveCurrentRoom(socket);
       if (!room.spectators) room.spectators = new Map();
-      room.spectators.set(pid, { id: pid, name: cleanName(name), socketId: socket.id });
+      room.spectators.set(pid, { id: pid, name: uniqueName(room, name, pid), socketId: socket.id });
       socket.join(code);
       socket.data.roomCode = code; socket.data.playerId = pid; socket.data.spectator = true;
       if (socket.data.session) { socket.data.session.spectated = true; socket.data.session.name = cleanName(name); }
@@ -345,7 +362,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       // broadcast below, which still carries the unchanged name, is the only feedback).
       const bad = nameRejected(name);
       if (bad) return ack?.({ ok: false, error: bad });
-      p.name = cleanName(name);
+      p.name = uniqueName(room, name, socket.data.playerId);
       if (socket.data.session) socket.data.session.name = p.name;
       if (room.game && room.game.names && room.players.has(socket.data.playerId)) room.game.names[socket.data.playerId] = p.name;
       ack?.({ ok: true, name: p.name });

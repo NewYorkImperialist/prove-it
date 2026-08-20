@@ -302,12 +302,15 @@ function endLiveRound(io, room) {
 // single-judge model. Only valid before the round's result is finalized.
 function handleApproveMiss(io, room, socket, targetId, missId) {
   const g = room.game;
-  if (!g || g.phase !== "roundover" || g.lastReveal?.final) return;
+  // The client marks the button approved the moment it's pressed, so every refusal here has to
+  // come back as one — otherwise a rejected approval stays on screen as though it counted.
+  if (!g || g.phase !== "roundover" || g.lastReveal?.final) return "The review window has closed.";
   const approverId = socket.data.playerId;
-  if (!approverId || approverId === targetId || !g.activeIds.has(approverId) || !g.activeIds.has(targetId)) return;
+  if (!approverId || approverId === targetId) return "You can't approve your own answer.";
+  if (!g.activeIds.has(approverId) || !g.activeIds.has(targetId)) return "Only players in the match can approve answers.";
   const list = g.misses[targetId] || [];
   const idx = list.findIndex((m) => m.id === missId);
-  if (idx === -1) return;
+  if (idx === -1) return "That answer has already been ruled on.";
   const [miss] = list.splice(idx, 1);
   const mine = g.answers[targetId] || (g.answers[targetId] = new Map());
   mine.set(`approved:${miss.id}`, { display: miss.text, at: Date.now() }); // string key — never collides with a real entry id
@@ -412,11 +415,11 @@ function handleAnswer(io, room, socket, text, ack) {
 // so there's no way to use it to dodge a round you're losing.
 function handleVoteSkip(io, room, socket) {
   const g = room.game;
-  if (!g || (g.phase !== "countdown" && g.phase !== "live")) return;
+  if (!g || (g.phase !== "countdown" && g.phase !== "live")) return "It's too late to skip this category.";
   const pid = socket.data.playerId;
-  if (!g.activeIds.has(pid)) return; // players only — not spectators, not anyone who left
+  if (!g.activeIds.has(pid)) return "Only players in the match can vote."; // not spectators, not anyone who left
   if (!g.skipVotes) g.skipVotes = new Set();
-  if (g.skipVotes.has(pid)) return; // one vote each
+  if (g.skipVotes.has(pid)) return "You've already voted to skip."; // one vote each
   g.skipVotes.add(pid);
 
   if (checkVoteThresholds(io, room)) return;
@@ -427,11 +430,11 @@ function handleVoteSkip(io, room, socket) {
 // Vote to end an endless-format match early · needs every active player to agree.
 function handleVoteEnd(io, room, socket) {
   const g = room.game;
-  if (!g || g.winsNeeded != null || g.phase === "matchover") return; // endless only
+  if (!g || g.winsNeeded != null || g.phase === "matchover") return "Only an endless match can be ended by vote."; // endless only
   const pid = socket.data.playerId;
-  if (!g.activeIds.has(pid)) return;
+  if (!g.activeIds.has(pid)) return "Only players in the match can vote.";
   if (!g.endVotes) g.endVotes = new Set();
-  if (g.endVotes.has(pid)) return;
+  if (g.endVotes.has(pid)) return "You've already voted to end the match.";
   g.endVotes.add(pid);
   if (checkVoteThresholds(io, room)) return;
   log(io, room, "system", null, `${g.names[pid]} wants to end the match (${g.endVotes.size}/${g.activeIds.size}).`);

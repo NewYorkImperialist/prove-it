@@ -235,6 +235,60 @@ describe("rooms.js — lobby lifecycle", () => {
     assert.match(res.error, /paused/);
   });
 
+  // Every button action used to be emitted with no ack callback at all, so the paused refusal
+  // above — and every engine refusal — was invisible: you pressed the button, nothing happened,
+  // and there was no way to tell a declined intent from a room that had gone deaf.
+  test("a button action sent while paused is refused out loud too, not just typed answers", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    await emit(a, "startMatch", {});
+    b.close();
+    await sleep(80);
+    assert.equal(roomsApi.rooms.get(created.code).game.paused, true);
+    for (const ev of ["voteSkip", "giveUp", "nextRound", "judge", "voteEnd"]) {
+      const res = await emit(a, ev, {});
+      assert.equal(res.ok, false, `${ev} answered ok while paused`);
+      assert.match(res.error, /paused/, `${ev} didn't say why`);
+    }
+  });
+
+  test("an action the engine turns down comes back with the reason", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    await emit(a, "startMatch", {});
+    await sleep(50);
+    const g = roomsApi.rooms.get(created.code).game;
+    assert.equal(g.phase, "opening"); // nothing to advance, nothing to pause, nobody proving
+
+    const next = await emit(a, "nextRound", {});
+    assert.equal(next.ok, false);
+    assert.match(next.error, /round isn't over/i);
+
+    const gaveUp = await emit(a, "giveUp", {});
+    assert.equal(gaveUp.ok, false);
+    assert.match(gaveUp.error, /give up/i);
+
+    // The opener isn't the challenger yet, so ruling on answers isn't theirs to do.
+    const judged = await emit(a, "judge", { answerId: "nope", accept: true });
+    assert.equal(judged.ok, false);
+    assert.match(judged.error, /challenger/i);
+  });
+
+  test("a vote the server accepted acks ok, and voting twice says so", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    await emit(a, "startMatch", {});
+    await sleep(50);
+    const first = await emit(a, "voteSkip", {});
+    assert.equal(first.ok, true, "a vote that was counted has to ack ok, or the UI can't tell");
+    const second = await emit(a, "voteSkip", {});
+    assert.equal(second.ok, false);
+    assert.match(second.error, /already voted/i);
+  });
+
   test("asking to spectate a room you hold a seat in resumes you as a PLAYER, not a spectator", async () => {
     const a = await connect(), b = await connect();
     const created = await emit(a, "createRoom", { name: "Alice" });

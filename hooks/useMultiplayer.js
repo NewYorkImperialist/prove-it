@@ -315,11 +315,11 @@ export function useMultiplayer({ router }) {
         case "leave": return leaveRoom();
         case "raise": return socket.emit("raise", {}, ackErr);
         case "proveIt": return socket.emit("proveIt", {}, ackErr);
-        case "giveUp": return socket.emit("giveUp");
-        case "nextRound": return socket.emit("nextRound");
-        case "pauseRound": return socket.emit("pauseRound");
-        case "voteEnd": return socket.emit("voteEnd");
-        case "raceVoteEnd": return socket.emit("raceVoteEnd");
+        case "giveUp": return socket.emit("giveUp", {}, ackErr);
+        case "nextRound": return socket.emit("nextRound", {}, ackErr);
+        case "pauseRound": return socket.emit("pauseRound", {}, ackErr);
+        case "voteEnd": return socket.emit("voteEnd", {}, ackErr);
+        case "raceVoteEnd": return socket.emit("raceVoteEnd", {}, ackErr);
         case "rematch": return socket.emit("rematch", {}, ackErr);
         default: return undefined;
       }
@@ -327,11 +327,24 @@ export function useMultiplayer({ router }) {
     [socket, ackErr, leaveRoom],
   );
 
-  const judge = useCallback((answerId, accept) => socket.emit("judge", { answerId, accept }), [socket]);
-  const rejectAll = useCallback(() => socket.emit("rejectAll"), [socket]);
-  const revokeGrant = useCallback((grantId) => socket.emit("revokeGrant", { grantId }), [socket]);
-  const voteSkip = useCallback(() => socket.emit("voteSkip"), [socket]);
-  const approveMiss = useCallback((targetId, missId) => socket.emit("raceApproveMiss", { targetId, missId }), [socket]);
+  // Every one of these used to be fire-and-forget, so a refusal — not your ruling to make, a
+  // vote already cast, a review window that had closed, or the game being paused — was
+  // indistinguishable from the room having gone deaf.
+  const judge = useCallback((answerId, accept) => socket.emit("judge", { answerId, accept }, ackErr), [socket, ackErr]);
+  const rejectAll = useCallback(() => socket.emit("rejectAll", {}, ackErr), [socket, ackErr]);
+  const revokeGrant = useCallback((grantId) => socket.emit("revokeGrant", { grantId }, ackErr), [socket, ackErr]);
+  const voteSkip = useCallback(() => socket.emit("voteSkip", {}, ackErr), [socket, ackErr]);
+  // Resolves to true/false so the reveal card can take its optimistic tick back off a refusal.
+  const approveMiss = useCallback(
+    (targetId, missId) =>
+      new Promise((resolve) => {
+        socket.emit("raceApproveMiss", { targetId, missId }, (r) => {
+          ackErr(r);
+          resolve(!!r?.ok);
+        });
+      }),
+    [socket, ackErr],
+  );
 
   /* ---------------- chat mode ---------------- */
   const typingActive = useRef(false);
@@ -846,12 +859,12 @@ export function useMultiplayer({ router }) {
         const g = gsRef.current;
         if (!g || g.phase !== "roundover" || !g.intermission || g.paused) return;
         e.preventDefault();
-        socket.emit("nextRound");
+        socket.emit("nextRound", {}, ackErr);
       }
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [router.view, socket, exitChat, enterChat, chatModeRef, inputValueRef, gsRef]);
+  }, [router.view, socket, exitChat, enterChat, chatModeRef, inputValueRef, gsRef, ackErr]);
 
   return {
     // identity + session

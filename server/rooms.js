@@ -457,21 +457,32 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     };
     const withDuelGame = (fn) => withGame((room, ...args) => { if (room.mode !== "race") fn(room, ...args); });
     const withRaceGame = (fn) => withGame((room, ...args) => { if (room.mode === "race") fn(room, ...args); });
+    // Button actions used to be emitted with no ack at all, so a refusal — including the paused
+    // refusal above, which was added precisely to stop intents vanishing — was invisible: you
+    // pressed Judge or Skip or Give up, nothing happened, and there was no way to tell whether
+    // the server had declined it or the room had gone deaf. The engine handlers return a reason
+    // string when they turn an intent down; anything else means they took it.
+    const acked = (fn) => (room, ...args) => {
+      const maybeAck = args[args.length - 1];
+      const ack = typeof maybeAck === "function" ? maybeAck : null;
+      const reason = fn(room, ...args);
+      if (ack) ack(typeof reason === "string" ? { ok: false, error: reason } : { ok: true });
+    };
     socket.on("open", withDuelGame((room, { n } = {}, ack) => engine.handleOpen(io, room, socket, n, ack)));
     socket.on("raise", withDuelGame((room, { toN } = {}, ack) => engine.handleRaise(io, room, socket, toN, ack)));
     socket.on("proveIt", withDuelGame((room, _p, ack) => engine.handleProveIt(io, room, socket, ack)));
     socket.on("answer", withDuelGame((room, { text } = {}, ack) => engine.handleAnswer(io, room, socket, text, ack)));
-    socket.on("judge", withDuelGame((room, { answerId, accept } = {}) => engine.handleJudge(io, room, socket, { answerId, accept })));
-    socket.on("rejectAll", withDuelGame((room) => engine.handleRejectAll(io, room, socket)));
-    socket.on("revokeGrant", withDuelGame((room, { grantId } = {}) => engine.handleRevokeGrant(io, room, socket, grantId)));
-    socket.on("giveUp", withDuelGame((room) => engine.handleGiveUp(io, room, socket)));
-    socket.on("pauseRound", withDuelGame((room) => engine.handlePauseRound(io, room, socket)));
-    socket.on("nextRound", withDuelGame((room) => engine.handleNextRound(io, room, socket)));
-    socket.on("voteSkip", withGame((room) => engineFor(room).handleVoteSkip(io, room, socket))); // both modes
-    socket.on("voteEnd", withDuelGame((room) => engine.handleVoteEnd(io, room, socket)));
+    socket.on("judge", withDuelGame(acked((room, { answerId, accept } = {}) => engine.handleJudge(io, room, socket, { answerId, accept }))));
+    socket.on("rejectAll", withDuelGame(acked((room) => engine.handleRejectAll(io, room, socket))));
+    socket.on("revokeGrant", withDuelGame(acked((room, { grantId } = {}) => engine.handleRevokeGrant(io, room, socket, grantId))));
+    socket.on("giveUp", withDuelGame(acked((room) => engine.handleGiveUp(io, room, socket))));
+    socket.on("pauseRound", withDuelGame(acked((room) => engine.handlePauseRound(io, room, socket))));
+    socket.on("nextRound", withDuelGame(acked((room) => engine.handleNextRound(io, room, socket))));
+    socket.on("voteSkip", withGame(acked((room) => engineFor(room).handleVoteSkip(io, room, socket)))); // both modes
+    socket.on("voteEnd", withDuelGame(acked((room) => engine.handleVoteEnd(io, room, socket))));
     socket.on("raceAnswer", withRaceGame((room, { text } = {}, ack) => raceEngine.handleAnswer(io, room, socket, text, ack)));
-    socket.on("raceApproveMiss", withRaceGame((room, { targetId, missId } = {}) => raceEngine.handleApproveMiss(io, room, socket, targetId, missId)));
-    socket.on("raceVoteEnd", withRaceGame((room) => raceEngine.handleVoteEnd(io, room, socket)));
+    socket.on("raceApproveMiss", withRaceGame(acked((room, { targetId, missId } = {}) => raceEngine.handleApproveMiss(io, room, socket, targetId, missId))));
+    socket.on("raceVoteEnd", withRaceGame(acked((room) => raceEngine.handleVoteEnd(io, room, socket))));
 
     // Chat — works any time you're in a room (lightly rate-limited; rendered separately from game messages).
     socket.on("chat", ({ text } = {}, ack) => {

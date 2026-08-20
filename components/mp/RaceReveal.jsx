@@ -60,9 +60,14 @@ export default function RaceReveal({ reveal: r, myId, onApproveMiss }) {
                       <button
                         type="button"
                         disabled={approved.has(key)}
-                        onClick={() => {
+                        // Optimistic: the tick shows straight away so a 25-chip reveal stays
+                        // responsive. But it has to come back off if the server says no —
+                        // otherwise a refused approval (review window closed, someone else
+                        // already ruled on it) sits there looking like it counted.
+                        onClick={async () => {
                           setApproved((s) => new Set(s).add(key));
-                          onApproveMiss(p.id, m.id);
+                          const ok = await onApproveMiss(p.id, m.id);
+                          if (!ok) setApproved((s) => { const n = new Set(s); n.delete(key); return n; });
                         }}
                         // 21px tall, and a reveal can carry 25 of these packed into inline chips —
                         // min-h-8 plus the chip's own padding gives a thumb something to aim at.

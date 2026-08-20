@@ -67,7 +67,7 @@ function resumeGame(io, room) {
 // Manual intermission pause · only valid between rounds while auto-advance is on.
 function handlePauseRound(io, room, socket) {
   const g = room.game;
-  if (!g || g.phase !== "roundover" || g.intermission || !g.autoAdvance) return;
+  if (!g || g.phase !== "roundover" || g.intermission || !g.autoAdvance) return "There's nothing to pause right now.";
   clearTimer(room); // cancel the auto-advance to the next round
   g.intermission = true;
   log(io, room, "system", null, `${g.names[socket.data.playerId]} paused the game.`);
@@ -77,17 +77,17 @@ function handlePauseRound(io, room, socket) {
 // Either player advances to the next round (manual auto-advance-off mode, or resume from pause).
 function handleNextRound(io, room, socket) {
   const g = room.game;
-  if (!g || g.phase !== "roundover") return;
+  if (!g || g.phase !== "roundover") return "The round isn't over yet.";
   beginRound(io, room);
 }
 // Vote to end the whole match · endless mode only, needs both players to agree. Player-visible
 // wording says "match" throughout (lib/duel-view.js's "End match" button, race-engine's logs).
 function handleVoteEnd(io, room, socket) {
   const g = room.game;
-  if (!g || g.target !== Infinity || g.phase === "matchover") return; // endless only
+  if (!g || g.target !== Infinity || g.phase === "matchover") return "Only an endless match can be ended by vote."; // endless only
   const pid = socket.data.playerId;
   if (!g.endVotes) g.endVotes = new Set();
-  if (g.endVotes.has(pid)) return; // one vote per player
+  if (g.endVotes.has(pid)) return "You've already voted to end the match."; // one vote per player
   g.endVotes.add(pid);
   if (g.endVotes.size >= 2) {
     const [a, b] = g.order;
@@ -114,10 +114,10 @@ function handleVoteEnd(io, room, socket) {
 // Vote to skip the current category · needs both players to agree. Only before the duel starts.
 function handleVoteSkip(io, room, socket) {
   const g = room.game;
-  if (!g || (g.phase !== "opening" && g.phase !== "bidding")) return;
+  if (!g || (g.phase !== "opening" && g.phase !== "bidding")) return "It's too late to skip this category.";
   const pid = socket.data.playerId;
   if (!g.skipVotes) g.skipVotes = new Set();
-  if (g.skipVotes.has(pid)) return; // one vote per player
+  if (g.skipVotes.has(pid)) return "You've already voted to skip."; // one vote per player
   g.skipVotes.add(pid);
   if (g.skipVotes.size >= 2) {
     log(io, room, "system", null, "Both players skipped · new category.");
@@ -383,7 +383,7 @@ function handleAnswer(io, room, socket, text, ack) {
 // round and during the forced end-of-round click-through.
 function handleJudge(io, room, socket, { answerId, accept } = {}) {
   const g = room.game;
-  if (!g || socket.data.playerId !== g.challengerId) return;
+  if (!g || socket.data.playerId !== g.challengerId) return "Only the challenger rules on answers.";
   if (g.phase === "proving") {
     // live ruling: judge any pending answer
     const p = g.pending.get(answerId);
@@ -405,7 +405,7 @@ function handleJudge(io, room, socket, { answerId, accept } = {}) {
 // Reject everything still pending in one tap (kills end-of-round spam).
 function handleRejectAll(io, room, socket) {
   const g = room.game;
-  if (!g || socket.data.playerId !== g.challengerId) return;
+  if (!g || socket.data.playerId !== g.challengerId) return "Only the challenger rules on answers.";
   if (g.phase === "proving") {
     if (g.pending.size === 0) return;
     const n = g.pending.size; g.pending.clear();
@@ -441,8 +441,8 @@ function applyRuling(io, room, p, accept) {
 // ("Norway"), which matched the real list entry and would otherwise double-count the same item.
 function handleRevokeGrant(io, room, socket, grantId) {
   const g = room.game;
-  if (!g || socket.data.playerId !== g.challengerId) return;
-  if (g.phase !== "proving" && g.phase !== "judging") return;
+  if (!g || socket.data.playerId !== g.challengerId) return "Only the challenger can take an answer back.";
+  if (g.phase !== "proving" && g.phase !== "judging") return "That answer can't be taken back any more.";
   const idx = (g.granted || []).findIndex((gr) => gr.id === grantId);
   if (idx === -1) return;
   const [removed] = g.granted.splice(idx, 1);
@@ -458,7 +458,7 @@ function finalizeJudging(io, room) {
 
 function handleGiveUp(io, room, socket) {
   const g = room.game;
-  if (!g || g.phase !== "proving" || socket.data.playerId !== g.turnId) return;
+  if (!g || g.phase !== "proving" || socket.data.playerId !== g.turnId) return "You can only give up while proving your own claim.";
   roundOver(io, room, g.challengerId, `${g.names[socket.data.playerId]} gave up`);
 }
 

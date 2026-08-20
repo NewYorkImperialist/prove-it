@@ -179,6 +179,7 @@ function log(io, room, by, name, text, kind) { io.to(room.code).emit("raceLog", 
 
 // ---------- lifecycle ----------
 function startMatch(io, room) {
+  clearTimer(room); // a rematch can still have the previous match's result pause pending
   const order = [...room.players.keys()];
   const names = Object.fromEntries([...room.players.values()].map((p) => [p.id, p.name]));
   const s = { ...DEFAULTS, ...(room.settings || {}) };
@@ -395,15 +396,7 @@ function handleVoteSkip(io, room, socket) {
   if (g.skipVotes.has(pid)) return; // one vote each
   g.skipVotes.add(pid);
 
-  if (g.skipVotes.size >= g.activeIds.size) {
-    clearTimer(room);
-    log(io, room, "system", null, `Everyone skipped ${g.current.name} · new category.`);
-    report(room, "event", { type: "categorySkipped", detail: g.current.name });
-    // The skipped round never happened: rewind the counter so the replacement keeps its number
-    // and a best-of-N match isn't quietly shortened.
-    g.round--;
-    return beginRound(io, room, { tiebreaker: g.isTiebreaker });
-  }
+  if (checkVoteThresholds(io, room)) return;
   log(io, room, "system", null, `${g.names[pid]} wants to skip this category (${g.skipVotes.size}/${g.activeIds.size}).`);
   emit(io, room);
 }
@@ -417,27 +410,61 @@ function handleVoteEnd(io, room, socket) {
   if (!g.endVotes) g.endVotes = new Set();
   if (g.endVotes.has(pid)) return;
   g.endVotes.add(pid);
-  if (g.endVotes.size >= g.activeIds.size) {
-    let best = -1, winners = [];
-    for (const id of g.activeIds) {
-      const w = g.roundWins[id] || 0;
-      if (w > best) { best = w; winners = [id]; } else if (w === best) winners.push(id);
-    }
-    clearTimer(room);
-    if (winners.length === 1) return matchOver(io, room, winners[0], "vote-end");
-    g.phase = "matchover"; g.deadline = null; g.matchWinnerId = null;
-    log(io, room, "system", null, "Game ended by vote · it's a tie!");
-    report(room, "end", { winnerId: null, reason: "vote-end" });
-    return emit(io, room);
-  }
+  if (checkVoteThresholds(io, room)) return;
   log(io, room, "system", null, `${g.names[pid]} wants to end the game (${g.endVotes.size}/${g.activeIds.size}).`);
+  emit(io, room);
+}
+
+// Both votes need EVERY active player to agree, so the tally can be met two ways: a new ballot, or
+// the active set shrinking under a tally already cast. Checking only on a ballot meant a departure
+// left the vote stuck — the count read "3/3" while one vote each (above) stopped anyone re-voting.
+const skipVotePassed = (g) =>
+  (g.phase === "countdown" || g.phase === "live") && g.activeIds.size > 0 && g.skipVotes?.size >= g.activeIds.size;
+const endVotePassed = (g) =>
+  g.winsNeeded == null && g.phase !== "matchover" && g.activeIds.size > 0 && g.endVotes?.size >= g.activeIds.size;
+
+// Returns true if a vote passed and moved the game on — callers must not emit again after that.
+function checkVoteThresholds(io, room) {
+  const g = room.game;
+  if (!g) return false;
+  if (skipVotePassed(g)) { passSkipVote(io, room); return true; }
+  if (endVotePassed(g)) { passEndVote(io, room); return true; }
+  return false;
+}
+
+function passSkipVote(io, room) {
+  const g = room.game;
+  clearTimer(room);
+  log(io, room, "system", null, `Everyone skipped ${g.current.name} · new category.`);
+  report(room, "event", { type: "categorySkipped", detail: g.current.name });
+  // The skipped round never happened: rewind the counter so the replacement keeps its number
+  // and a best-of-N match isn't quietly shortened.
+  g.round--;
+  beginRound(io, room, { tiebreaker: g.isTiebreaker });
+}
+
+function passEndVote(io, room) {
+  const g = room.game;
+  let best = -1, winners = [];
+  for (const id of g.activeIds) {
+    const w = g.roundWins[id] || 0;
+    if (w > best) { best = w; winners = [id]; } else if (w === best) winners.push(id);
+  }
+  clearTimer(room);
+  if (winners.length === 1) return matchOver(io, room, winners[0], "vote-end");
+  g.phase = "matchover"; g.deadline = null; g.matchWinnerId = null; g.paused = false;
+  log(io, room, "system", null, "Game ended by vote · it's a tie!");
+  report(room, "end", { winnerId: null, reason: "vote-end" });
   emit(io, room);
 }
 
 function matchOver(io, room, winnerId, reason) {
   clearTimer(room);
   const g = room.game;
-  g.phase = "matchover"; g.deadline = null; g.matchWinnerId = winnerId || null;
+  // The match is decided, so there is nothing left to wait for. Leaving `paused` set meant the
+  // winner of a forfeit kept reading "waiting up to 30s for them to reconnect…" with no Play
+  // again or Leave button, because race-view lets a paused game blank out every action.
+  g.phase = "matchover"; g.deadline = null; g.matchWinnerId = winnerId || null; g.paused = false;
   log(io, room, "system", null, winnerId ? `${g.names[winnerId]} wins the match!` : "Match over.");
   report(room, "end", { winnerId: winnerId || null, reason: reason || "win" });
   io.to(room.code).emit("raceMatchOver", {
@@ -458,14 +485,32 @@ function playerLeftMatch(io, room, leaverId) {
   if (!g.leftPlayers) g.leftPlayers = new Set();
   g.leftPlayers.add(leaverId);
   if (g.tiebreakerCandidates) g.tiebreakerCandidates.delete(leaverId);
+  // Someone who left can't be part of a unanimous vote. Dropping their ballot keeps a skip from
+  // passing on behalf of a player who never agreed, and stops the count reading "3/3" forever
+  // once the room shrank under it — nobody can vote twice, so a stale tally deadlocks the vote.
+  g.skipVotes?.delete(leaverId);
+  g.endVotes?.delete(leaverId);
   log(io, room, "system", null, `${g.names[leaverId] || "A player"} left the race.`);
   if (g.activeIds.size <= 1 && g.phase !== "roundover") {
     // mid-round with only one player left — end it now rather than waiting on the clock.
     clearTimer(room);
     return matchOver(io, room, [...g.activeIds][0] || null, "forfeit");
   }
+  // Their disconnect is what paused us, and they're gone for good now — so the wait is over and
+  // the survivors' clocks have to start again. Leaving `paused` set froze the round permanently:
+  // resumeGame is the only other thing that clears it, and it only runs for a player who returns.
+  if (g.paused) {
+    // …unless someone ELSE is still mid-reconnect, in which case we're rightly still waiting.
+    if ([...room.players.values()].some((p) => !p.connected)) return emit(io, room);
+    resumeGame(io, room); // clears the pause, hands the clocks back, re-arms, pushes state
+    checkVoteThresholds(io, room); // must come after: a skip deals a round, which needs live clocks
+    return;
+  }
+  // The vote they were blocking may now be unanimous among who's left. Check before touching the
+  // clocks, since a passing skip deals a fresh round and arms them itself.
+  if (checkVoteThresholds(io, room)) return;
   // They may have been the last clock the others were waiting on.
-  if (g.phase === "live" && !g.paused) {
+  if (g.phase === "live") {
     if (allClocksDone(g)) return endLiveRound(io, room);
     armRoundClock(io, room);
   }

@@ -93,7 +93,7 @@ function handleVoteEnd(io, room, socket) {
     const sa = g.scores[a] || 0, sb = g.scores[b] || 0;
     if (sa === sb) { // ended by mutual vote with a tied score
       clearTimer(room);
-      g.phase = "matchover"; g.deadline = null; g.matchWinnerId = null;
+      g.phase = "matchover"; g.deadline = null; g.matchWinnerId = null; g.paused = false;
       log(io, room, "system", null, `Game ended by vote · it's a tie! (${sa}–${sb})`);
       return emit(io, room);
     }
@@ -155,6 +155,7 @@ function log(io, room, by, name, text, kind) { io.to(room.code).emit("log", { by
 
 // ---------- lifecycle ----------
 function startMatch(io, room) {
+  clearTimer(room); // a rematch can still have the previous match's intermission pending
   const order = [...room.players.keys()];
   const names = Object.fromEntries([...room.players.values()].map((p) => [p.id, p.name]));
   const s = { ...DEFAULTS, ...(room.settings || {}) };
@@ -454,7 +455,7 @@ function roundOver(io, room, winnerId, reason) {
 function matchOver(io, room, winnerId, reason) {
   clearTimer(room);
   const g = room.game;
-  g.phase = "matchover"; g.deadline = null; g.matchWinnerId = winnerId;
+  g.phase = "matchover"; g.deadline = null; g.matchWinnerId = winnerId; g.paused = false; // nothing left to wait for
   log(io, room, "system", null, winnerId ? `${g.names[winnerId]} wins the match! (${g.scores[g.order[0]]}–${g.scores[g.order[1]]})` : "Match over.");
   report(room, "end", { winnerId, reason: reason || "win" });
   emit(io, room);

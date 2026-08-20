@@ -141,6 +141,77 @@ describe("rooms.js — lobby lifecycle", () => {
     assert.ok(roomsApi.rooms.get(created.code).game, "room.game should be populated once the match starts");
   });
 
+  test("startMatch refuses to restart a match that's already running", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    await emit(a, "startMatch", {});
+    const game = roomsApi.rooms.get(created.code).game;
+
+    const again = await emit(a, "startMatch", {});
+    assert.equal(again.ok, false);
+    assert.match(again.error, /already in progress/);
+    // Restarting would have thrown away everyone's scores mid-round AND left the discarded
+    // game's timers firing against the replacement — one open-timeout scoring twice.
+    assert.equal(roomsApi.rooms.get(created.code).game, game, "the live game object must survive");
+  });
+
+  test("startMatch won't start against a player who is mid-reconnect", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    b.close(); // Bob drops, but keeps his seat for the grace window
+    await sleep(80);
+
+    const res = await emit(a, "startMatch", {});
+    assert.equal(res.ok, false);
+    assert.match(res.error, /reconnect/);
+    assert.ok(!roomsApi.rooms.get(created.code).game, "no match should have been dealt");
+  });
+
+  test("a gameplay intent sent while paused is refused out loud, not silently dropped", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    await emit(a, "startMatch", {});
+    b.close(); // Bob drops → the game pauses, but the phase and turn are untouched
+    await sleep(80);
+    assert.equal(roomsApi.rooms.get(created.code).game.paused, true);
+
+    // The client still classifies typing as an answer here, so an unacked drop cleared the
+    // input and sent the text nowhere. The ack is what lets the UI say why.
+    const res = await emit(a, "answer", { text: "norway" });
+    assert.equal(res.ok, false);
+    assert.match(res.error, /paused/);
+  });
+
+  test("asking to spectate a room you hold a seat in resumes you as a PLAYER, not a spectator", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+
+    // Same playerId as a seated player. The client keys its read-only spectator UI off this
+    // ack's `spectator` flag, so saying "true" here would leave a real player unable to play.
+    const res = await emit(b, "spectateRoom", { code: created.code, name: "Bob", playerId: joined.you });
+    assert.equal(res.ok, true);
+    assert.notEqual(res.spectator, true, "a seated player must never be acked as a spectator");
+    const room = roomsApi.rooms.get(created.code);
+    assert.equal(room.spectators.size, 0, "and must not be moved into the spectator list");
+  });
+
+  test("each disconnected player gets their own forfeit countdown", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    a.close(); b.close();
+    await sleep(120);
+    // A single room-wide timer meant the second disconnect cancelled the first player's
+    // countdown, so that player kept their seat forever and the room stayed paused.
+    const room = roomsApi.rooms.get(created.code);
+    assert.equal(room.players.size, 2, "both seats are still held during the grace window");
+    assert.equal(room.graceTimeouts.size, 2, "both players must be counting down, not just the last one");
+  });
+
   test("leaveRoom frees the slot so someone else can take it, and empties the room when everyone leaves", async () => {
     const a = await connect(), b = await connect();
     const created = await emit(a, "createRoom", { name: "Alice" });

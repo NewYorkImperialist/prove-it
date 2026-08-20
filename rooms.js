@@ -1,6 +1,7 @@
 "use strict";
 // Multiplayer room state + the Socket.IO connection/event wiring. A room is:
-//   code -> { code, hostId, status, settings, players: Map<playerId, {id,name,socketId,connected}>, graceTimeout }
+//   code -> { code, hostId, status, settings, players: Map<playerId, {id,name,socketId,connected}>,
+//             graceTimeouts: Map<playerId, Timeout> }
 // Identity is the stable playerId (the client keeps it in sessionStorage), NOT the
 // socket id — so a reconnect with a new socket re-claims the same player slot.
 
@@ -90,7 +91,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       settings: settings || (isRace
         ? { groups: [...DEFAULT_GROUPS], timer: 45, format: 5, suddenDeath: false, maxPlayers: MAX_RACE_PLAYERS, increment: 0 }
         : { groups: [...DEFAULT_GROUPS], timer: 30, target: 5, autoAdvance: true, increment: 0 }),
-      players: new Map(), spectators: new Map(), graceTimeout: null, createdAt: now, lastActivityAt: now };
+      players: new Map(), spectators: new Map(), graceTimeouts: new Map(), createdAt: now, lastActivityAt: now };
     room.players.set(hostId, { id: hostId, name: cleanName(hostName), socketId, connected: true });
     rooms.set(code, room);
     stats.roomsCreated++; stats.peakRooms = Math.max(stats.peakRooms, rooms.size);
@@ -106,13 +107,19 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     if (socket.data.session) { socket.data.session.joined = true; socket.data.session.name = p.name; }
   }
 
+  // Is every seated player currently online? (A paused match may only resume once they all are.)
+  const allConnected = (room) => [...room.players.values()].every((p) => p.connected);
+
   // Full removal (explicit leave, or grace expiry).
   function removePlayer(room, playerId) {
     const wasInGame = !!room.game;
     room.players.delete(playerId);
-    if (room.graceTimeout) { clearTimeout(room.graceTimeout); room.graceTimeout = null; }
+    // Only this player's countdown — anyone else who is mid-reconnect keeps their own.
+    clearTimeout(room.graceTimeouts?.get(playerId));
+    room.graceTimeouts?.delete(playerId);
     if (room.players.size === 0) {
       if (room.game?.timeout) clearTimeout(room.game.timeout);
+      for (const t of room.graceTimeouts?.values() || []) clearTimeout(t);
       rooms.delete(room.code);
       return;
     }
@@ -128,7 +135,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     const room = rooms.get(code);
     if (!room) return false;
     if (room.game?.timeout) clearTimeout(room.game.timeout);
-    if (room.graceTimeout) clearTimeout(room.graceTimeout);
+    for (const t of room.graceTimeouts?.values() || []) clearTimeout(t);
     rooms.delete(code);             // remove first: any reconnect-resume will now fail → client lands home
     io.to(code).emit("roomClosed"); // clean clients leave with a message…
     // …then hard-evict everyone once the message flushes (covers any stale/cached client too)
@@ -173,11 +180,18 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
 
     function doResume(room, pid, ack) {
       attach(room, socket, pid);
-      if (room.graceTimeout) { clearTimeout(room.graceTimeout); room.graceTimeout = null; }
+      // They're back — cancel their own forfeit countdown, not another player's.
+      clearTimeout(room.graceTimeouts?.get(pid));
+      room.graceTimeouts?.delete(pid);
       io.to(room.code).emit("opponentStatus", { connected: true, name: room.players.get(pid).name });
       ack?.({ ok: true, code: room.code, you: pid, inGame: !!room.game, mode: room.mode });
       broadcast(room);
-      if (room.game) engineFor(room).resumeGame(io, room); // unpause + push game state
+      // Unpause only once EVERYONE is back: with a per-player grace timer two players can be
+      // away at the same time, and the first one to return must not restart the other's clock.
+      if (room.game) {
+        if (allConnected(room)) engineFor(room).resumeGame(io, room); // unpause + push game state
+        else engineFor(room).resync(io, room); // still waiting on someone — just catch them up
+      }
     }
 
     // mode: "duel" (default) or "race". raceSettings: {groups, timer, format, suddenDeath, maxPlayers, increment} — ignored for duel rooms.
@@ -346,6 +360,15 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       if (!room) return ack?.({ ok: false, error: "You're not in a room." });
       if (room.hostId !== socket.data.playerId) return ack?.({ ok: false, error: "Only the host can start." });
       if (room.players.size < minFor(room)) return ack?.({ ok: false, error: room.mode === "race" ? "Need at least 2 players to start." : "Need 2 players to start." });
+      // A match already in progress is not restartable: starting over would throw away everyone's
+      // scores mid-round, and the discarded game's timers would keep firing against the new one.
+      // Use "rematch" once it's over instead.
+      if (room.game || room.status === "started") return ack?.({ ok: false, error: "That game is already in progress." });
+      // Don't start against someone who is mid-reconnect — the match would run unpaused with a
+      // player who can't see it, then forfeit the moment their grace window expired.
+      for (const pl of room.players.values()) {
+        if (!pl.connected) return ack?.({ ok: false, error: `Waiting for ${pl.name} to reconnect…` });
+      }
       room.status = "started";
       stats.gamesStarted++;
       for (const pl of room.players.values()) { const sk = io.sockets.sockets.get(pl.socketId); if (sk?.data?.session) sk.data.session.played = true; }
@@ -358,9 +381,19 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     // Game actions are players-only — spectators (not in room.players) are silently ignored.
     // Duel/race events are further gated by mode so, e.g., a stray "voteEnd" from a duel client
     // can never reach a race room's game state (their shapes aren't compatible).
+    // A paused game drops the intent — but it has to SAY so. Pause leaves the phase and turn
+    // untouched, so the client still classifies typing as an answer; dropping it without an ack
+    // meant the input cleared, the error branch never ran, and the text reached nobody.
     const withGame = (fn) => (...args) => {
       const room = rooms.get(socket.data.roomCode);
-      if (room && room.game && !room.game.paused && room.players.has(socket.data.playerId)) { touch(room); fn(room, ...args); }
+      if (!room || !room.game || !room.players.has(socket.data.playerId)) return;
+      if (room.game.paused) {
+        const ack = args[args.length - 1];
+        if (typeof ack === "function") ack({ ok: false, error: "The game is paused — press / to chat instead." });
+        return;
+      }
+      touch(room);
+      fn(room, ...args);
     };
     const withDuelGame = (fn) => withGame((room, ...args) => { if (room.mode !== "race") fn(room, ...args); });
     const withRaceGame = (fn) => withGame((room, ...args) => { if (room.mode === "race") fn(room, ...args); });
@@ -428,8 +461,11 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       if (room.game) engineFor(room).pauseGame(io, room);
       io.to(code).emit("opponentStatus", { connected: false, name: p.name, graceMs: GRACE_MS });
       broadcast(room);
-      if (room.graceTimeout) clearTimeout(room.graceTimeout);
-      room.graceTimeout = setTimeout(() => { room.graceTimeout = null; removePlayer(room, pid); }, GRACE_MS);
+      // One timer PER PLAYER: a single room-wide timer meant a second disconnect cancelled the
+      // first player's countdown, so they kept their seat forever and the room stayed paused.
+      if (!room.graceTimeouts) room.graceTimeouts = new Map();
+      clearTimeout(room.graceTimeouts.get(pid));
+      room.graceTimeouts.set(pid, setTimeout(() => { room.graceTimeouts.delete(pid); removePlayer(room, pid); }, GRACE_MS));
     });
   });
 

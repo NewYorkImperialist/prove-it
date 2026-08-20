@@ -183,10 +183,14 @@ export function useMultiplayer({ router }) {
 
   /* ---------------- entering a room ---------------- */
   const enterRoom = useCallback(
-    (res, { spectator = false, name } = {}) => {
+    (res, { name } = {}) => {
       myIdRef.current = res.you;
       rememberRoom(res.code);
-      if (spectator) rememberSpectator(true);
+      // The server decides the role, not our request: "spectateRoom" on a code you still hold a
+      // seat in resumes you as a PLAYER (rooms.js doResume), and so does joinRoom on your own
+      // code. Trusting our own intent here would leave a seated player in the read-only
+      // spectator UI — unable to open, raise, call or answer — until their turns timed out.
+      rememberSpectator(!!res.spectator);
       if (name) rememberName(name);
       router.go(res.inGame ? "game" : "room");
       applyCrown();
@@ -200,7 +204,7 @@ export function useMultiplayer({ router }) {
       setErr(key, "");
       socket.emit("createRoom", { name, playerId, ...(roomMode === "race" ? { mode: "race" } : {}) }, (res) => {
         if (!res?.ok) return setErr(key, res?.error || "Could not create room.");
-        enterRoom({ ...res, inGame: false }, { name });
+        enterRoom(res, { name });
       });
     },
     [socket, playerId, setErr, enterRoom],
@@ -217,7 +221,10 @@ export function useMultiplayer({ router }) {
           const hint = roomMode === "race" ? " (not sure of the code?)" : " (tap Spectate to watch)";
           return setErr(key, (res?.error || "Could not join room.") + hint);
         }
-        enterRoom({ ...res, inGame: false }, { name });
+        // Joining a code you already hold a seat in resumes that seat (rooms.js doResume), and
+        // the ack says whether a match is live — overriding it with false dropped a returning
+        // player into the waiting room while their match ran on without them.
+        enterRoom(res, { name });
       });
     },
     [socket, playerId, setErr, enterRoom],
@@ -230,7 +237,7 @@ export function useMultiplayer({ router }) {
       if (c.length < 4) return setErr("home", "Enter the room code to spectate.");
       socket.emit("spectateRoom", { code: c, name, playerId }, (res) => {
         if (!res?.ok) return setErr("home", res?.error || "Could not spectate.");
-        enterRoom(res, { spectator: true, name });
+        enterRoom(res, { name });
       });
     },
     [socket, playerId, setErr, enterRoom],
@@ -365,6 +372,16 @@ export function useMultiplayer({ router }) {
     if (raw[0] === "/") { // fallback: a "/"-prefixed message is chat
       setInputValue("");
       return sendChat(raw.slice(1).trim());
+    }
+
+    // A pause leaves the phase and the turn untouched, so without this the text below would be
+    // classified as a game action, dropped by the server and cleared from the box — silently.
+    // Keep it and say why, rather than routing it to chat: in a race that would broadcast an
+    // answer to players who are still racing.
+    if ((isRace ? raceGsRef.current : gsRef.current)?.paused) {
+      shakeInput();
+      flashStatus("The game is paused — press / to chat instead.");
+      return; // the text stays put, so they can add the "/" themselves
     }
 
     if (isRace) {
@@ -658,7 +675,16 @@ export function useMultiplayer({ router }) {
             rememberRoom(null);
             router.go("home");
             maybeAutoJoinInvite();
-          } else applyCrown();
+          } else {
+            // A reload builds this hook from scratch, so re-adopt our identity and go where the
+            // server says we are. Without this a refresh mid-match left the player on the home
+            // menu while the server silently re-claimed their seat: unpaused, still on the
+            // clock, losing every turn by timeout. The spectator and ghost branches route the
+            // same way — this one used to be the odd one out.
+            myIdRef.current = res.you;
+            router.go(res.inGame ? "game" : "room");
+            applyCrown();
+          }
         });
       } else if (url.spectate) {
         socket.emit("spectateRoom", { code: url.spectate, name: store.getMpName(), playerId }, (res) => {

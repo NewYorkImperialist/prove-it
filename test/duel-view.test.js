@@ -140,6 +140,12 @@ describe("frozen while an opponent reconnects", () => {
     assert.equal(v.canSkip, false);
     assert.match(v.statusText, /waiting up to 30s/);
   });
+  test("but a finished match keeps its result and its exits", () => {
+    const v = view({ phase: "matchover", matchWinnerId: ME, paused: true }, { iAmHost: true });
+    assert.equal(v.frozen, false);
+    assert.match(v.statusText, /win/i);
+    assert.ok(actions(v).includes("leave"), "there has to be a way out of a decided match");
+  });
 });
 
 describe("duelAutoMode", () => {

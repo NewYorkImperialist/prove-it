@@ -485,6 +485,29 @@ describe("handleVoteSkip", () => {
     assert.equal(room.game.phase, "countdown"); // two of two remaining players is unanimous
   });
 
+  test("a departure re-checks the tally, so a vote that's now unanimous passes", () => {
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2", "p3"] });
+    room.game.pool = [testCategory(), testCategory({ name: "Second Cat" })];
+    engine.handleVoteSkip(io, room, sock("p1"));
+    engine.handleVoteSkip(io, room, sock("p2"));
+    assert.equal(room.game.phase, "live"); // 2/3 — the holdout hasn't voted
+    engine.playerLeftMatch(io, room, "p3"); // …and now they never will
+    assert.equal(room.game.phase, "countdown", "the vote must be re-checked when the room shrinks");
+    assert.equal(room.game.round, 1);
+  });
+
+  test("a leaver's ballot is dropped, so it can't pass a skip nobody else agreed to", () => {
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2", "p3"] });
+    engine.handleVoteSkip(io, room, sock("p3"));
+    assert.equal(room.game.skipVotes.size, 1);
+    engine.playerLeftMatch(io, room, "p3");
+    assert.equal(room.game.skipVotes.has("p3"), false, "a departed player's ballot must not linger");
+    engine.handleVoteSkip(io, room, sock("p1"));
+    assert.equal(room.game.phase, "live", "p1 alone is not unanimous among the two who remain");
+    engine.handleVoteSkip(io, room, sock("p2"));
+    assert.equal(room.game.phase, "countdown");
+  });
+
   test("it works during the countdown, before anyone has typed anything", () => {
     const io = makeIO(); const room = liveRoom();
     room.game.phase = "countdown";
@@ -558,6 +581,54 @@ describe("playerLeftMatch (N-player forfeit)", () => {
     // p3 is gone from activeIds, so they don't appear in the reveal or win the round — this is
     // the documented v1 behavior (their round is simply forfeited along with them).
     assert.ok(!reveal.perPlayer.some((p) => p.id === "p3"));
+  });
+
+  test("a permanent disconnect unfreezes the round for whoever is left", () => {
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2", "p3"] });
+    room.players.get("p3").connected = false;
+    engine.pauseGame(io, room);
+    assert.equal(room.game.paused, true);
+    room.players.delete("p3"); // grace expired — rooms.js drops the seat, then tells the engine
+    engine.playerLeftMatch(io, room, "p3");
+    assert.equal(room.game.paused, false, "the player we were waiting for is gone — stop waiting");
+    assert.equal(room.game.phase, "live");
+    assert.ok(room.game.deadlines.p1 > Date.now(), "the survivors' clocks have to be running again");
+  });
+
+  test("…but stays paused while a different player is still mid-reconnect", () => {
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2", "p3"] });
+    room.players.get("p2").connected = false;
+    room.players.get("p3").connected = false;
+    engine.pauseGame(io, room);
+    room.players.delete("p3");
+    engine.playerLeftMatch(io, room, "p3");
+    assert.equal(room.game.paused, true, "p2 is still away, so the wait genuinely isn't over");
+  });
+
+  test("a departure that both unpauses AND completes a skip vote lands on a live round", () => {
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2", "p3"] });
+    room.game.pool = [testCategory(), testCategory({ name: "Second Cat" })];
+    engine.handleVoteSkip(io, room, sock("p1"));
+    engine.handleVoteSkip(io, room, sock("p2")); // 2/3
+    room.players.get("p3").connected = false;
+    engine.pauseGame(io, room);
+    room.players.delete("p3");
+    engine.playerLeftMatch(io, room, "p3");
+    // The pause has to lift BEFORE the skip deals the replacement round, or the new round is
+    // dealt into a paused game and armRoundClock bails — freezing it all over again.
+    assert.equal(room.game.paused, false);
+    assert.equal(room.game.phase, "countdown");
+    assert.equal(room.game.round, 1, "the skipped round must not burn a round number");
+  });
+
+  test("a forfeit clears the pause, so the winner isn't stranded on a frozen screen", () => {
+    const io = makeIO(); const room = liveRoom({ players: ["p1", "p2"] });
+    room.players.get("p2").connected = false;
+    engine.pauseGame(io, room);
+    room.players.delete("p2");
+    engine.playerLeftMatch(io, room, "p2");
+    assert.equal(room.game.phase, "matchover");
+    assert.equal(room.game.paused, false, "a decided match is never waiting for a reconnect");
   });
 });
 

@@ -124,6 +124,14 @@ describe("spectators and pauses", () => {
     assert.deepEqual(actions(v), []);
     assert.match(v.statusText, /waiting up to 30s/);
   });
+  test("a finished match keeps its result and its exits even if the snapshot still says paused", () => {
+    // A forfeit ends the match while the room was paused waiting on the player who left. Letting
+    // `paused` win here stranded the winner on "waiting up to 30s…" with no button to leave.
+    const v = view({ paused: true, phase: "matchover", matchWinnerId: ME }, { iAmHost: true });
+    assert.equal(v.frozen, false);
+    assert.deepEqual(actions(v), ["rematch", "leave"]);
+    assert.match(v.statusText, /wins the match/);
+  });
 });
 
 describe("raceClockDeadline", () => {

@@ -197,9 +197,18 @@
   vector-effect: non-scaling-stroke;
   transition: fill 0.2s ease;
 }
-.geomap-c.lit { fill: var(--color-accent); stroke: #fff3dc; }
 .geodot { fill: #fff; stroke: rgba(0, 0, 0, 0.45); stroke-width: 0.4; } /* microstate marker */
+/* Borders quiz: the one shape you're currently naming — a distinct pulsing blue, never confused
+   with "lit" (already solved, amber). .lit rules come after so a shape mid-transition between
+   the two states (there shouldn't be one, but just in case) reads as solved. */
+.geomap-c.quiz-target { fill: rgba(92, 200, 255, 0.35); stroke: #5cc8ff; stroke-width: 2.4; animation: quiz-pulse 1.4s ease-in-out infinite; }
+.geodot.quiz-target { fill: #5cc8ff; stroke: #fff; stroke-width: 1.2; animation: quiz-pulse 1.4s ease-in-out infinite; }
+.geomap-c.lit { fill: var(--color-accent); stroke: #fff3dc; }
 .geodot.lit { fill: var(--color-accent); stroke: #fff3dc; }
+@keyframes quiz-pulse {
+  0%, 100% { filter: drop-shadow(0 0 0 rgba(92, 200, 255, 0)); }
+  50% { filter: drop-shadow(0 0 7px rgba(92, 200, 255, 0.95)); }
+}
 /* "show what's left" — highlight everything not yet named */
 .geomap-svg.showrem .geomap-c:not(.lit) { stroke: #5cc8ff; stroke-width: 1.7; fill: rgba(92, 200, 255, 0.14); }
 .geomap-svg.showrem .geodot:not(.lit) { fill: #5cc8ff; r: 5; }
@@ -215,6 +224,7 @@
   color: var(--color-muted);
   text-align: center;
 }
+.geobox.quiz-target { border-style: solid; border-color: #5cc8ff; background: rgba(92, 200, 255, 0.14); color: #5cc8ff; font-weight: 700; animation: quiz-pulse 1.4s ease-in-out infinite; }
 .geobox.lit { border-style: solid; border-color: var(--color-accent); background: var(--color-accdim); color: var(--color-accent); font-weight: 700; }
 /* "Show what's left" marks the un-named shapes and dots; the boxes are part of the board too. */
 .geomap-boxes.showrem .geobox:not(.lit) { border-color: #5cc8ff; color: #5cc8ff; }

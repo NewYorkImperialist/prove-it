@@ -81,9 +81,14 @@ describe("geography boards", () => {
     assert.equal(geoMode("World Capitals"), "fill");
     assert.equal(geoMode("US State Capitals"), "fill");
   });
+  test("Borders quizzes get the same big map as their Countries counterpart", () => {
+    assert.equal(geoMode("Borders of the World"), "map");
+    assert.equal(geoMode("Borders of Oceania"), "map");
+  });
   test("everything else gets no board", () => {
     assert.equal(geoMode("Natural Disasters"), null);
     assert.equal(hasGeoBoard("Car Brands"), false);
+    assert.equal(hasGeoBoard("Flags of the World"), false); // Flags stay their own grid, not the map
   });
 });
 

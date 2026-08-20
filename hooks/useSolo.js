@@ -55,7 +55,6 @@ export function useSolo({ onExitToMenu }) {
   const [numRounds, setNumRounds] = useState(5);
   const [perRound, setPerRound, perRoundRef] = useStateRef(45);
   const [increment, setIncrement, incrementRef] = useStateRef(0);
-  const [recTimes, setRecTimes] = useState(false); // use each category's recommended length
   const [genre, setGenre] = useState(() => GENRES[0] || "");
   const [customRounds, setCustomRounds] = useState([]);
   const [quickCat, setQuickCat] = useState(() => (CATS[0] || {}).name || "");
@@ -70,6 +69,9 @@ export function useSolo({ onExitToMenu }) {
   const [dailyDate, setDailyDate] = useState("");
   // Where this run came from — keeps a friend's shared link out of the solo geography boards.
   const playOrigin = useRef("solo");
+  // Set only by startGeoChallenge() — lets the done screen offer its "play a specific one next"
+  // category picker instead of the generic "new challenge" link.
+  const isGeoChallenge = useRef(false);
   const [roundCats, setRoundCats, roundCatsRef] = useStateRef([]);
   const [cur, setCur, curRef] = useStateRef(0);
   const scores = useRef([]);
@@ -87,6 +89,7 @@ export function useSolo({ onExitToMenu }) {
   const [cmsg, setCmsg] = useState("");
   const [shakeTick, setShakeTick] = useState(0);
   const [geoMode, setGeoMode, geoModeRef] = useStateRef(null); // "map" | "fill" | null
+  const [flagSel, setFlagSel, flagSelRef] = useStateRef(0); // index of the highlighted flag, in a Flags quiz round
   const mapActive = useRef(false);
   const [showTotal, setShowTotal] = useState(false);
   const [remOn, setRemOn] = useState(false);
@@ -131,6 +134,8 @@ export function useSolo({ onExitToMenu }) {
   const [joinInfo, setJoinInfo] = useState(null);
   const [joinName, setJoinName] = useState("");
   const [joinErr, setJoinErr] = useState("");
+  const [saveErr, setSaveErr] = useState("");
+  const [resumeInfo, setResumeInfo] = useState(null); // a snapshot found on boot, offered on the create screen
 
   const visitorId = useMemo(() => (typeof window === "undefined" ? null : store.visitorId()), []);
 
@@ -139,6 +144,39 @@ export function useSolo({ onExitToMenu }) {
     setByName(n);
     setJoinName(n);
   }, []);
+
+  // A finished run's result POST can fail with nothing telling the player — they still see
+  // "Your run is in!" client-side while the server never heard about it (this is exactly what
+  // happened to a player's perfect World Capitals run during a deploy: the request landed mid
+  // server-restart and silently died). Retries with backoff, and keeps the payload in
+  // localStorage until the server actually confirms it, so it survives a reload too.
+  const trySaveResult = useCallback(async (challengeId, payload) => {
+    store.savePendingResult(challengeId, payload);
+    setSaveErr("");
+    const delays = [0, 1500, 4000, 9000]; // 4 attempts, ~15s of retrying before giving up
+    for (const d of delays) {
+      if (d) await new Promise((r) => setTimeout(r, d));
+      const res = await postJSON(`/challenge/${challengeId}/result`, payload);
+      if (res.ok) {
+        store.clearPendingResult();
+        return true;
+      }
+    }
+    setSaveErr("Couldn't save your run to the leaderboard — check your connection. It's kept safe on this device; tap to try again.");
+    return false;
+  }, []);
+
+  // The done screen's "tap to retry" button, and the same thing tried once, quietly, whenever
+  // the app boots — so a run that failed to save last visit still gets another shot even if the
+  // player never comes back to that screen.
+  const retryPendingResult = useCallback(() => {
+    const pending = store.getPendingResult();
+    if (pending) trySaveResult(pending.challengeId, pending.payload);
+  }, [trySaveResult]);
+
+  useEffect(() => {
+    retryPendingResult();
+  }, [retryPendingResult]);
 
   useEffect(() => () => clearInterval(tid.current), []);
 
@@ -152,13 +190,6 @@ export function useSolo({ onExitToMenu }) {
   useEffect(() => {
     if (mode === "custom") rebuildCustomRounds(numRounds);
   }, [mode, numRounds, rebuildCustomRounds]);
-
-  // The recommended-time toggle only matters for geography — a Geography genre, or custom mode
-  // (where you'd hand-build a geography set). Hidden and forced off otherwise.
-  const recTimesVisible = mode === "custom" || (mode === "genre" && /^Geography/.test(genre));
-  useEffect(() => {
-    if (!recTimesVisible && recTimes) setRecTimes(false);
-  }, [recTimesVisible, recTimes]);
 
   const clampPerRound = useCallback((s) => setPerRound(Math.max(5, Math.min(1800, parseInt(s, 10) || 45))), [setPerRound]);
   const clampIncrement = useCallback((s) => setIncrement(Math.max(0, Math.min(30, parseInt(s, 10) || 0))), [setIncrement]);
@@ -197,7 +228,8 @@ export function useSolo({ onExitToMenu }) {
         guesses: guesses.current,
       });
     }
-    // After a geography round, list what you missed so you can study it for next time.
+    // After a geography round, list what you missed so you can study it for next time. Flags
+    // and Borders quizzes are folded into the Geography group, so this already covers them.
     let items = [];
     if (cat && /^Geography/.test(cat.group)) {
       if (geoModeRef.current === "fill" && geoRef.current) items = geoRef.current.missedFill().map((m) => ({ q: m.q, a: m.a }));
@@ -224,21 +256,71 @@ export function useSolo({ onExitToMenu }) {
     endRound();
   }, [curRef, timeLeftRef, endRound]);
 
+  // A round's whole recoverable state, in localStorage: which run, which round, what's already
+  // named, and a real deadline (not a countdown) so a reload — or the server restarting mid-run
+  // for a deploy — deducts however long you were actually away instead of resetting the clock.
+  const snapshotRun = useCallback(
+    (secsOverride) => {
+      if (!challengeIdRef.current || !defRef.current) return;
+      const secs = secsOverride != null ? secsOverride : timeLeftRef.current;
+      const cat = roundCatsRef.current[curRef.current];
+      store.saveResumeRun({
+        challengeId: challengeIdRef.current,
+        def: defRef.current,
+        cur: curRef.current,
+        scores: scores.current,
+        times: times.current,
+        wpms: wpms.current,
+        namedIds: [...named.current],
+        deadline: Date.now() + secs * 1000,
+        flagSel: flagSelRef.current,
+        // A picture quiz's grid order is shuffled fresh each play — remember it so a resume
+        // shows the exact same arrangement flagSel was pointing into, not a new shuffle.
+        entryOrder: cat && (cat.isFlagQuiz || cat.isBorderQuiz) ? cat.entries.map((e) => e.id) : undefined,
+        runGid: runGid.current,
+        isGeoChallenge: isGeoChallenge.current,
+        playOrigin: playOrigin.current,
+        isDaily: isDailyRef.current,
+        dailyDate,
+        savedAt: Date.now(),
+      });
+    },
+    [challengeIdRef, defRef, curRef, timeLeftRef, flagSelRef, roundCatsRef, isDailyRef, dailyDate],
+  );
+
+  // `resumeData` (optional): `{ namedIds, secsLeft, entryOrder }` from a saved snapshot — picks
+  // the round back up instead of starting it fresh (see resumeRun()).
   const startRound = useCallback(
-    (i) => {
+    (i, resumeData) => {
       setCur(i);
-      named.current = new Set();
+      let cat = roundCatsRef.current[i];
+      // Picture quizzes (Flags, Borders) get a fresh shuffle every time they're played, so the
+      // grid isn't the same predictable alphabetical order round after round. A resume restores
+      // the exact order it was interrupted in instead — flagSel is an index into this array, so
+      // reshuffling on resume would highlight a different country than the one you left on.
+      if (cat.isFlagQuiz || cat.isBorderQuiz) {
+        let entries;
+        if (resumeData && resumeData.entryOrder) {
+          const byId = new Map(cat.entries.map((e) => [e.id, e]));
+          entries = resumeData.entryOrder.map((id) => byId.get(id)).filter(Boolean);
+        } else {
+          entries = shuffle(cat.entries);
+        }
+        cat = { ...cat, entries };
+        setRoundCats((arr) => arr.map((c, idx) => (idx === i ? cat : c)));
+      }
+      named.current = new Set(resumeData ? resumeData.namedIds : []);
       guesses.current = [];
       rChars.current = 0;
       rT0.current = 0;
       rLastLen.current = 0;
       setWpm(0);
-      setCount(0);
-      setChips([]);
+      setCount(named.current.size);
       setCmsg("");
       setRemOn(false);
-      if (i === 0) runGid.current = genGid(); // one id per run, threading every round's guesses
-      const cat = roundCatsRef.current[i];
+      setFlagSel(resumeData ? resumeData.flagSel || 0 : 0);
+      if (i === 0 && !resumeData) runGid.current = genGid(); // one id per run, threading every round's guesses
+      setChips(resumeData ? cat.entries.filter((e) => named.current.has(e.id)).map((e) => e.display) : []);
       setScreen("sprint");
 
       // Geography visuals: "map" categories light shapes up (chips stay), "fill" categories
@@ -246,12 +328,14 @@ export function useSolo({ onExitToMenu }) {
       const gm = hasGeoBoard(cat.name) ? geoModeOf(cat.name) : null;
       mapActive.current = false;
       setGeoMode(gm);
-      setShowTotal(!!gm); // "/ total" only for the enumerations, not misc geo like Natural Disasters
+      setShowTotal(!!gm || !!cat.isFlagQuiz || !!cat.isBorderQuiz); // "/ total" for the enumerations and picture quizzes
       setFillProgress({ filled: 0, total: 0 });
 
       // Per-round time: the recommended-per-round sentinel (timer 0) uses each category's length.
+      // curRoundSecs is always the FULL budget (never shortened by a resume) — finishRoundEarly's
+      // elapsed-time math (curRoundSecs - timeLeft) only comes out right if it stays the total.
       curRoundSecs.current = defRef.current && Number(defRef.current.timer) === 0 ? recommendedTime(cat.name) : perRoundRef.current;
-      setTimeLeft(curRoundSecs.current);
+      setTimeLeft(resumeData ? resumeData.secsLeft : curRoundSecs.current);
       clearInterval(tid.current);
       tid.current = setInterval(() => {
         const next = timeLeftRef.current - 1;
@@ -263,8 +347,10 @@ export function useSolo({ onExitToMenu }) {
       // The board itself is built by the effect below, once React has mounted its container.
       setGeoRound(gm ? { cat, mode: gm, key: i } : null);
       if (!gm && geoRef.current) geoRef.current.teardown();
+
+      if (!resumeData) snapshotRun(curRoundSecs.current);
     },
-    [setCur, setCount, setGeoMode, setTimeLeft, timeLeftRef, roundCatsRef, defRef, perRoundRef, endRound],
+    [setCur, setCount, setGeoMode, setFlagSel, setTimeLeft, timeLeftRef, roundCatsRef, setRoundCats, defRef, perRoundRef, endRound, snapshotRun],
   );
 
   // D3 needs a real, mounted node to draw into, so the geography board is set up after the
@@ -281,6 +367,10 @@ export function useSolo({ onExitToMenu }) {
         if (cancelled) return;
         if (geoRound.mode === "fill") setFillProgress({ filled: mod.GeoMap.filled(), total: mod.GeoMap.total() });
         else mapActive.current = true;
+        // Borders quiz: the map just (re)loaded, so it has no idea which shape is the current
+        // target yet — give it the one flagSel was already pointing to (0 on a fresh round, or
+        // wherever a resume left off).
+        if (geoRound.cat.isBorderQuiz) mod.GeoMap.highlight(geoRound.cat.entries[flagSelRef.current]?.id ?? null);
       } catch {
         // Any failure (CDN down, no shapes for this list) falls back to the plain chip list.
         if (cancelled) return;
@@ -295,6 +385,15 @@ export function useSolo({ onExitToMenu }) {
     };
   }, [geoRound, setGeoMode]);
 
+  // Borders quiz: move the map's highlight whenever flagSel moves (a correct answer advancing
+  // it, or an arrow key). The setup effect above only handles the very first one — this handles
+  // every one after, once the map's actually ready.
+  useEffect(() => {
+    const cat = roundCatsRef.current[curRef.current];
+    if (!cat || !cat.isBorderQuiz || !geoRef.current) return;
+    geoRef.current.highlight(cat.entries[flagSel]?.id ?? null);
+  }, [flagSel, roundCatsRef, curRef]);
+
   /* ---------------- answering ---------------- */
   const flash = useCallback((msg) => {
     setCmsg(msg);
@@ -307,10 +406,69 @@ export function useSolo({ onExitToMenu }) {
     setTimeLeft((t) => t + incrementRef.current);
   }, [incrementRef, setTimeLeft]);
 
+  // Picture quizzes (Flags, Borders): unlike every other round, an answer only counts
+  // against the ONE highlighted tile — naming a real country from the list that isn't this one
+  // is still a miss, just a more informative one. Correct advances the highlight to the next
+  // unsolved tile.
+  const nextUnsolvedTile = (cat, fromIdx) => {
+    for (let step = 1; step <= cat.entries.length; step++) {
+      const i = (fromIdx + step) % cat.entries.length;
+      if (!named.current.has(cat.entries[i].id)) return i;
+    }
+    return fromIdx; // everything's solved — finishRoundEarly() is about to fire anyway
+  };
+
+  // Moves the highlighted tile left/right (also used for up/down — the grid reflows by screen
+  // width, so there's no reliable row math to do arrow-key-accurate 2D navigation with). Shared
+  // by both picture quizzes (Flags, Borders) — same grid, same highlight, different image.
+  const moveFlagSel = useCallback(
+    (delta) => {
+      const cat = roundCatsRef.current[curRef.current];
+      if (!cat || (!cat.isFlagQuiz && !cat.isBorderQuiz)) return;
+      setFlagSel((i) => Math.max(0, Math.min(cat.entries.length - 1, i + delta)));
+    },
+    [roundCatsRef, curRef, setFlagSel],
+  );
+
   // Returns true when the text should be KEPT in the box (a near-miss → let them re-spell).
   const submit = useCallback(
     (q) => {
       setWpm(liveWpm()); // the characters themselves were counted as they were typed (noteTyping)
+
+      const cat0 = roundCatsRef.current[curRef.current];
+      if (cat0.isFlagQuiz || cat0.isBorderQuiz) {
+        const entry = cat0.entries[flagSelRef.current];
+        const nq = norm(q);
+        if (entry.aliases.includes(nq)) {
+          if (named.current.has(entry.id)) {
+            flash("already got that one");
+            return false;
+          }
+          named.current.add(entry.id);
+          setCount((c) => c + 1);
+          setCmsg("");
+          guesses.current.push({ display: entry.display, verdict: "ok", at: Date.now() });
+          bumpTimer();
+          if (cat0.isBorderQuiz && geoRef.current) geoRef.current.light(entry.id); // fills the shape in amber on the map
+          setFlagSel(nextUnsolvedTile(cat0, flagSelRef.current));
+          snapshotRun();
+          if (named.current.size >= cat0.entries.length) finishRoundEarly(); // got them all
+          return false;
+        }
+        const other = findEntry(cat0, nq);
+        if (other) {
+          flash(named.current.has(other.id) ? "that one's already done, and not this one anyway" : "that's on the list, but not this one");
+          return false;
+        }
+        const near = nearMiss(nq, { entries: [entry] });
+        if (near) {
+          flash("almost — check your spelling");
+          return true; // keep the text so they can re-spell it
+        }
+        guesses.current.push({ display: q, verdict: "miss", at: Date.now() });
+        flash("✗ not this one");
+        return false;
+      }
 
       if (geoModeRef.current === "fill" && geoRef.current) {
         const r = geoRef.current.tryFill(q);
@@ -321,6 +479,7 @@ export function useSolo({ onExitToMenu }) {
           setCmsg("");
           guesses.current.push({ display: q, verdict: "ok", at: Date.now() });
           bumpTimer();
+          snapshotRun();
           if (filled >= total) finishRoundEarly();
           return false;
         }
@@ -349,6 +508,7 @@ export function useSolo({ onExitToMenu }) {
         bumpTimer();
         if (mapActive.current && geoRef.current) geoRef.current.light(m.id);
         setChips((c) => [m.display, ...c]);
+        snapshotRun();
         if (named.current.size >= cat.entries.length) finishRoundEarly(); // got them all
         return false;
       }
@@ -366,37 +526,19 @@ export function useSolo({ onExitToMenu }) {
       flash("✗ not on the list");
       return false;
     },
-    [geoModeRef, roundCatsRef, curRef, setCount, flash, bumpTimer, finishRoundEarly],
+    [geoModeRef, roundCatsRef, curRef, flagSelRef, setFlagSel, setCount, flash, bumpTimer, finishRoundEarly, snapshotRun],
   );
 
   /* ---------------- finishing ---------------- */
   const challengeUrl = useCallback(() => `${window.location.origin}/challenge.html?id=${challengeIdRef.current}`, [challengeIdRef]);
 
-  // POST the finished run. Returns the server's answer so the caller can tell the player the
-  // truth: routes/challenge.js really does answer { ok: false } when persistence is off or the
-  // challenge row has gone, and this used to be awaited and thrown away under a flat
-  // "Your run is in!".
-  const saveRun = useCallback(
-    () =>
-      postJSON(`/challenge/${challengeIdRef.current}/result`, {
-        name: store.getSoloName(),
-        scores: scores.current,
-        wpms: wpms.current,
-        times: times.current,
-        visitorId,
-        ownerKey: ownerKeyIfCrowned(),
-        gid: runGid.current,
-        mode: playOrigin.current,
-      }),
-    [challengeIdRef, visitorId],
-  );
-
-  const finish = useCallback(async () => {
+  const finish = useCallback(() => {
     const total = scores.current.reduce((a, n) => a + (n || 0), 0);
     const list = wpms.current.filter((n) => n != null);
     const avgWpm = list.length ? Math.round(list.reduce((a, n) => a + n, 0) / list.length) : 0;
     const rounds = roundCatsRef.current.length;
     setScreen("done");
+    store.clearResumeRun(); // the run is over — nothing left to resume
 
     if (isDailyRef.current) {
       // Retro-arcade order: show the score and streak first, then let them opt in by name.
@@ -415,8 +557,19 @@ export function useSolo({ onExitToMenu }) {
       return;
     }
 
-    const res = await saveRun();
-    markOwnRun(challengeIdRef.current, true); // a reload from here must not claim the run was lost
+    // Fire-and-retry, not fire-and-forget: setDone() below shouldn't wait on the network, but the
+    // save itself needs to survive more than one silent failed attempt (see trySaveResult).
+    trySaveResult(challengeIdRef.current, {
+      name: store.getSoloName(),
+      scores: scores.current,
+      wpms: wpms.current,
+      times: times.current,
+      visitorId,
+      ownerKey: ownerKeyIfCrowned(),
+      gid: runGid.current,
+      mode: playOrigin.current,
+    });
+    markOwnRun(challengeIdRef.current, true); // a reload from here must not present the run as someone else's
     // A single-category run shows that category's all-time board — more meaningful than the
     // one-off link board.
     const single = rounds === 1 ? roundCatsRef.current[0] : null;
@@ -432,24 +585,17 @@ export function useSolo({ onExitToMenu }) {
       : `${named} at ${avgWpm} wpm avg. Send the link to friends · same questions, same leaderboard.`;
     setDone({
       daily: false,
+      geoChallenge: isGeoChallenge.current,
       total,
       avgWpm,
       rounds,
-      saved: !!res.ok,
-      savedSub, // what the sub becomes if a retry lands
-      verdict: res.ok ? "Your run is in!" : "Run over — but it wasn't saved",
-      sub: res.ok ? savedSub : `${named} at ${avgWpm} wpm avg. ${res.error || "The leaderboard didn't accept the run, so nothing was recorded."}`,
+      // A failed write isn't reported here any more: trySaveResult keeps retrying and surfaces
+      // solo.saveErr on the result screen, which is a better answer than a one-shot verdict.
+      verdict: "Your run is in!",
+      sub: savedSub,
       board: single ? { kind: "category", name: single.name } : { kind: "challenge", id: challengeIdRef.current },
     });
-  }, [roundCatsRef, isDailyRef, challengeIdRef, dailyDate, saveRun]);
-
-  // "Try again" on the result screen after a failed write — same run, same ids, so a retry
-  // that lands is indistinguishable from having saved first time.
-  const retrySave = useCallback(async () => {
-    const res = await saveRun();
-    if (res.ok) setDone((d) => (d ? { ...d, saved: true, verdict: "Your run is in!", sub: d.savedSub || d.sub } : d));
-    return res;
-  }, [saveRun]);
+  }, [roundCatsRef, isDailyRef, challengeIdRef, dailyDate, visitorId, trySaveResult]);
 
   const nextRound = useCallback(() => {
     if (curRef.current + 1 >= roundCatsRef.current.length) finish();
@@ -477,9 +623,54 @@ export function useSolo({ onExitToMenu }) {
     [defRef, setRoundCats, setCur],
   );
 
-  // `msg` is shown on the builder. The daily / dead-link failures used to set the error and
-  // THEN come through here, which wiped it — you were dropped back on "Play solo" with no idea
-  // why, even though the server had answered with a real reason.
+  // A run interrupted by a reload, a closed tab, or the server restarting mid-round leaves a
+  // snapshot behind (see snapshotRun). Offer it once on boot rather than jumping straight back
+  // in — a stale one (long since expired, or from a much older visit) is just discarded.
+  useEffect(() => {
+    const snap = store.getResumeRun();
+    if (!snap) return;
+    const graceMs = 10 * 60 * 1000; // still offered up to 10 minutes past its own deadline
+    const tooOld = Date.now() - snap.savedAt > 6 * 60 * 60 * 1000; // or if it's just from ages ago
+    if (Date.now() > snap.deadline + graceMs || tooOld) {
+      store.clearResumeRun();
+      return;
+    }
+    setResumeInfo(snap);
+  }, []);
+
+  const dismissResume = useCallback(() => {
+    store.clearResumeRun();
+    setResumeInfo(null);
+  }, []);
+
+  const resumeRun = useCallback(() => {
+    const snap = resumeInfo;
+    if (!snap) return;
+    setResumeInfo(null);
+    playOrigin.current = snap.playOrigin || "solo";
+    isGeoChallenge.current = !!snap.isGeoChallenge;
+    runGid.current = snap.runGid || genGid();
+    setIsDaily(!!snap.isDaily);
+    if (snap.isDaily) setDailyDate(snap.dailyDate || "");
+    setChallengeId(snap.challengeId);
+    setDef(snap.def);
+    const cats = (snap.def.rounds || []).map(findCat).filter(Boolean);
+    if (!cats.length || !cats[snap.cur]) {
+      store.clearResumeRun();
+      setCreateErr("That run's categories aren't available anymore.");
+      return;
+    }
+    setRoundCats(cats);
+    scores.current = snap.scores || [];
+    times.current = snap.times || [];
+    wpms.current = snap.wpms || [];
+    const secsLeft = Math.max(0, Math.round((snap.deadline - Date.now()) / 1000));
+    startRound(snap.cur, { namedIds: snap.namedIds || [], flagSel: snap.flagSel, entryOrder: snap.entryOrder, secsLeft });
+  }, [resumeInfo, setChallengeId, setDef, setRoundCats, setIsDaily, startRound]);
+
+  // `msg` is shown on the builder. The daily / dead-link failures used to set the error and THEN
+  // come through here, which wiped it — you were dropped back on "Play solo" with no idea why,
+  // even though the server had answered with a real reason.
   const initCreate = useCallback((msg) => {
     setIsDaily(false);
     playOrigin.current = "solo";
@@ -489,10 +680,12 @@ export function useSolo({ onExitToMenu }) {
   }, [setIsDaily]);
 
   // Quick solo play: a real (DB-backed, shareable) run built from a fixed category list.
+  // `geo` marks a run started from startGeoChallenge() below (drives the done screen's CTA).
   const startSolo = useCallback(
-    async (rounds, seconds) => {
+    async (rounds, seconds, geo = false) => {
       setCreateErr("");
       playOrigin.current = "solo";
+      isGeoChallenge.current = geo;
       const by = byName.trim().slice(0, 20);
       if (!by) return setCreateErr("Enter your name first.");
       if (seconds != null) clampPerRound(seconds);
@@ -517,13 +710,25 @@ export function useSolo({ onExitToMenu }) {
     [byName, clampPerRound, perRoundRef, setChallengeId, setDef, startPlaying],
   );
 
+  // One geography category (the board/map ones — same pool the category leaderboards track) at
+  // its recommended time, so the run is fair and lands on that category's board with no setup.
+  // Random unless `catName` names a specific one (the Create screen's picker, or the done
+  // screen's "play a specific one" follow-up).
+  const startGeoChallenge = useCallback((catName) => {
+    setCreateErr("");
+    const cat = catName || pickGenreRounds("Geography", 1)[0];
+    if (!cat) return setCreateErr("No geography categories available right now.");
+    startSolo([cat], recommendedTime(cat), true);
+  }, [startSolo]);
+
   const createChallenge = useCallback(async () => {
     setCreateErr("");
+    isGeoChallenge.current = false;
     const by = byName.trim().slice(0, 20);
     if (!by) return setCreateErr("Enter your name first.");
     const rounds = (mode === "genre" ? pickGenreRounds(genre, numRounds) : customRounds).filter(Boolean);
     if (!rounds.length) return setCreateErr("Pick at least one category.");
-    const timer = recTimes ? 0 : perRoundRef.current; // 0 = recommended time per round
+    const timer = perRoundRef.current;
     setBusy("creating");
     if (await isNameBlocked(by)) { // same pre-check as quick play — never silently become "Anon"
       setBusy("");
@@ -538,7 +743,7 @@ export function useSolo({ onExitToMenu }) {
     markOwnRun(res.id);
     window.history.replaceState({}, "", "?id=" + res.id);
     startPlaying(by);
-  }, [byName, mode, genre, numRounds, customRounds, recTimes, perRoundRef, setChallengeId, setDef, startPlaying]);
+  }, [byName, mode, genre, numRounds, customRounds, perRoundRef, setChallengeId, setDef, startPlaying]);
 
   // Opened a ?id= link — someone else's, or (after a reload mid-run) our own.
   const initJoin = useCallback(
@@ -633,6 +838,7 @@ export function useSolo({ onExitToMenu }) {
   // Back to the beginning (a fresh build screen), no page reload.
   const backToStart = useCallback(() => {
     clearInterval(tid.current);
+    store.clearResumeRun(); // an explicit exit means this run's abandoned, not interrupted
     setChallengeId(null);
     setDef(null);
     window.history.replaceState({}, "", "/");
@@ -641,6 +847,7 @@ export function useSolo({ onExitToMenu }) {
 
   const leaveRun = useCallback(() => {
     clearInterval(tid.current);
+    store.clearResumeRun();
     onExitToMenu();
   }, [onExitToMenu]);
 
@@ -650,6 +857,22 @@ export function useSolo({ onExitToMenu }) {
       return submitDailyResult({ name, run: scores.current.length ? run : null, challengeId: challengeIdRef.current, visitorId });
     },
     [challengeIdRef, visitorId],
+  );
+
+  // Every non-daily run already saved itself (and a name) the moment it finished — this is just
+  // for fixing that name afterward. Unlike submitDaily, there's no run to (re)submit: the score
+  // is already on the board under this visitorId, so a rename just needs to update it there, the
+  // same /challenge/rename call the daily "add me" flow uses to fix every board in one go.
+  const renameRun = useCallback(
+    async (name) => {
+      const n = String(name || "").trim().slice(0, 20);
+      if (!n) return { ok: false };
+      if (await isNameBlocked(n)) return { ok: false, blocked: true };
+      store.setSoloName(n);
+      await postJSON("/challenge/rename", { name: n, visitorId, ownerKey: ownerKeyIfCrowned() });
+      return { ok: true, name: n };
+    },
+    [visitorId],
   );
 
   // The number under the clock: raw count, "x / total" for the enumerations, or the fill grid's
@@ -665,7 +888,7 @@ export function useSolo({ onExitToMenu }) {
     screen, setScreen,
     // builder
     byName, setByName, mode, setMode, numRounds, setNumRounds, perRound, setPerRound: clampPerRound,
-    increment, setIncrement: clampIncrement, recTimes, setRecTimes, recTimesVisible,
+    increment, setIncrement: clampIncrement,
     genre, setGenre, customRounds, setCustomRounds, quickCat, setQuickCat, advOpen, setAdvOpen,
     createErr, busy,
     // run
@@ -674,9 +897,12 @@ export function useSolo({ onExitToMenu }) {
     count, countLabel, chips, timeLeft, clock: fmtClock(Math.max(0, timeLeft)), wpm, cmsg, shakeTick,
     geoMode, remOn, mapEl, missed, missedOpen, setMissedOpen, between, done, countdown,
     joinInfo, joinName, setJoinName, joinErr, setJoinErr,
+    saveErr, retryPendingResult,
+    resumeInfo, resumeRun, dismissResume,
+    flagSel, selectFlag: setFlagSel, moveFlagSel, namedIds: named.current,
     // actions
-    initCreate, initJoin, initDaily, createChallenge, startSolo, startPlaying, startJoin, retrySave, runCountdown,
-    startRound, submit, noteTyping, giveUp, nextRound, toggleRemaining, backToStart, leaveRun, challengeUrl, submitDaily,
+    initCreate, initJoin, initDaily, createChallenge, startSolo, startGeoChallenge, startPlaying, startJoin, runCountdown,
+    startRound, submit, noteTyping, giveUp, nextRound, toggleRemaining, backToStart, leaveRun, challengeUrl, submitDaily, renameRun,
     todayEastern,
   };
 }

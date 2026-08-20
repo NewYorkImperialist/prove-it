@@ -1,6 +1,6 @@
 import Script from "next/script";
 import { Inter, Space_Grotesk, IBM_Plex_Mono } from "next/font/google";
-import SITE from "@/site-config";
+import SITE from "@/lib/site-config";
 import { FAVICON } from "@/lib/favicon";
 import "./globals.css";
 

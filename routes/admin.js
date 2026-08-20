@@ -4,8 +4,8 @@
 //   /admin?key=YOUR_KEY        → live HTML dashboard (auto-refreshes)
 //   /admin?key=YOUR_KEY&json=1 → raw JSON
 const express = require("express");
-const analytics = require("../stats"); // persistent game history (Turso)
-const SITE = require("../site-config");
+const analytics = require("../server/stats"); // persistent game history (Turso)
+const SITE = require("../lib/site-config");
 const { ownerOk } = require("../lib/owner-auth.js");
 const { FLY_COST, projectCost } = require("../lib/cost-guard.js");
 const { esc, easternHour, easternTime, easternFull, easternDay, fmtHour12, fmtDur, fmtMs, bar, tbl } = require("../lib/html.js");

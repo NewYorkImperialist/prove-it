@@ -2,12 +2,15 @@
 const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 const CATEGORY_GROUPS = require("../data/categories.js");
-const { CATS, GENRES, findCat, nonSprint, recommendedTime, QUICK_MAX_SECONDS, quickPlayPool, genreRoundLimit, pickGenreRounds, geoBoardCats, buildCat } = require("../lib/solo-catalog.js");
+const {
+  CATS, GENRES, findCat, nonSprint, recommendedTime, QUICK_MAX_SECONDS, quickPlayPool,
+  genreRoundLimit, pickGenreRounds, geoBoardCats, buildCat, FLAG_CATS, BORDER_CATS,
+} = require("../lib/solo-catalog.js");
 
 describe("the solo catalogue", () => {
-  test("flattens every non-hidden category into { name, group, emoji, entries }", () => {
+  test("flattens every non-hidden category into { name, group, emoji, entries }, plus the Flags/Border quizzes", () => {
     const expected = Object.values(CATEGORY_GROUPS).filter((g) => !g.defaultOff).reduce((n, g) => n + g.cats.length, 0);
-    assert.equal(CATS.length, expected);
+    assert.equal(CATS.length, expected + FLAG_CATS.length + BORDER_CATS.length);
     for (const c of CATS) {
       assert.ok(c.name && c.group && c.emoji, `${c.name} is missing a field`);
       assert.ok(c.entries.length > 0, `${c.name} has no entries`);
@@ -68,6 +71,87 @@ describe("recommendedTime", () => {
   });
   test("everything else defaults to 45s", () => {
     assert.equal(recommendedTime("Car Brands"), 45);
+  });
+});
+
+describe("Flags quizzes", () => {
+  test("World plus one per continent, in that order", () => {
+    assert.deepEqual(FLAG_CATS.map((c) => c.name), [
+      "Flags of the World", "Flags of Africa", "Flags of Asia", "Flags of Europe",
+      "Flags of North America", "Flags of South America", "Flags of Oceania",
+    ]);
+  });
+
+  test("each one has the same entry count as its Countries counterpart, and every entry has a flag code", () => {
+    const pairs = [
+      ["Flags of the World", "Countries of the World"], ["Flags of Africa", "Countries in Africa"],
+      ["Flags of Oceania", "Countries in Oceania"],
+    ];
+    for (const [flagName, countryName] of pairs) {
+      const flagCat = findCat(flagName);
+      assert.equal(flagCat.entries.length, findCat(countryName).entries.length);
+      for (const e of flagCat.entries) assert.match(e.flagCode, /^[a-z]{2}$/, `${e.display} in ${flagName}`);
+    }
+  });
+
+  test("are folded into the Geography group — the generic picker, genre pool, and Geography Challenge all see them", () => {
+    for (const c of FLAG_CATS) {
+      assert.equal(CATS.includes(c), true, `${c.name} should be the exact same object in CATS`);
+      assert.equal(c.group, "Geography");
+      assert.equal(nonSprint(c), false);
+    }
+  });
+
+  test("still resolve via findCat, so a saved run's rounds replay correctly", () => {
+    assert.equal(findCat("Flags of Europe").group, "Geography");
+  });
+
+  test("get their own leaderboard alongside the geography boards", () => {
+    for (const c of FLAG_CATS) assert.ok(geoBoardCats().includes(c.name), c.name);
+  });
+
+  test("mirror their Countries counterpart's recommended time", () => {
+    assert.equal(recommendedTime("Flags of the World"), recommendedTime("Countries of the World"));
+    assert.equal(recommendedTime("Flags of Oceania"), recommendedTime("Countries in Oceania"));
+  });
+});
+
+describe("Border quizzes", () => {
+  test("World plus one per continent, in that order", () => {
+    assert.deepEqual(BORDER_CATS.map((c) => c.name), [
+      "Borders of the World", "Borders of Africa", "Borders of Asia", "Borders of Europe",
+      "Borders of North America", "Borders of South America", "Borders of Oceania",
+    ]);
+  });
+
+  test("share entries with their Countries counterpart, minus the couple with no drawable polygon", () => {
+    const pairs = [
+      ["Borders of the World", "Countries of the World", 1], // Tuvalu
+      ["Borders of Africa", "Countries in Africa", 0],
+      ["Borders of South America", "Countries in South America", 1], // French Guiana
+      ["Borders of Oceania", "Countries in Oceania", 1], // Tuvalu
+    ];
+    for (const [borderName, countryName, excluded] of pairs) {
+      assert.equal(findCat(borderName).entries.length, findCat(countryName).entries.length - excluded, borderName);
+    }
+  });
+
+  test("are folded into the Geography group, same as the Flags quizzes", () => {
+    for (const c of BORDER_CATS) {
+      assert.equal(CATS.includes(c), true, `${c.name} should be the exact same object in CATS`);
+      assert.equal(c.group, "Geography");
+      assert.equal(c.isBorderQuiz, true);
+      assert.equal(nonSprint(c), false);
+    }
+  });
+
+  test("get their own leaderboard alongside the geography and Flags boards", () => {
+    for (const c of BORDER_CATS) assert.ok(geoBoardCats().includes(c.name), c.name);
+  });
+
+  test("mirror their Countries counterpart's recommended time", () => {
+    assert.equal(recommendedTime("Borders of the World"), recommendedTime("Countries of the World"));
+    assert.equal(recommendedTime("Borders of Oceania"), recommendedTime("Countries in Oceania"));
   });
 });
 

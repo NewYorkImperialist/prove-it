@@ -1,5 +1,5 @@
 "use client";
-import SITE from "@/site-config";
+import SITE from "@/lib/site-config";
 import Card from "@/components/ui/Card";
 import Button, { NewTag } from "@/components/ui/Button";
 import { LogoBadge, Wordmark } from "@/components/ui/Logo";

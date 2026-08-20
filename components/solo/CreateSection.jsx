@@ -1,12 +1,13 @@
 "use client";
-import { GENRES, GENRE_EMOJI, recommendedTime, genreRoundLimit, quickPlayPool, CATS, shuffle } from "@/lib/solo-catalog";
+import { useState } from "react";
+import { GENRES, GENRE_EMOJI, recommendedTime, genreRoundLimit, quickPlayPool, CATS, shuffle, pickGenreRounds, geoChallengeCats } from "@/lib/solo-catalog";
 import { BackButton } from "@/components/ui/Button";
 import TextInput, { FieldLabel, Select } from "@/components/ui/Field";
 import { Divider } from "@/components/ui/Card";
 import Seg, { Stepper } from "@/components/ui/Seg";
 import { SoloButton, SoloCard, SoloTitle, SoloSub, SoloErr } from "./SoloBits";
 import CategorySelect from "./CategorySelect";
-import { cx } from "@/lib/browser/cx";
+import { fmtClock } from "@/lib/format";
 
 const ROUND_OPTIONS = [1, 3, 5, 10].map((n) => ({ value: n, label: String(n) }));
 const TIME_PRESETS = [20, 30, 45, 60, 90].map((s) => ({ value: s, label: s + "s" }));
@@ -23,8 +24,9 @@ const MODES = [
 // The solo builder: quick play, pick-a-category, or the full multi-round setup behind
 // "Advanced settings".
 export default function CreateSection({ solo, onBack }) {
+  const [geoCat, setGeoCat] = useState(() => pickGenreRounds("Geography", 1)[0] || "");
+
   // Quick play is one short round: the pool leaves out the big enumerations, whose recommended
-  // time is up to 15 minutes — the button says "Quick play" and nothing warned you otherwise.
   const quickPlay = () => {
     const c = shuffle(quickPlayPool())[0] || CATS[0];
     solo.startSolo([c.name], recommendedTime(c.name));
@@ -38,6 +40,23 @@ export default function CreateSection({ solo, onBack }) {
       <BackButton onClick={onBack} />
       <SoloTitle>Play solo</SoloTitle>
       <SoloSub>Name as many as you can before the clock runs out, then dare a friend to beat your score.</SoloSub>
+
+      {solo.resumeInfo ? (
+        <div className="mb-4 rounded-xl border border-accent bg-accdim p-3">
+          <p className="m-0 mb-2 text-[13px] text-ink">
+            You left a run of <b>{solo.resumeInfo.def.rounds[solo.resumeInfo.cur]}</b> in progress —{" "}
+            {Math.max(0, solo.resumeInfo.namedIds.length)} named, {fmtClock(Math.max(0, Math.round((solo.resumeInfo.deadline - Date.now()) / 1000)))} left.
+          </p>
+          <div className="flex gap-2">
+            <SoloButton className="mt-0! w-auto! shrink-0 px-5" onClick={solo.resumeRun}>
+              Resume
+            </SoloButton>
+            <SoloButton variant="ghost" className="mt-0! w-auto! shrink-0 px-5" onClick={solo.dismissResume}>
+              Discard
+            </SoloButton>
+          </div>
+        </div>
+      ) : null}
 
       <FieldLabel htmlFor="byName">Your name</FieldLabel>
       <TextInput id="byName" type="text" maxLength={20} placeholder="e.g. Jayden" value={solo.byName} onChange={(e) => solo.setByName(e.target.value)} className="text-base!" />
@@ -60,6 +79,28 @@ export default function CreateSection({ solo, onBack }) {
         </SoloButton>
       </div>
 
+      <Divider>or</Divider>
+
+      {/* Defaults to a random geography category (country lists, capitals, or a flags quiz) at
+          its own recommended time — no setup beyond picking one, and it lands straight on that
+          category's leaderboard. */}
+      <FieldLabel htmlFor="geoSel">Geography challenge</FieldLabel>
+      <div className="flex items-stretch gap-2.5">
+        <Select id="geoSel" value={geoCat} onChange={(e) => setGeoCat(e.target.value)} className="min-w-0 flex-1">
+          {geoChallengeCats().map((n) => (
+            <option key={n} value={n}>{n}</option>
+          ))}
+        </Select>
+        <SoloButton
+          variant="ghost"
+          className="mt-0! w-auto! shrink-0 px-6"
+          disabled={!!solo.busy}
+          onClick={() => geoCat && solo.startGeoChallenge(geoCat)}
+        >
+          {solo.busy === "starting" ? "…" : "Play"}
+        </SoloButton>
+      </div>
+
       <button
         type="button"
         onClick={() => solo.setAdvOpen(!solo.advOpen)}
@@ -78,17 +119,6 @@ export default function CreateSection({ solo, onBack }) {
           <FieldLabel>Time per round</FieldLabel>
           <Seg options={TIME_PRESETS} value={solo.perRound} onChange={solo.setPerRound} />
           <Stepper value={solo.perRound} onChange={solo.setPerRound} min={5} max={1800} step={5} ariaLess="less time" ariaMore="more time" />
-
-          {/* Fair leaderboards for the big enumerations: each category uses its own length. */}
-          {solo.recTimesVisible ? (
-            <SoloButton
-              variant="ghost"
-              className={cx("mt-2.5!", solo.recTimes && "border-accent! bg-accent! text-markfg!")}
-              onClick={() => solo.setRecTimes(!solo.recTimes)}
-            >
-              ⏱ Recommended time per round: {solo.recTimes ? "on" : "off"}
-            </SoloButton>
-          ) : null}
 
           <FieldLabel>Time increment per correct answer</FieldLabel>
           <Seg options={INCREMENTS} value={solo.increment} onChange={solo.setIncrement} />

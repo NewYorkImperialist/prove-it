@@ -47,18 +47,20 @@ Want to add your own? Edit **`data/categories.js`** — each entry is `"Name"` o
 ## Tech
 **Next.js (App Router) + React + Tailwind CSS** on the front end. **Node + Express + Socket.IO** for realtime multiplayer, deployed on **Fly.io**, with persistent game analytics via **Turso (libSQL)**.
 
-One process serves both: `server.js` keeps Express for the JSON API, the owner dashboard and the crawler-facing share stub, runs the Socket.IO layer, and hands every other request to Next.
+One process serves both: `server/index.js` keeps Express for the JSON API, the owner dashboard and the crawler-facing share stub, runs the Socket.IO layer, and hands every other request to Next.
 
 ```
-app/, components/, hooks/   the client (React + Tailwind)
-lib/                        shared logic, plain CommonJS, covered by node:test
-lib/browser/                browser-only client modules (sound, storage, the D3 geo board)
-data/                       game content + generated data
-game-engine.js              the multiplayer duel
-race-engine.js              the live Challenge Race
-rooms.js, matchmaking.js    lobbies, reconnection, quick match
-routes/, stats.js           JSON API, owner dashboard, analytics
-lib/cost-guard.js           the Fly spend projection + the two automatic caps
+app/, components/, hooks/       the client (React + Tailwind)
+lib/                            shared logic, plain CommonJS, covered by node:test
+lib/browser/                    browser-only client modules (sound, storage, the D3 geo board)
+data/                           game content + generated data
+server/index.js                 the Express + Socket.IO entrypoint
+server/game-engine.js           the multiplayer duel
+server/race-engine.js           the live Challenge Race
+server/rooms.js, matchmaking.js lobbies, reconnection, quick match (both in server/)
+server/stats.js                 persistent game analytics (Turso)
+routes/                         JSON API, owner dashboard
+lib/cost-guard.js               the Fly spend projection + the two automatic caps
 ```
 
 ```bash

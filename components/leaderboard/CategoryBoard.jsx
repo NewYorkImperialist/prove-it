@@ -5,7 +5,8 @@ import { fmtTime } from "@/lib/format";
 import { LbTable, LbRow, LbCell, LbName, LbTotal, LbNote } from "./table";
 
 // All-time best per player on one category, from SOLO runs only — stats.js's categoryLeaderboard
-// filters mode='solo', so a daily or a friend's shared-link run never lands here. The note below has
+// selects mode='solo' OR mode='link', so a friend's shared-link run DOES land here — a daily one
+// doesn't. The note below has
 // to say so: this board is shown to whoever just finished a shared link too, and promising them "the
 // all-time board" for a run that can't appear on it is the kind of lie players notice.
 // Any single category can have one (the modal's Geography tab picks between the mapped ones; a
@@ -47,8 +48,8 @@ export default function CategoryBoard({ name, visitorId, reloadKey }) {
         })}
       </LbTable>
       <LbNote>
-        All-time best <b>solo</b> runs on <b>{name}</b> · {state.rows.length} player{state.rows.length > 1 ? "s" : ""}. Daily and
-        shared-link plays don&apos;t count here. Tie at the top? Fastest full clear wins.
+        All-time best on <b>{name}</b> · {state.rows.length} player{state.rows.length > 1 ? "s" : ""}. Solo runs and
+        shared-link plays both count; the daily has its own board. Tie at the top? Fastest full clear wins.
       </LbNote>
     </>
   );

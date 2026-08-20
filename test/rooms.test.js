@@ -7,10 +7,10 @@ const path = require("path");
 const express = require("express");
 const { Server } = require("socket.io");
 const { io: ioClient } = require("socket.io-client");
-const engine = require("../game-engine.js");
-const analytics = require("../stats.js"); // no TURSO_URL in the test env — every write is a silent no-op
+const engine = require("../server/game-engine.js");
+const analytics = require("../server/stats.js"); // no TURSO_URL in the test env — every write is a silent no-op
 const { CATEGORY_GROUPS, DEFAULT_GROUPS } = require("../lib/category-data.js");
-const { createRooms, PING_OPTIONS, GRACE_MS } = require("../rooms.js");
+const { createRooms, PING_OPTIONS, GRACE_MS } = require("../server/rooms.js");
 
 // Real Socket.IO client <-> server over a loopback TCP port — this is the same shape of check
 // as the manual smoke test used earlier to verify the server.js extraction, now checked in CI.
@@ -555,9 +555,9 @@ describe("rooms.js — heartbeat tuning", () => {
     assert.ok(PING_OPTIONS.pingTimeout >= 4000, "but must tolerate a normal few-second hiccup");
   });
 
-  test("server.js actually hands those settings to the Socket.IO server", () => {
-    // server.js boots Next, so it can't be required here — but the wiring is the whole fix.
-    const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  test("the entrypoint actually hands those settings to the Socket.IO server", () => {
+    // server/index.js boots Next, so it can't be required here — but the wiring is the whole fix.
+    const src = fs.readFileSync(path.join(__dirname, "..", "server", "index.js"), "utf8");
     assert.match(src, /new Server\(server,\s*PING_OPTIONS\)/);
   });
 

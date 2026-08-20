@@ -70,6 +70,21 @@ export default function AppShell() {
     router.go("solo");
   }, [solo, router, enteredSolo]);
 
+  // ?geo=1 drops straight into the Create screen's Geography challenge picker — no menu-hunting
+  // to find it, but it still lands on the picker (pre-filled with a random pick) rather than
+  // committing to a category before you've had a chance to change it.
+  const autoGeo = useRef(null);
+  if (autoGeo.current === null) {
+    autoGeo.current = typeof window === "undefined" ? false : new URLSearchParams(window.location.search).get("geo") === "1";
+  }
+  const bootedAutoGeo = useRef(false);
+  useEffect(() => {
+    if (bootedAutoGeo.current || !autoGeo.current || deepLink.current) return; // a ?id= link takes priority
+    bootedAutoGeo.current = true;
+    solo.initCreate();
+    router.go("solo");
+  }, [solo, router]);
+
   const openSolo = () => {
     enteredSolo();
     solo.initCreate();

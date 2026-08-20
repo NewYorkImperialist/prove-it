@@ -1,5 +1,5 @@
 "use client";
-import SITE from "@/site-config";
+import SITE from "@/lib/site-config";
 import { Crown } from "@/components/ui/Logo";
 import { ConnLine } from "@/components/StatusBadges";
 import { useReplay } from "@/hooks/useReplay";

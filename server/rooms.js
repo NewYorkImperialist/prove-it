@@ -6,7 +6,7 @@
 // socket id — so a reconnect with a new socket re-claims the same player slot.
 
 const { createMatchmaking } = require("./matchmaking.js");
-const { isBlocked } = require("./lib/name-filter.js");
+const { isBlocked } = require("../lib/name-filter.js");
 
 const TIMERS = [15, 30, 45, 60];
 const TARGETS = [3, 5, 10]; // plus null = endless (duel mode's win target)

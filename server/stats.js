@@ -374,14 +374,18 @@ async function categoryLeaderboards(topN = 10) {
 // Public per-category leaderboard: each player's best score for one category across all runs
 // (solo/daily/link). Deduped per visitor; all crowned rows collapse to a single creator entry.
 async function categoryLeaderboard(catName, limit = 50) {
-  const chs = await q(`SELECT id, rounds FROM challenges`);
-  const roundsById = {};
-  for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } }
-  // Geography boards count ONLY solo-map plays (mode='solo'): live-multiplayer lives in the separate
-  // `games` table and never reached here, and we also exclude shared friend-link plays + old untagged rows.
-  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, at, crown FROM challenge_results WHERE mode='solo'`);
+  const chs = await q(`SELECT id, rounds, timer FROM challenges`);
+  const roundsById = {}, timerById = {};
+  for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } timerById[c.id] = c.timer; }
+  // Geography boards count solo-map plays (mode='solo') AND shared friend-link plays (mode='link')
+  // that used the "recommended time per round" setting (timer===0) — i.e. the same per-category
+  // timing a direct solo play always uses, so it's still an apples-to-apples comparison. A link with
+  // a custom fixed timer is excluded (it could be way longer/shorter than the category's standard
+  // length). Live-multiplayer lives in the separate `games` table and never reached here.
+  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, at, crown, mode FROM challenge_results WHERE mode='solo' OR mode='link'`);
   const rows = [];
   for (const r of results) {
+    if (r.mode === "link" && timerById[r.challenge_id] !== 0) continue; // not the recommended-time setting
     const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
     let scores = [], times = []; try { scores = JSON.parse(r.scores || "[]"); } catch (e) {} try { times = JSON.parse(r.times || "[]"); } catch (e) {}
     let sc = 0, tm = null; // best score for this category + its completion time
@@ -392,26 +396,48 @@ async function categoryLeaderboard(catName, limit = 50) {
 }
 
 // GOAT board: ONE overall ranking across every geography category (solo plays only).
-// The score balances volume AND speed so neither extreme can farm the top:
+// The score rewards volume, and speed only ever helps, never hurts:
 //   • each answer you name is worth 1 base point (so a lucky 1-answer run stays tiny — speed can't inflate it)
-//   • on a FULL clear we know how long it took, so those points get a speed multiplier: up to 2× fast,
-//     down to 0.5× slow, 1× at ~GEO_REF_PACE sec/answer (so a huge-but-slow run gets docked, not rewarded)
+//   • on a FULL clear we know how long it took, so those points get a speed bonus: 1× using the whole
+//     recommended time (no penalty for a leisurely pace — a full clear is a full clear), up to 2× for
+//     clearing well under it. The reference pace is that CATEGORY's own recommended-time ÷ its item
+//     count, not one flat number, so a tight category (few seconds/item allotted) and a loose one (many
+//     seconds/item) both score a plain full clear as 1×, not one of them as an automatic bonus or penalty.
 //   • a player's points in a category = their single best play; GOAT total = the sum across all categories
-// → to top it you need to name a lot, across many categories, quickly. One fast fluke or one slow grind can't.
-const GEO_REF_PACE = 3; // seconds/answer scoring a neutral 1.0× (faster → toward 2×, slower → toward 0.5×)
+// → to top it you need to name a lot, across many categories — going fast on top of that pads the total,
+// but taking your time on a full clear never costs you the points you already earned by finishing it.
 async function geoGoat(limit = 50) {
-  const CATEGORY_GROUPS = require("./data/categories.js");
+  const CATEGORY_GROUPS = require("../data/categories.js");
+  const { FLAG_CAT_NAMES, FLAG_SOURCE } = require("../lib/flags.js");
+  const { BORDER_CAT_NAMES, BORDER_SOURCE, NO_POLYGON } = require("../lib/borders.js");
+  const { RECOMMENDED_TIME } = require("../lib/solo-catalog.js");
+  const { norm } = require("../lib/solo-matching.js");
   const geoCats = new Map(); // geography category name → total item count
   if (CATEGORY_GROUPS.Geography) for (const c of CATEGORY_GROUPS.Geography.cats) geoCats.set(c.name, (c.items || []).length);
-  const chs = await q(`SELECT id, rounds FROM challenges`);
-  const roundsById = {};
-  for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } }
-  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, crown FROM challenge_results WHERE mode='solo'`);
+  // Flags/Borders quizzes aren't real categories.js entries (see lib/flags.js, lib/borders.js),
+  // but they're geography knowledge same as the rest of this board, so they count toward it too
+  // — same item count as the "Countries in ..." category they share entries with (minus the
+  // couple of countries a Borders quiz has no drawable shape for).
+  for (const [baseName, flagName] of FLAG_SOURCE) if (geoCats.has(baseName)) geoCats.set(flagName, geoCats.get(baseName));
+  for (const [baseName, borderName] of BORDER_SOURCE) {
+    if (!geoCats.has(baseName)) continue;
+    const base = CATEGORY_GROUPS.Geography.cats.find((c) => c.name === baseName);
+    const n = (base.items || []).filter((it) => !NO_POLYGON.has(norm(Array.isArray(it) ? it[0] : it))).length;
+    geoCats.set(borderName, n);
+  }
+  for (const name of [...FLAG_CAT_NAMES, ...BORDER_CAT_NAMES]) if (!geoCats.has(name)) geoCats.set(name, 0); // never divide by zero below
+  const refPaceFor = (cat) => (RECOMMENDED_TIME[cat] || 45) / (geoCats.get(cat) || 1); // seconds/answer at a plain full clear
+  const chs = await q(`SELECT id, rounds, timer FROM challenges`);
+  const roundsById = {}, timerById = {};
+  for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } timerById[c.id] = c.timer; }
+  // Same solo+link (recommended-timer-only) eligibility as categoryLeaderboard() above.
+  const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, crown, mode FROM challenge_results WHERE mode='solo' OR mode='link'`);
   const creator = (await getCreatorName()) || null; // merge the creator's rows/devices like the other boards
   const creatorNN = creator ? String(creator).trim().toLowerCase() : null;
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const players = new Map(); // key → { name, visitor_id, crown, best: Map<cat, points> }
   for (const r of results) {
+    if (r.mode === "link" && timerById[r.challenge_id] !== 0) continue; // not the recommended-time setting
     const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
     let scores = [], times = []; try { scores = JSON.parse(r.scores || "[]"); } catch (e) {} try { times = JSON.parse(r.times || "[]"); } catch (e) {}
     const isCreator = !!r.crown || (creatorNN && String(r.name || "").trim().toLowerCase() === creatorNN);
@@ -422,7 +448,7 @@ async function geoGoat(limit = 50) {
       if (!geoCats.has(cat)) return;
       const s = Number(scores[i]) || 0; if (s <= 0) return;
       const t = (times[i] != null && Number(times[i]) > 0) ? Number(times[i]) : null; // seconds — set only on a full clear
-      const mult = t ? clamp(GEO_REF_PACE / (t / s), 0.5, 2.0) : 1.0;
+      const mult = t ? clamp(refPaceFor(cat) / (t / s), 1.0, 2.0) : 1.0;
       const pts = s * mult;
       if (pts > (p.best.get(cat) || 0)) p.best.set(cat, pts);
     });

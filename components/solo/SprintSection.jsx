@@ -2,18 +2,28 @@
 import { useEffect, useRef, useState } from "react";
 import { BackButton } from "@/components/ui/Button";
 import { SoloButton } from "./SoloBits";
+import FlagBoard from "./FlagBoard";
 import { useReplay } from "@/hooks/useReplay";
 import { cx } from "@/lib/browser/cx";
 
-// The round itself: the clock, the count, the geography board when there is one, and the box
-// you type into. Geography rounds go full-screen (see SoloApp's mapmode) so the map is as big
-// as it can be.
+// The round itself: the clock, the count, the geography board or picture-quiz grid when there
+// is one, and the box you type into. Geography and picture-quiz rounds go full-screen (see
+// SoloApp's mapmode) so the board has room to breathe.
+//
+// Flags get their own isolated grid (FlagBoard) — there's no natural "map" for a flag. Borders
+// reuses the real geography map instead (solo.geoMode === "map", same <div ref={solo.mapEl}>
+// every other map category renders into): one shape highlighted at a time rather than a grid of
+// cut-out silhouettes, so you're naming it in the context of the whole map, same as JetPunk-style
+// "highlighted country" quizzes.
 export default function SprintSection({ solo, onBack }) {
   const [value, setValue] = useState("");
   const inputRef = useRef(null);
   const [shaking, endShake] = useReplay(solo.shakeTick);
   const cat = solo.roundCats[solo.cur];
-  const mapMode = !!solo.geoMode;
+  const flagMode = !!(cat && cat.isFlagQuiz);
+  const borderMode = !!(cat && cat.isBorderQuiz);
+  const pictureMode = flagMode || borderMode;
+  const mapMode = !!solo.geoMode || pictureMode;
 
   // Focus the box (and clear the last round's text) whenever a new round starts.
   useEffect(() => {
@@ -83,7 +93,20 @@ export default function SprintSection({ solo, onBack }) {
           plus the input outgrew the viewport, which is exactly what happens in landscape. A floor
           means the column overflows the card instead of silently deleting the board — and the map
           is what the round is played on, so it wins the argument over the header. */}
-      <div ref={solo.mapEl} className={cx("w-full", mapMode ? "my-2 flex min-h-[150px] flex-1 flex-col short:my-1" : "hidden")} />
+      <div ref={solo.mapEl} className={cx("w-full", solo.geoMode ? "my-2 flex min-h-[150px] flex-1 flex-col short:my-1" : "hidden")} />
+
+      {flagMode ? (
+        <FlagBoard
+          entries={cat.entries}
+          selected={solo.flagSel}
+          namedIds={solo.namedIds}
+          onSelect={(i) => {
+            solo.selectFlag(i);
+            setValue("");
+            inputRef.current?.focus();
+          }}
+        />
+      ) : null}
 
       <input
         ref={inputRef}
@@ -92,13 +115,25 @@ export default function SprintSection({ solo, onBack }) {
         autoCorrect="off"
         autoCapitalize="off"
         spellCheck="false"
-        placeholder="Type a name and hit Enter…"
+        placeholder={borderMode ? "Type this country's name…" : flagMode ? "Type this flag's country…" : "Type a name and hit Enter…"}
         value={value}
         onChange={(e) => {
           setValue(e.target.value);
           solo.noteTyping(e.target.value.length); // typing speed is measured here, not at submit
         }}
-        onKeyDown={(e) => e.key === "Enter" && submit()}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") return submit();
+          if (!pictureMode) return;
+          if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+            e.preventDefault();
+            solo.moveFlagSel(1);
+            setValue("");
+          } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+            e.preventDefault();
+            solo.moveFlagSel(-1);
+            setValue("");
+          }
+        }}
         onAnimationEnd={endShake}
         // When the keyboard opens, pull the box back into the visible viewport. This used to run
         // for geography rounds only, so on a plain round at 320px (or in landscape) the box you
@@ -119,7 +154,7 @@ export default function SprintSection({ solo, onBack }) {
       />
       <div className="mt-2 min-h-[18px] text-[13px] text-muted">{solo.cmsg}</div>
 
-      {solo.geoMode !== "fill" ? (
+      {solo.geoMode !== "fill" && !pictureMode ? (
         <div className={cx("mt-3 flex flex-wrap gap-1.5 overflow-y-auto", mapMode ? "max-h-[11vh]" : "max-h-[24vh] desk:max-h-[30vh]")}>
           {solo.chips.map((c, i) => (
             <span key={`${c}-${i}`} className="animate-chip rounded-lg border border-line2 bg-accdim px-[9px] py-[5px] text-[13px] text-ink">

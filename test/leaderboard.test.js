@@ -92,25 +92,26 @@ describe("avgWpm", () => {
 // for it: CategoryBoard is rendered to whoever just finished a shared link (mode='link') too.
 describe("the leaderboard copy doesn't over-promise", () => {
   const read = (f) => fs.readFileSync(path.join(__dirname, "..", "components", "leaderboard", f), "utf8");
-  const STATS = fs.readFileSync(path.join(__dirname, "..", "stats.js"), "utf8");
+  const STATS = fs.readFileSync(path.join(__dirname, "..", "server", "stats.js"), "utf8");
 
-  test("stats.js still counts solo runs only — the copy below is written to that", () => {
-    assert.equal([...STATS.matchAll(/challenge_results WHERE mode='solo'/g)].length, 2,
+  test("the boards select solo AND shared-link runs — the copy below is written to that", () => {
+    // If someone narrows or widens this again, the promises underneath go stale with it. That has
+    // now happened once in each direction, which is why it's pinned.
+    assert.equal([...STATS.matchAll(/challenge_results WHERE mode='solo' OR mode='link'/g)].length, 2,
       "categoryLeaderboard/geoGoat changed what they select; the board copy needs to change with them");
   });
 
   test("CategoryBoard says whose runs the board holds", () => {
     const src = read("CategoryBoard.jsx");
-    assert.match(src, /All-time best <b>solo<\/b> runs on/);
-    assert.match(src, /shared-link plays don&apos;t count/);
+    assert.match(src, /Solo runs and\s*\n?\s*shared-link plays both count/);
+    assert.doesNotMatch(src, /shared-link plays don&apos;t count/);
   });
 
-  test("GoatBoard doesn't claim points from every kind of run", () => {
+  test("GoatBoard describes the scoring it actually uses", () => {
     const src = read("GoatBoard.jsx");
-    assert.doesNotMatch(src, /Points across <b>every<\/b> geography category/);
-    assert.match(src, /Points from your <b>solo<\/b> runs/);
-    // The multiplier half of that sentence is accurate — it should survive any rewording.
-    assert.match(src, /up to 2× fast, ½× slow/);
+    // Main's rescoring: a full clear earns a bonus, and a leisurely one is never penalised.
+    assert.match(src, /never a penalty/);
+    assert.doesNotMatch(src, /½× slow/);
   });
 
   test("the geography tab's title is scoped to the boards its picker offers", () => {

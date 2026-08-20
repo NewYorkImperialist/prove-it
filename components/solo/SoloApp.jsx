@@ -12,7 +12,12 @@ import DoneSection from "./DoneSection";
 // the way in — the page never flashes. Moving between solo's own screens is an instant cut,
 // the way it always was.
 export default function SoloApp({ solo, onExitToMenu }) {
-  const mapMode = solo.screen === "sprint" && !!solo.geoMode;
+  // A picture quiz (Flags, Borders) needs the same full-screen treatment as a geography board —
+  // without it, the centered/scrollable layout below fights the sprint card's own full-height
+  // sizing, and the top of the grid ends up pushed off-screen with no way to scroll back up to it.
+  const cat = solo.roundCats[solo.cur];
+  const pictureMode = !!(cat && (cat.isFlagQuiz || cat.isBorderQuiz));
+  const mapMode = solo.screen === "sprint" && (!!solo.geoMode || pictureMode);
   const [entering, setEntering] = useState(true);
   useEffect(() => {
     const t = setTimeout(() => setEntering(false), 320);

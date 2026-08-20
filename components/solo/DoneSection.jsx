@@ -103,7 +103,7 @@ export default function DoneSection({ solo, onExitToMenu }) {
 
       <div className="mt-3">
         {d.board.kind === "category" ? (
-          <CategoryBoard name={d.board.name} visitorId={solo.visitorId} />
+          <CategoryBoard name={d.board.name} visitorId={solo.visitorId} reloadKey={reload} />
         ) : (
           <ChallengeBoard id={d.board.id} visitorId={solo.visitorId} reloadKey={reload} />
         )}

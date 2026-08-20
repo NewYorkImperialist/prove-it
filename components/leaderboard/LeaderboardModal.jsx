@@ -75,7 +75,11 @@ export default function LeaderboardModal({ onClose, visitorId }) {
     const res = await submitDailyResult({ name, run: null, challengeId: today?.id, visitorId });
     setSaving(false);
     if (res.blocked) return setNameErr("That name isn't allowed — try a different one.");
-    if (res.ok) setReloadKey((k) => k + 1);
+    // A rejected name isn't the only way this fails: submitDailyResult now reports a failed write
+    // too (persistence off, the row gone, the request dropped). Staying silent here told you the
+    // rename had landed on a board it never reached.
+    if (!res.ok) return setNameErr(res.error || "Couldn't save that — check your connection and try again.");
+    setReloadKey((k) => k + 1);
   };
 
   return (

@@ -10,7 +10,7 @@ import { LbTable, LbRow, LbCell, LbName, LbTotal, LbNote } from "./table";
 // all-time board" for a run that can't appear on it is the kind of lie players notice.
 // Any single category can have one (the modal's Geography tab picks between the mapped ones; a
 // one-round solo run shows its own), and a tie at the top is broken by the fastest full clear.
-export default function CategoryBoard({ name, visitorId }) {
+export default function CategoryBoard({ name, visitorId, reloadKey }) {
   const [state, setState] = useState({ loading: true });
 
   useEffect(() => {
@@ -24,7 +24,8 @@ export default function CategoryBoard({ name, visitorId }) {
     return () => {
       live = false;
     };
-  }, [name]);
+    // reloadKey: a retried save has to be able to refetch this, the way ChallengeBoard already can.
+  }, [name, reloadKey]);
 
   if (state.loading) return <LbNote>Loading {name} leaderboard…</LbNote>;
   if (state.error) return <LbNote>Couldn&apos;t load the leaderboard.</LbNote>;

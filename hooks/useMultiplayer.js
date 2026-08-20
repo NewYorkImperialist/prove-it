@@ -51,7 +51,8 @@ export function useMultiplayer({ router }) {
   const [flash, setFlash] = useState(null); // one-off status line (a rejected action, mostly)
   const [prompt, setPrompt] = useState(null); // big centre-screen category reveal
   const [fx, setFx] = useState({ confetti: 0, oil: 0, logoParty: 0, crownParty: 0 });
-  const [quickMatch, setQuickMatch] = useState({ inQueue: false, status: "" });
+  const [quickMatch, setQuickMatch] = useState({ inQueue: false, waiting: 0, startsAt: null });
+  const [now, setNow] = useState(0); // drives the quick-match countdown; see the effect below
   const [muted, setMutedState] = useState(false);
   const [crown, setCrown] = useState({ hasKey: false, on: false });
 
@@ -265,11 +266,26 @@ export function useMultiplayer({ router }) {
       socket.emit("quickMatchJoin", { name, playerId }, (res) => {
         if (!res?.ok) return setErr("race", res?.error || "Could not queue for quick match.");
         rememberName(name);
-        setQuickMatch({ inQueue: true, status: "Waiting for other players…" });
+        setQuickMatch({ inQueue: true, waiting: 0, startsAt: null });
       });
     },
     [socket, playerId, setErr, rememberName],
   );
+
+  // The queue's countdown is a real deadline, so it needs a heartbeat to re-render against.
+  // Only while queued: no timer runs the rest of the time.
+  useEffect(() => {
+    if (!quickMatch.inQueue) return undefined;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 500);
+    return () => clearInterval(t);
+  }, [quickMatch.inQueue]);
+
+  const quickMatchStatus = quickMatch.startsAt != null
+    ? `${quickMatch.waiting} waiting · starting in ${Math.max(0, Math.ceil((quickMatch.startsAt - (now || Date.now())) / 1000))}s…`
+    : quickMatch.waiting > 0
+      ? `${quickMatch.waiting} waiting for at least one more player…`
+      : "Waiting for other players…";
 
   /* ---------------- settings ---------------- */
   const setSettings = useCallback((patch) => iAmHostRef.current && socket.emit("setSettings", patch), [socket, iAmHostRef]);
@@ -278,10 +294,15 @@ export function useMultiplayer({ router }) {
   const setName = useCallback(
     (n) => {
       if (!n) return;
-      rememberName(n);
-      socket.emit("setName", { name: n });
+      // The server can REFUSE this (rooms.js runs the profanity filter and acks an error), so the
+      // rename isn't remembered until it's accepted — otherwise the stored name and the one in the
+      // roster drift apart, and the refusal would be silent to the only person who needs to see it.
+      socket.emit("setName", { name: n }, (r) => {
+        if (r && !r.ok) return flashStatus(r.error || "Could not change your name.");
+        rememberName(r?.name || n);
+      });
     },
-    [socket, rememberName],
+    [socket, rememberName, flashStatus],
   );
   const startMatch = useCallback(() => socket.emit("startMatch", {}, (r) => { if (!r?.ok) setErr("room", r?.error || "Could not start."); }), [socket, setErr]);
 
@@ -620,14 +641,17 @@ export function useMultiplayer({ router }) {
       flashStatus(`${name} said "${phrase || "the magic words"}" · +5 bonus points!`);
     };
 
-    const onQuickMatchStatus = ({ waiting, startsInMs }) =>
+    // startsAt is an absolute deadline; startsInMs is the same thing measured at send time and is
+    // kept only for an older server. Storing the deadline lets the effect below re-render the
+    // countdown every second — the old code formatted the one-shot value once, so "starting in 8s…"
+    // sat there unchanged for the whole eight seconds.
+    const onQuickMatchStatus = ({ waiting, startsInMs, startsAt }) =>
       setQuickMatch((q) =>
         q.inQueue
           ? {
               inQueue: true,
-              status: startsInMs != null
-                ? `${waiting} waiting · starting in ${Math.ceil(startsInMs / 1000)}s…`
-                : `${waiting} waiting for at least one more player…`,
+              waiting,
+              startsAt: startsAt ?? (startsInMs != null ? Date.now() + startsInMs : null),
             }
           : q,
       );
@@ -818,7 +842,7 @@ export function useMultiplayer({ router }) {
     playerId, myId: myIdRef.current, myRoom, isSpectator, isGhost,
     // state
     room, gs, raceGs, mode, iAmHost, feed, typingBy, reviewOpen, clock, prompt, fx, raceMine,
-    errors, flash, quickMatch, muted, crown,
+    errors, flash, quickMatch: { ...quickMatch, status: quickMatchStatus }, muted, crown,
     // names + codes bound to the setup cards
     mpName, setMpName, raceName, setRaceName, joinCode, setJoinCode, raceJoinCode, setRaceJoinCode,
     // lobby actions

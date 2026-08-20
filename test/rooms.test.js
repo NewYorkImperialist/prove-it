@@ -253,6 +253,28 @@ describe("rooms.js — lobby lifecycle", () => {
     }
   });
 
+  test("a spectator pressing a game button is told why, not ignored", async () => {
+    const a = await connect(), b = await connect(), spec = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    await emit(spec, "spectateRoom", { code: created.code, name: "Watcher" });
+    await emit(a, "startMatch", {});
+    await sleep(50);
+    const res = await emitOrNull(spec, "voteSkip", {});
+    assert.ok(res, "the server said nothing at all — the same dead button the acks exist to fix");
+    assert.equal(res.ok, false);
+    assert.match(res.error, /spectator/i);
+  });
+
+  test("pressing a game button with no game running is answered too", async () => {
+    const a = await connect();
+    await emit(a, "createRoom", { name: "Alice" }); // in a room, but nothing started
+    const res = await emitOrNull(a, "nextRound", {});
+    assert.ok(res, "silence again");
+    assert.equal(res.ok, false);
+    assert.match(res.error, /no game/i);
+  });
+
   test("an action the engine turns down comes back with the reason", async () => {
     const a = await connect(), b = await connect();
     const created = await emit(a, "createRoom", { name: "Alice" });

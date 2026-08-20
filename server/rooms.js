@@ -304,10 +304,13 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       if (badSpec) return ack?.({ ok: false, error: badSpec }); // a spectator's name shows in the roster and in chat too
       leaveCurrentRoom(socket);
       if (!room.spectators) room.spectators = new Map();
-      room.spectators.set(pid, { id: pid, name: uniqueName(room, name, pid), socketId: socket.id });
+      const specName = uniqueName(room, name, pid);
+      room.spectators.set(pid, { id: pid, name: specName, socketId: socket.id });
       socket.join(code);
       socket.data.roomCode = code; socket.data.playerId = pid; socket.data.spectator = true;
-      if (socket.data.session) { socket.data.session.spectated = true; socket.data.session.name = cleanName(name); }
+      // specName, not cleanName(name): the roster shows the de-duplicated one, and the owner feed
+      // reading a different value would put two identically-named watchers back on the screen.
+      if (socket.data.session) { socket.data.session.spectated = true; socket.data.session.name = specName; }
       console.log(`👀 spectating room ${code}`);
       ack?.({ ok: true, code, you: pid, spectator: true, inGame: !!room.game, mode: room.mode });
       broadcast(room);
@@ -445,13 +448,15 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     // untouched, so the client still classifies typing as an answer; dropping it without an ack
     // meant the input cleared, the error branch never ran, and the text reached nobody.
     const withGame = (fn) => (...args) => {
+      const maybeAck = args[args.length - 1];
+      const ack = typeof maybeAck === "function" ? maybeAck : null;
       const room = rooms.get(socket.data.roomCode);
-      if (!room || !room.game || !room.players.has(socket.data.playerId)) return;
-      if (room.game.paused) {
-        const ack = args[args.length - 1];
-        if (typeof ack === "function") ack({ ok: false, error: "The game is paused — press / to chat instead." });
-        return;
-      }
+      // These two used to return in silence, which is the same dead-button feeling the acks below
+      // were added to remove — a spectator, or a client whose room has since closed, pressed
+      // something and got nothing back at all.
+      if (!room || !room.game) return ack?.({ ok: false, error: "There's no game running here." });
+      if (!room.players.has(socket.data.playerId)) return ack?.({ ok: false, error: "Spectators can't play — press / to chat." });
+      if (room.game.paused) return ack?.({ ok: false, error: "The game is paused — press / to chat instead." });
       touch(room);
       fn(room, ...args);
     };

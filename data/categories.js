@@ -224,7 +224,7 @@ const CATEGORY_GROUPS = {
       "Swimming", ["Athletics","athletics","track and field","track"], "Gymnastics", "Basketball", "Soccer", "Volleyball", "Tennis", "Boxing",
       "Wrestling", "Judo", "Fencing", "Archery", "Rowing", "Cycling", "Diving", "Weightlifting", "Badminton", ["Table Tennis","table tennis","ping pong"],
       "Handball", ["Field Hockey","field hockey","hockey"], "Sailing", "Canoeing", "Equestrian", "Triathlon", "Taekwondo", "Skateboarding",
-      "Surfing", ["Sport Climbing","sport climbing","climbing"], "Karate", "Rugby", "Golf", "Shooting", "Water Polo", "Trampoline", "Pentathlon", "Rowing",
+      "Surfing", ["Sport Climbing","sport climbing","climbing"], "Karate", "Rugby", "Golf", "Shooting", "Water Polo", "Trampoline", "Pentathlon",
       "Baseball", "Softball", "Breaking", "BMX", ["Artistic Swimming","artistic swimming","synchronized swimming"],
       ["Rhythmic Gymnastics","rhythmic gymnastics"], "Curling", ["Ice Hockey","ice hockey"],
       "Alpine Skiing", "Cross-Country Skiing", "Ski Jumping", "Snowboarding", "Speed Skating", "Figure Skating",
@@ -2790,7 +2790,7 @@ const CATEGORY_GROUPS = {
       ["Peter Higgs","peter higgs","higgs"], ["Roger Penrose","roger penrose","penrose"], ["Ernest Hemingway","ernest hemingway","hemingway"], ["Gabriel Garcia Marquez","gabriel garcia marquez","garcia marquez"],
       ["Toni Morrison","toni morrison","morrison"], ["Bob Dylan","bob dylan","dylan"], ["Winston Churchill","winston churchill","churchill"], ["John Steinbeck","john steinbeck","steinbeck"],
       ["William Faulkner","william faulkner","faulkner"], ["Rudyard Kipling","rudyard kipling","kipling"], ["Nelson Mandela","nelson mandela","mandela"], ["Martin Luther King Jr","martin luther king jr","mlk"],
-      ["Mother Teresa","mother teresa"], ["Malala Yousafzai","malala yousafzai","malala"], ["Barack Obama","barack obama","obama"], ["Niels Bohr","niels bohr"], ["Enrico Fermi","enrico fermi","fermi"],
+      ["Mother Teresa","mother teresa"], ["Malala Yousafzai","malala yousafzai","malala"], ["Barack Obama","barack obama","obama"], ["Enrico Fermi","enrico fermi","fermi"],
       ["Paul Dirac","paul dirac","dirac"], ["Subrahmanyan Chandrasekhar","chandrasekhar"], ["Kary Mullis","kary mullis","mullis"],
       ["Otto Hahn","otto hahn","hahn"], ["Rosalyn Yalow","rosalyn yalow","yalow"], ["Elizabeth Blackburn","elizabeth blackburn","blackburn"],
       ["Youyou Tu","youyou tu","tu youyou"], ["Wilhelm Röntgen","wilhelm rontgen","rontgen"], ["Frederick Banting","frederick banting","banting"],
@@ -3242,7 +3242,7 @@ const CATEGORY_GROUPS = {
       "January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December",
     ]},
     { name: "Days of the Week", exact: true, items: [
-      "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+      "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday",
     ]},
     { name: "Popular Podcasts", items: [
       ["The Joe Rogan Experience","the joe rogan experience","joe rogan experience","joe rogan"], "Serial",

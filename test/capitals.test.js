@@ -3,6 +3,9 @@ const { test, describe } = require("node:test");
 const assert = require("node:assert/strict");
 
 const { CAPITALS, US_CAPITALS } = require("../data/capitals.js");
+const { CATEGORY_GROUPS } = require("../lib/category-data.js");
+
+const norm = (s) => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").trim().toLowerCase().replace(/\s+/g, " ");
 
 function checkTable(name, table) {
   describe(name, () => {
@@ -17,6 +20,31 @@ function checkTable(name, table) {
         assert.ok(rec.c.trim().length > 0, `${place}.c non-empty`);
         assert.ok(Array.isArray(rec.a) && rec.a.length > 0, `${place}.a non-empty array`);
         for (const alias of rec.a) assert.equal(typeof alias, "string", `${place}: non-string alias`);
+      }
+    });
+
+    // `c` is shown to the player in the round-end "you missed" study list. The original generated
+    // dump had lost every non-ASCII character mid-word ("Ciudad de M", "Santo Domingo de Guzm")
+    // and carried multi-name artifacts ("Bruxelles [Brussel]", "Rangoon (Yangon)") straight to
+    // the screen.
+    test("no capital name is a truncated or bracketed dump artifact", () => {
+      for (const [place, rec] of Object.entries(table)) {
+        assert.ok(!/[[\]()]/.test(rec.c), `${place}: "${rec.c}" still carries a bracketed alternative`);
+        assert.ok(!/\s(de|of|del|da)$/i.test(rec.c), `${place}: "${rec.c}" looks cut off mid-name`);
+      }
+    });
+
+    // Repairing a canonical without adding its normalized form to `a` would silently stop the
+    // displayed answer from being accepted — the study list would teach an unusable spelling.
+    test("every capital accepts its own displayed name", () => {
+      for (const [place, rec] of Object.entries(table)) {
+        assert.ok(rec.a.includes(norm(rec.c)), `${place}: displays "${rec.c}" but doesn't accept it`);
+      }
+    });
+
+    test("aliases are stored pre-normalized (geomap keys its lookup Map on them directly)", () => {
+      for (const [place, rec] of Object.entries(table)) {
+        for (const alias of rec.a) assert.equal(alias, norm(alias), `${place}: alias "${alias}" is not normalized`);
       }
     });
 
@@ -35,3 +63,33 @@ function checkTable(name, table) {
 
 checkTable("window.CAPITALS (world)", CAPITALS);
 checkTable("window.US_CAPITALS", US_CAPITALS);
+
+// The solo fill board matches against CAPITALS, while multiplayer matches the "World Capitals"
+// category in data/categories.js. Two answer keys for one category name meant a player could be
+// taught "Athens" in one mode and marked wrong for it in the other — and both feed the same
+// per-category leaderboard.
+describe("the fill board agrees with the World Capitals category", () => {
+  const cat = CATEGORY_GROUPS.Geography.cats.find((c) => c.name === "World Capitals");
+  const accepted = new Set();
+  for (const rec of Object.values(CAPITALS)) for (const a of rec.a) accepted.add(norm(a));
+
+  test("the category exists and is non-trivial", () => {
+    assert.ok(cat, "World Capitals category not found");
+    assert.ok(cat.items.length > 150);
+  });
+
+  test("every capital the category teaches is typeable on the fill board", () => {
+    const rejected = cat.items
+      .map((it) => (Array.isArray(it) ? it[0] : it))
+      .filter((name) => !accepted.has(norm(name)));
+    assert.deepEqual(rejected, [], `the fill board rejects ${rejected.length} of the category's own answers`);
+  });
+
+  test("every alias the category accepts is typeable on the fill board", () => {
+    const rejected = [];
+    for (const it of cat.items) {
+      for (const raw of Array.isArray(it) ? it : [it]) if (!accepted.has(norm(raw))) rejected.push(raw);
+    }
+    assert.deepEqual(rejected, []);
+  });
+});

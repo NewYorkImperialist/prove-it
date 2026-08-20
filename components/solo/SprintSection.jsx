@@ -86,7 +86,10 @@ export default function SprintSection({ solo, onBack }) {
         spellCheck="false"
         placeholder="Type a name and hit Enter…"
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => {
+          setValue(e.target.value);
+          solo.noteTyping(e.target.value.length); // typing speed is measured here, not at submit
+        }}
         onKeyDown={(e) => e.key === "Enter" && submit()}
         onAnimationEnd={endShake}
         // Geography rounds: when the keyboard opens, pull the box down so the map stays in view.

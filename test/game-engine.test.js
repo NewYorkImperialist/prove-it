@@ -192,6 +192,34 @@ describe("handleAnswer", () => {
     assert.equal(room.game.lastResult.reason, "Nailed it!");
   });
 
+  test("the typing-speed clock starts when the round's clock does, not at the first answer", () => {
+    const io = makeIO(); const room = makeRoom({ phase: "bidding", claim: 3, holderId: "p1", turnId: "p2" });
+    engine.handleProveIt(io, room, sock("p2"), () => {});
+    assert.ok(room.game.wpmStart > 0, "startProving has to open the typing window");
+  });
+
+  test("a slow first answer no longer reports a burst of speed", () => {
+    const io = makeIO(); const room = provingRoom({ wpmStart: Date.now() - 30_000, wpmChars: 0 });
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    // 5 chars = 1 word over 30s = 2 wpm. The old code timed from this very answer, so the elapsed
+    // time was zero, the divide-by-zero floor kicked in, and it reported 5/5/(1/60) = 60 wpm —
+    // every round's opening answer, however long it really took.
+    assert.equal(room.game.wpm, 2);
+  });
+
+  test("a guess that doesn't score isn't billed to typing speed", () => {
+    const io = makeIO(); const room = provingRoom({ wpmStart: Date.now() - 60_000, wpmChars: 0 });
+    engine.handleAnswer(io, room, sock("p1"), "notathing", () => {}); // off-list → goes to judging
+    assert.ok(!room.game.wpm, "an unscored guess must not read as typing speed");
+    assert.ok(!room.game.wpmChars);
+  });
+
+  test("typing speed is capped, since a paste is not typing", () => {
+    const io = makeIO(); const room = provingRoom({ wpmStart: Date.now(), wpmChars: 100_000 });
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    assert.ok(room.game.wpm <= 300, `wpm should be capped, got ${room.game.wpm}`);
+  });
+
   test("rapid-fire answers inside the cooldown window are bounced, not counted", () => {
     const io = makeIO(); const room = provingRoom({ lastAnswerAt: Date.now() });
     let ack; engine.handleAnswer(io, room, sock("p1"), "alpha", (r) => (ack = r));

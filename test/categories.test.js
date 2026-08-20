@@ -74,6 +74,40 @@ describe("category content structure", () => {
     }
   });
 
+  // The test above only catches an alias claimed by two DIFFERENT canonicals, so a wholly
+  // duplicated item passed it: both copies share a display name, so `owner === display` held.
+  // A duplicate is worse than unreachable — resolve() returns the first match and answers are
+  // deduped by entry id, so the item count overstates what can actually be named and the top
+  // claim in the category becomes unwinnable.
+  test("no item appears twice in the same category", () => {
+    for (const [gname, grp] of Object.entries(CATEGORY_GROUPS)) {
+      for (const cat of grp.cats) {
+        const seen = new Map(); // normalized canonical -> index it first appeared at
+        cat.items.forEach((item, i) => {
+          const display = Array.isArray(item) ? item[0] : item;
+          const key = norm(display);
+          const first = seen.get(key);
+          assert.equal(first, undefined,
+            `${gname}/${cat.name}: "${display}" appears at index ${first} and again at ${i}`);
+          seen.set(key, i);
+        });
+      }
+    }
+  });
+
+  // An `exact` category makes the game say "There are only N <category>." out loud
+  // (game-engine's handleOpen), so N has to be the number of answers that really exist.
+  test("an exact category's item count is the number of distinct answers it holds", () => {
+    for (const [gname, grp] of Object.entries(CATEGORY_GROUPS)) {
+      for (const cat of grp.cats) {
+        if (!cat.exact) continue;
+        const distinct = new Set(cat.items.map((it) => norm(Array.isArray(it) ? it[0] : it)));
+        assert.equal(distinct.size, cat.items.length,
+          `${gname}/${cat.name} is exact and claims ${cat.items.length}, but only ${distinct.size} answers exist`);
+      }
+    }
+  });
+
   test("exact categories report a plausible item count (not accidentally empty or a single stray entry)", () => {
     for (const [gname, grp] of Object.entries(CATEGORY_GROUPS)) {
       for (const cat of grp.cats) {

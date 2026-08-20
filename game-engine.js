@@ -130,7 +130,7 @@ function snapshot(room) {
     category: { name: g.current.name, group: g.current.group, emoji: g.current.emoji, size: g.current.entries.length },
     claim: g.claim, holderId: g.holderId, turnId: g.turnId, challengerId: g.challengerId || null, deadline: g.deadline || null,
     proven: g.proven ? total(g) : 0,
-    wpm: g.wpm || 0, // live typing speed of whoever's proving (chars/5 over time since first answer)
+    wpm: g.wpm || 0, // live typing speed of whoever's proving (see bumpWpm)
     pending: g.pending ? [...g.pending.values()].map((p) => ({ id: p.id, text: p.text })) : [],
     // off-list answers already accepted this round · the challenger can revoke one (see handleRevokeGrant)
     // if it turns out to double-count something the prover later also got on-list.
@@ -152,6 +152,16 @@ function snapshot(room) {
 }
 function emit(io, room) { io.to(room.code).emit("gameState", snapshot(room)); }
 function log(io, room, by, name, text, kind) { io.to(room.code).emit("log", { by, name, text, kind: kind || null }); }
+
+const MAX_WPM = 300; // faster than anyone sustains — past this it was pasted, not typed
+// Bill a scoring answer to the prover's typing speed: chars/5 over the time their clock has been
+// running. Only called where an answer actually counts, so a flurry of rejected guesses no longer
+// reads as blistering speed.
+function bumpWpm(g, text) {
+  g.wpmChars = (g.wpmChars || 0) + String(text || "").trim().length;
+  const mins = Math.max(1 / 60, (Date.now() - (g.wpmStart || Date.now())) / 60000);
+  g.wpm = Math.min(MAX_WPM, Math.round((g.wpmChars / 5) / mins));
+}
 
 // ---------- lifecycle ----------
 function startMatch(io, room) {
@@ -239,7 +249,11 @@ function startProving(io, room, challengerId) {
   g.phase = "proving"; g.turnId = proverId; g.challengerId = challengerId;
   g.proven = []; g.granted = []; g.grantSeq = 0; g.pending = new Map(); g.answerSeq = 0; g.lastAnswerAt = 0;
   g.judgeQueue = []; g.judgeActive = null; g.offListCount = 0; g.bonus = 0;
-  g.wpmChars = 0; g.wpmStart = 0; g.wpm = 0; // typing-speed tracking for the prover
+  // Typing-speed tracking for the prover, timed from the moment the clock starts. It used to
+  // start at their FIRST answer, which made the elapsed time zero for that answer — the
+  // divide-by-zero floor below then reported `chars × 12` wpm every round, however long they'd
+  // actually taken over it.
+  g.wpmChars = 0; g.wpmStart = Date.now(); g.wpm = 0;
   log(io, room, challengerId, g.names[challengerId], `Prove it! ${g.names[proverId]}, name ${g.claim}.`);
   setTimer(room, g.timer * 1000, () => onProveTimeout(io, room));
   emit(io, room);
@@ -280,10 +294,11 @@ function handleAnswer(io, room, socket, text, ack) {
   const now = Date.now();
   if (g.lastAnswerAt && now - g.lastAnswerAt < ANSWER_COOLDOWN_MS) return ack?.({ ok: false, reason: "cooldown" });
   g.lastAnswerAt = now;
-  // live typing speed (prover): chars/5 over time since their first answer this round
-  g.wpmChars = (g.wpmChars || 0) + String(text || "").trim().length;
-  if (!g.wpmStart) g.wpmStart = now;
-  g.wpm = Math.round((g.wpmChars / 5) / Math.max(1 / 60, (now - g.wpmStart) / 60000));
+  // Live typing speed (prover): chars/5 over the time the round's clock has been running. Only
+  // scoring answers count — billing rejected guesses and duplicates to their typing speed
+  // inflated the number for exactly the players who were struggling. Capped, since a paste is
+  // not typing.
+  if (!g.wpmStart) g.wpmStart = now; // defensive: a snapshot from before this field existed
   const me = g.names[socket.data.playerId];
 
   // 🇮🇱 Troll easter egg: on US Presidents, "Benjamin Netanyahu" is worth +50 toward the claim.
@@ -302,6 +317,7 @@ function handleAnswer(io, room, socket, text, ack) {
       log(io, room, socket.data.playerId, me, `already got ${entry.display}`, "bad");
     } else {
       g.proven.push(entry.id);
+      bumpWpm(g, text);
       log(io, room, socket.data.playerId, me, `${entry.display} ✓ (${total(g)}/${g.claim})`, "ok");
       report(room, "answer", { category: g.current.name, grp: g.current.group, display: entry.display, offList: false, player: me });
       if (g.increment) extendTimer(room, g.increment * 1000); // chess-clock bonus for a correct answer

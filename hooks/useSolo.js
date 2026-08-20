@@ -11,6 +11,9 @@ import { useStateRef } from "@/hooks/useStateRef";
 
 const genGid = () => "s-" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
+const MAX_WPM = 300; // faster than anyone sustains — past this it was pasted, not typed
+const PASTE_CHARS = 12; // one input event adding more than this at once wasn't typing either
+
 // Solo / daily runs: build a challenge, sprint through its rounds against the clock, then land
 // on a shareable leaderboard. Everything here is judged client-side — there's no opponent to
 // keep honest, and the server only stores the results.
@@ -64,11 +67,30 @@ export function useSolo({ onExitToMenu }) {
   const mapEl = useRef(null);
   const guesses = useRef([]);
 
-  // Live typing speed, measured from the first keystroke of the round.
+  // Live typing speed, measured from the first keystroke of the round. It used to start at the
+  // first submitted ANSWER, so the elapsed time was zero for that answer and the divide-by-zero
+  // floor below reported `chars × 12` — a one-answer round claimed 60-200 wpm however slowly it
+  // was typed, and a long paste read in the thousands.
   const rChars = useRef(0);
   const rT0 = useRef(0);
+  const rLastLen = useRef(0);
   const [wpm, setWpm] = useState(0);
-  const liveWpm = () => (rT0.current ? Math.round(rChars.current / 5 / Math.max(1 / 60, (Date.now() - rT0.current) / 60000)) : 0);
+  const liveWpm = () => {
+    if (!rT0.current) return 0;
+    const mins = Math.max(1 / 60, (Date.now() - rT0.current) / 60000);
+    return Math.min(MAX_WPM, Math.round(rChars.current / 5 / mins));
+  };
+  // Called on every keystroke in the answer box. Counts characters actually typed, so a
+  // near-miss that gets re-spelled and re-submitted isn't billed twice. The box is cleared
+  // programmatically between answers (no change event), which costs us the first character of
+  // each answer — deliberately conservative: it can only under-report, never invent speed.
+  const noteTyping = useCallback((len) => {
+    if (!rT0.current) rT0.current = Date.now();
+    const delta = len - rLastLen.current;
+    rLastLen.current = len;
+    if (delta > 0 && delta <= PASTE_CHARS) rChars.current += delta;
+    setWpm(liveWpm());
+  }, []);
 
   /* ---------------- results ---------------- */
   const [missed, setMissed] = useState([]);
@@ -180,6 +202,7 @@ export function useSolo({ onExitToMenu }) {
       guesses.current = [];
       rChars.current = 0;
       rT0.current = 0;
+      rLastLen.current = 0;
       setWpm(0);
       setCount(0);
       setChips([]);
@@ -258,9 +281,7 @@ export function useSolo({ onExitToMenu }) {
   // Returns true when the text should be KEPT in the box (a near-miss → let them re-spell).
   const submit = useCallback(
     (q) => {
-      rChars.current += q.length;
-      if (!rT0.current) rT0.current = Date.now();
-      setWpm(liveWpm());
+      setWpm(liveWpm()); // the characters themselves were counted as they were typed (noteTyping)
 
       if (geoModeRef.current === "fill" && geoRef.current) {
         const r = geoRef.current.tryFill(q);
@@ -560,7 +581,7 @@ export function useSolo({ onExitToMenu }) {
     joinInfo, joinName, setJoinName, joinErr, setJoinErr,
     // actions
     initCreate, initJoin, initDaily, createChallenge, startSolo, startPlaying, runCountdown,
-    startRound, submit, giveUp, nextRound, toggleRemaining, backToStart, leaveRun, challengeUrl, submitDaily,
+    startRound, submit, noteTyping, giveUp, nextRound, toggleRemaining, backToStart, leaveRun, challengeUrl, submitDaily,
     todayEastern,
   };
 }

@@ -386,25 +386,30 @@ async function sessionsList(limit = 300) {
             FROM sessions ORDER BY id DESC LIMIT ?`, [limit]);
 }
 
-// The creator's display name (from any crowned run, anywhere) — used to merge all their same-named
-// entries into one crowned entry even on boards where they have no crowned run.
+// The creator's display NAME, from the newest crowned run. Display only — it decides what the
+// merged crowned entry is labelled when several crowned rows disagree, and nothing else. It must
+// never decide WHICH rows are the creator's: see the note on isCreator below.
 async function getCreatorName() {
   const r = await one(`SELECT name FROM challenge_results WHERE crown=1 ORDER BY id DESC LIMIT 1`);
   return r ? r.name : null;
 }
 // Collapse rows [{name, visitor_id, score, at, crown, ...}] into a ranked board: one entry per
-// visitor; ALL crowned rows AND any row sharing the creator's name merge into a single crowned entry.
+// visitor, with every crowned row merged into a single crowned entry.
 function collapseBoard(rows, limit = 50, forcedName) {
-  const nn = (s) => String(s || "").trim().toLowerCase();
   const crownRow = rows.find((r) => r.crown);
-  const creatorName = crownRow ? nn(crownRow.name) : (forcedName ? nn(forcedName) : null);
   const creatorDisplay = crownRow ? crownRow.name : (forcedName || null);
   const tv = (t) => (t == null || !(t > 0)) ? Infinity : Number(t); // no full-clear time → ranks last on a score tie
   const beats = (a, b) => a.score !== b.score ? a.score > b.score : tv(a.time) < tv(b.time); // higher score, else faster clear
   const best = {};
   for (const r of rows) {
     if (!(Number(r.score) > 0)) continue;
-    const isCreator = !!r.crown || (creatorName && nn(r.name) === creatorName);
+    // crown=1 ONLY. This used to also treat any row whose display name equalled the creator's as
+    // the creator's own, which made a free-text field into a privilege: posting a keyless score
+    // under that name rendered it with the 👑 and, being merged into __creator__, replaced the
+    // creator's entry when it scored higher. crown is set only behind OWNER_KEY; a name is typed
+    // by anyone. lib/leaderboard.js does the same on the client — these two must not drift, or a
+    // board disagrees with itself about who someone is.
+    const isCreator = !!r.crown;
     const key = isCreator ? "__creator__" : (r.visitor_id || ("name:" + r.name));
     const cand = { name: isCreator ? (creatorDisplay || r.name) : r.name, visitor_id: r.visitor_id, score: Number(r.score), time: (r.time != null && r.time > 0) ? Number(r.time) : null, at: Number(r.at), crown: isCreator ? 1 : 0, challenge_id: r.challenge_id };
     if (!best[key] || beats(cand, best[key])) best[key] = cand;
@@ -526,15 +531,14 @@ async function geoGoat(limit = 50) {
   for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } timerById[c.id] = c.timer; }
   // Same solo+link (recommended-timer-only) eligibility as categoryLeaderboard() above.
   const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, crown, mode FROM challenge_results WHERE mode='solo' OR mode='link'`);
-  const creator = (await getCreatorName()) || null; // merge the creator's rows/devices like the other boards
-  const creatorNN = creator ? String(creator).trim().toLowerCase() : null;
+  const creator = (await getCreatorName()) || null; // what to LABEL the merged crowned entry — not who it is
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const players = new Map(); // key → { name, visitor_id, crown, best: Map<cat, points> }
   for (const r of results) {
     if (r.mode === "link" && timerById[r.challenge_id] !== 0) continue; // not the recommended-time setting
     const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
     let scores = [], times = []; try { scores = JSON.parse(r.scores || "[]"); } catch (e) {} try { times = JSON.parse(r.times || "[]"); } catch (e) {}
-    const isCreator = !!r.crown || (creatorNN && String(r.name || "").trim().toLowerCase() === creatorNN);
+    const isCreator = !!r.crown; // crown=1 only — see the note in collapseBoard()
     const key = isCreator ? "__creator__" : (r.visitor_id || ("name:" + r.name));
     let p = players.get(key);
     if (!p) { p = { name: isCreator ? (creator || r.name) : r.name, visitor_id: isCreator ? null : r.visitor_id, crown: isCreator ? 1 : 0, best: new Map() }; players.set(key, p); }

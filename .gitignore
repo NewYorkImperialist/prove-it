@@ -3,6 +3,11 @@ node_modules/
 .next/
 next-env.d.ts
 
+# Secrets. Nothing here uses a .env today — every secret is a Fly secret or a GitHub secret — but
+# the day someone creates one locally with OWNER_KEY or TURSO_TOKEN in it, it must not be committed.
+.env
+.env.*
+
 # UI mockups / design tests — local + Fly only, never on GitHub
 mockup-*.html
 

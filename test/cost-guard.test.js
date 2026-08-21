@@ -49,3 +49,38 @@ describe("projectCost", () => {
     assert.equal(p.daysInMonth, 31);
   });
 });
+
+// The guard used to trip on the PROJECTION alone, which is trivially weaponisable: early in a
+// cycle the extrapolation multiplies whatever has been served so far by the whole month, so on day
+// 2 it is `gb / 2 * 31`. Every GET is unlimited and the tally counts the requester's own traffic,
+// so ~8GB of downloads — minutes of work on a decent link — projected past the stop threshold and
+// served every visitor the "resting for the month" page until the calendar rolled over.
+describe("the cost guard needs real bytes, not just a projection", () => {
+  // Day 2 of a 31-day month, the shape of the attack.
+  const day2 = Date.UTC(2026, 6, 3);
+
+  test("the attack payload still projects over the threshold — the projection alone is not a safe trigger", () => {
+    const p = projectCost({ monthBytes: 9e9 }, day2);
+    assert.ok(p.projTotal >= FLY_COST.stopThreshold,
+      `9GB on day 2 projects to $${p.projTotal.toFixed(2)}, past the $${FLY_COST.stopThreshold} stop threshold`);
+    // …and that is exactly why the byte floor has to exist alongside it.
+    assert.ok(p.gb < FLY_COST.minStopGB, "but 9GB is nowhere near a real month-end bill");
+  });
+
+  test("the floors are set above any burst a stranger can produce cheaply", () => {
+    assert.ok(FLY_COST.minStopGB > FLY_COST.minColdGB, "pausing the site must be harder than cold-start mode");
+    assert.ok(FLY_COST.minColdGB >= 10, "a floor low enough to reach in one sitting is not a floor");
+  });
+
+  test("a genuine runaway still trips, because by then the bytes are real", () => {
+    const p = projectCost({ monthBytes: 120e9 }, day2);
+    assert.ok(p.projTotal >= FLY_COST.stopThreshold);
+    assert.ok(p.gb >= FLY_COST.minStopGB, "120GB is a real bill, whatever the projection says");
+  });
+
+  test("a quiet month never approaches either floor", () => {
+    const p = projectCost({ monthBytes: 2e9 }, Date.UTC(2026, 6, 20));
+    assert.ok(p.gb < FLY_COST.minColdGB);
+    assert.ok(p.projTotal < FLY_COST.coldThreshold);
+  });
+});

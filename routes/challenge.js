@@ -12,7 +12,6 @@ const { CATEGORY_GROUPS, CAT_SIZES, ALL_ROUND_NAMES } = require("../lib/category
 const { cleanName, isBlocked } = require("../lib/name-filter.js");
 const { MODES, allBoards } = require("../lib/geo-boards.js");
 const { recommendedTime } = require("../lib/solo-catalog.js"); // per-category round length, for the pace cap
-const { bragLine } = require("../lib/og-card.js");
 
 const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char url-safe id
 
@@ -125,8 +124,6 @@ const dailyId = (date) => "d-" + date.replace(/-/g, ""); // e.g. d-20260624 (10 
 // both reachable from the button most players press first.
 // The challenger's best single-round score and which round it came from ("17 Countries in Europe").
 // Prefer the creator's own runs; fall back to everyone's if their name isn't on the board yet.
-// Split out of challengePreview because the share CARD (lib/og-card.js) needs the same two numbers
-// as pixels, and re-deriving them beside the copy is how the picture and the title drift apart.
 function bestRound(by, results) {
   const all = results || [];
   const mine = all.filter((r) => (r.name || "").trim().toLowerCase() === String(by).trim().toLowerCase());
@@ -136,6 +133,20 @@ function bestRound(by, results) {
   return best;
 }
 
+// The one sentence a share link exists for. Category names are plural ("US States"), so a score of
+// 1 can't be dropped straight in front of one — it needs a counted noun of its own.
+//
+// This lived in lib/og-card.js, alongside a generated share-card PNG drawn per link. That feature
+// was switched off (the cards weren't good enough to keep) and the module is gone; bragLine was the
+// only part of it still reachable.
+function bragLine({ by, score, category }) {
+  const who = by || "A friend";
+  if (!category || !(score > 0)) return `${who} challenged you on Prove It!`;
+  return score === 1
+    ? `${who} says you can't name more than 1 answer in ${category}`
+    : `${who} says you can't name more than ${score} ${category}`;
+}
+
 function challengePreview({ by, type, genre, rounds, results }) {
   rounds = rounds || [];
   const n = rounds.length;
@@ -143,8 +154,8 @@ function challengePreview({ by, type, genre, rounds, results }) {
   const what = type === "genre" && genre ? `${roundWord} of ${genre}` : roundWord;
   const best = bestRound(by, results);
   return {
-    // The ⚡ is the title's own, not the card's: a crawler renders it as text next to the picture,
-    // and satori has no emoji font (see app/og.png/route.js), so bragLine() stays plain.
+    // The ⚡ belongs to the title, not to bragLine(): a crawler renders it as text beside the
+    // picture, and the picture is the one static card now.
     title: `⚡ ${bragLine({ by, score: best ? best.score : null, category: best ? rounds[best.idx] : "" })}`,
     desc: `${what}. Name as many as you can before the clock runs out, then try to beat the leaderboard. No sign-up, just click and play.`,
   };

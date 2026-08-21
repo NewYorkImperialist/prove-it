@@ -456,3 +456,36 @@ describe("routes/admin.js — the uptime panel", () => {
     assert.equal(res.body.uptime.day.probes, 24, "and what an outside prober saw");
   });
 });
+
+// The owner key travels in the query string of every dashboard URL, so document.referrer on a
+// same-origin navigation out of the dashboard carries it. That is not hypothetical: the dashboard's
+// own ghost-watch link opens /?ghost=CODE&key=SECRET, where lib/browser/referrer.js snapshots the
+// referrer and it ends up persisted in sessions.referrer — the admin key, in plaintext, in the
+// analytics table. These headers are set in server/index.js, so this checks the source rather than
+// a live response: the admin router is mounted under that middleware in production.
+describe("the admin surface doesn't leak its own key", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const src = fs.readFileSync(path.join(__dirname, "..", "server", "index.js"), "utf8");
+
+  test("every /admin response is no-referrer, so the key can't ride out in a referrer", () => {
+    assert.match(src, /referrer-policy["']?,\s*["']no-referrer/);
+    assert.match(src, /req\.path\.startsWith\(["']\/admin["']\)/);
+  });
+
+  test("and is never cached anywhere shared", () => {
+    assert.match(src, /cache-control["']?,\s*["']private, no-store/);
+  });
+
+  test("the framework isn't advertised", () => {
+    assert.match(src, /app\.disable\(["']x-powered-by["']\)/);
+  });
+
+  test("nosniff is set for everything, not just /admin", () => {
+    const guard = src.slice(src.indexOf("x-content-type-options"));
+    const adminOnly = guard.indexOf("startsWith(\"/admin\")");
+    const nosniff = src.indexOf("x-content-type-options");
+    assert.ok(nosniff < src.indexOf("startsWith(\"/admin\")"), "nosniff must be outside the /admin branch");
+    assert.ok(adminOnly > 0);
+  });
+});

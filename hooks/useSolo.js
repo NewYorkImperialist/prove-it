@@ -911,7 +911,11 @@ export function useSolo({ onExitToMenu }) {
       if (!n) return { ok: false };
       if (await isNameBlocked(n)) return { ok: false, blocked: true };
       store.setSoloName(n);
-      await postJSON("/challenge/rename", { name: n, visitorId, ownerKey: ownerKeyIfCrowned() });
+      // Read the answer rather than discarding it: this returned { ok: true } unconditionally, so
+      // "Update" reported success even when the rename never landed, and the caller's own failure
+      // branch could never fire for a non-daily run.
+      const res = await postJSON("/challenge/rename", { name: n, visitorId, ownerKey: ownerKeyIfCrowned() });
+      if (!res.ok) return { ok: false, error: "Couldn't update your name — check your connection and try again." };
       return { ok: true, name: n };
     },
     [visitorId],

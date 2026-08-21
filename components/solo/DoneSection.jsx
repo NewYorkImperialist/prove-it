@@ -76,7 +76,15 @@ export default function DoneSection({ solo, onExitToMenu }) {
     if (res.ok) {
       setSaved(true);
       setReload((r) => r + 1);
+      return;
     }
+    // Anything else is a failed write, and saying nothing about it is the bug this screen shipped
+    // twice. The daily has no second route to the board — useSolo's finish() returns early for a
+    // daily before the retry-and-keep-it path every other mode uses, and the "couldn't save"
+    // banner above is gated on !d.daily — so this branch is the only place a daily failure can be
+    // reported. Without it the button just settled back to "Add me" while the streak line below
+    // went on claiming the run was banked. lib/browser/daily.js has always returned the reason.
+    setNameErr(res.error || "Couldn't save that — check your connection and try again.");
   };
 
   return (

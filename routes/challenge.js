@@ -15,6 +15,46 @@ const { bragLine } = require("../lib/og-card.js");
 
 const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char url-safe id
 
+// ── Rate limit for result submission ─────────────────────────────────────────────────────────
+// POST /challenge/:id/result is the only unauthenticated write in the app — it has to be, because
+// the whole game is playable with no sign-up. That also makes it the one endpoint a stranger can
+// replay from the network tab, which is exactly what happened: a run of 999/999/999 with no
+// keystrokes behind it, submitted straight to the API.
+//
+// A fixed window per IP, in memory. Deliberately not a dependency and deliberately not shared
+// across machines: one process is all this app runs (see fly.toml), and a limiter that forgets
+// everything on restart is still the difference between a script writing thousands of rows and a
+// script writing a handful. Finishing a genuine run takes at least the round timer, so a real
+// player never comes close to this.
+const SUBMIT_WINDOW_MS = 60_000;
+// Generous on purpose. A real player submits once per finished run, plus a retry or two if the
+// write fails, so this is nowhere near them — while still turning "thousands of junk rows a
+// minute" into twenty. The cap on the scores themselves is the fix that actually matters; this
+// only limits the volume.
+const SUBMIT_MAX = 20;
+const submits = new Map(); // ip → { count, resetAt }
+
+// Fly terminates TLS and forwards the caller in fly-client-ip; x-forwarded-for is the generic
+// fallback. Both are attacker-controlled, so this is a speed bump against a script rather than a
+// security boundary — the real fix is the score cap below, which no header can get around.
+function callerIp(req) {
+  return req.get("fly-client-ip") || String(req.get("x-forwarded-for") || "").split(",")[0].trim() || req.ip || "unknown";
+}
+
+function submitAllowed(req) {
+  const ip = callerIp(req);
+  const now = Date.now();
+  const e = submits.get(ip);
+  if (!e || now > e.resetAt) {
+    submits.set(ip, { count: 1, resetAt: now + SUBMIT_WINDOW_MS });
+    // Opportunistic sweep so a long-running process doesn't hold every IP it has ever seen.
+    if (submits.size > 5000) for (const [k, v] of submits) if (now > v.resetAt) submits.delete(k);
+    return true;
+  }
+  e.count += 1;
+  return e.count <= SUBMIT_MAX;
+}
+
 // ---------- Daily challenge ----------
 const DAILY_TROLL = new Set(["Things the Nyan Cat Says", "Counting Numbers", "Nobel Peace Prize Loser", "People in the Epstein Files", "Italian Brainrot", "Cities Mistaken for Australia's Capital", "Seasons of the Year", "Months of the Year"]);
 const DAILY_POOL = [];
@@ -110,6 +150,11 @@ function createChallengeRouter({ isLockdown }) {
     res.json({ ok: true, id: c.id, type: c.type, genre: c.genre, rounds: c.rounds, by: c.by_name, timer: c.timer == null ? 45 : c.timer });
   });
   router.post("/challenge/:id/result", async (req, res) => {
+    // Maintenance mode has to stop writes, not just new games. It didn't: isLockdown() was checked
+    // on POST /challenge alone, so flipping the switch during an incident closed every room, said
+    // "the game is down", and left this endpoint — the one actually being abused — wide open.
+    if (isLockdown()) return res.status(503).json({ ok: false, error: "The game is down for maintenance — your run wasn't saved." });
+    if (!submitAllowed(req)) return res.status(429).json({ ok: false, error: "Too many submissions — slow down and try again in a minute." });
     // No database configured is not a failed write, and the client now retries + warns on ok:false
     // — which turned a deployment (or a local dev run) with no persistence into 15s of retrying
     // followed by "check your connection" after every single run. `stored: false` says the run was
@@ -119,7 +164,19 @@ function createChallengeRouter({ isLockdown }) {
     const c = await analytics.getChallenge(id).catch(() => null);
     if (!c) return res.json({ ok: false });
     const b = req.body || {};
-    const scores = (Array.isArray(b.scores) ? b.scores : []).map((n) => Math.max(0, Math.min(999, parseInt(n, 10) || 0))).slice(0, c.rounds.length);
+    // A round's score cannot exceed the number of answers that round actually has. The old cap was
+    // a flat 999 for every category, so a 47-flag board would happily accept 999 — which is how a
+    // fabricated 999/999/999 got to the top of the daily board. CAT_SIZES is the same table the
+    // daily pool is built from, so this is the real answer count, not a guess. Unknown round names
+    // (a category retired since the challenge was created) keep the old ceiling.
+    const roundCap = (i) => {
+      const n = CAT_SIZES[(c.rounds || [])[i]];
+      return Number.isFinite(n) && n > 0 ? n : 999;
+    };
+    // Slice before mapping so each score still lines up with its own round — mapping first and
+    // slicing after would cap score[i] against the wrong category on an over-long payload.
+    const scores = (Array.isArray(b.scores) ? b.scores : []).slice(0, c.rounds.length)
+      .map((n, i) => Math.max(0, Math.min(roundCap(i), parseInt(n, 10) || 0)));
     const wpms = (Array.isArray(b.wpms) ? b.wpms : []).map((n) => Math.max(0, Math.min(9999, parseInt(n, 10) || 0))).slice(0, c.rounds.length);
     // seconds-to-complete per round (null when not fully completed) — for speed ranking on maxed boards
     const times = (Array.isArray(b.times) ? b.times : []).map((n) => { const t = parseInt(n, 10); return t > 0 ? Math.min(3600, t) : null; }).slice(0, c.rounds.length);

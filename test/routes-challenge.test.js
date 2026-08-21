@@ -273,3 +273,83 @@ describe("challengePreview (the crawler-facing share copy)", () => {
     assert.match(desc, /^0 rounds\. /);
   });
 });
+
+// A fabricated run reached the top of the live daily board: 999/999/999 for 2997, submitted
+// straight to this endpoint with no keystrokes behind it (its WPM columns were empty, which is
+// what gave it away). Three things were wrong, and all three are covered here.
+describe("POST /challenge/:id/result — what an unauthenticated write may do", () => {
+  const analytics = require("../server/stats.js");
+  // Each test gets its own caller IP so the per-IP limiter doesn't leak between them — and so the
+  // limiter test below can pin one IP deliberately.
+  const post = (app, ip, body) => request(app).post("/challenge/d-20260820/result").set("fly-client-ip", ip).send(body);
+
+  function withChallenge(rounds, run) {
+    const saved = { enabled: analytics.enabled, getChallenge: analytics.getChallenge, addChallengeResult: analytics.addChallengeResult };
+    const written = [];
+    analytics.enabled = () => true;
+    analytics.getChallenge = async () => ({ id: "d-20260820", rounds, timer: 30 });
+    analytics.addChallengeResult = async (row) => { written.push(row); return true; };
+    return Promise.resolve(run(written)).finally(() => Object.assign(analytics, saved));
+  }
+
+  test("a score can't exceed the number of answers its category actually has", async () => {
+    // The old cap was a flat 999 for every category, so this is exactly the payload that put
+    // 999/999/999 on the board. "Countries of the World" has 197 answers; "US States" has 50.
+    await withChallenge(["Countries of the World", "US States"], async (written) => {
+      const res = await post(buildApp(() => false), "1.1.1.1", { name: "THE ONE ABOVE ALL", scores: [999, 999] });
+      assert.equal(res.body.ok, true);
+      assert.deepEqual(written[0].scores, [197, 50], "each round capped to its own category, not a shared ceiling");
+      assert.equal(written[0].total, 247);
+    });
+  });
+
+  test("a legitimate score passes through untouched", async () => {
+    await withChallenge(["Countries of the World", "US States"], async (written) => {
+      await post(buildApp(() => false), "1.1.1.2", { name: "mark", scores: [8, 14] });
+      assert.deepEqual(written[0].scores, [8, 14]);
+    });
+  });
+
+  test("each score is capped against its OWN round, even on an over-long payload", async () => {
+    // Mapping before slicing capped score[i] against the wrong category once the payload ran
+    // longer than the challenge — a way to smuggle a big number into a small board.
+    await withChallenge(["US States"], async (written) => {
+      await post(buildApp(() => false), "1.1.1.3", { name: "x", scores: [999, 999, 999] });
+      assert.deepEqual(written[0].scores, [50], "only the real round survives, capped to its own size");
+    });
+  });
+
+  test("an unknown category keeps a ceiling rather than becoming unbounded", async () => {
+    await withChallenge(["A Category That No Longer Exists"], async (written) => {
+      await post(buildApp(() => false), "1.1.1.4", { name: "x", scores: [999999] });
+      assert.equal(written[0].scores[0], 999);
+    });
+  });
+
+  test("maintenance mode blocks the write, not just new games", async () => {
+    // The kill-switch was checked on POST /challenge alone, so flipping it during an incident
+    // closed every room, announced "the game is down", and left this endpoint wide open.
+    await withChallenge(["US States"], async (written) => {
+      const res = await post(buildApp(() => true), "1.1.1.5", { name: "x", scores: [10] });
+      assert.equal(res.statusCode, 503);
+      assert.equal(res.body.ok, false);
+      assert.equal(written.length, 0, "nothing may reach the database while the game is down");
+    });
+  });
+
+  test("one IP can't hammer the endpoint indefinitely", async () => {
+    await withChallenge(["US States"], async (written) => {
+      const app = buildApp(() => false);
+      let limited = 0;
+      for (let i = 0; i < 26; i++) {
+        const res = await post(app, "9.9.9.9", { name: "flood", scores: [1] });
+        if (res.statusCode === 429) limited++;
+      }
+      assert.ok(limited > 0, "the limiter never engaged");
+      assert.ok(written.length <= 20, `wrote ${written.length} rows past the limit`);
+      // A different caller is unaffected — the limit is per IP, not global.
+      const other = await post(app, "9.9.9.10", { name: "innocent", scores: [3] });
+      assert.equal(other.body.ok, true);
+    });
+  });
+});

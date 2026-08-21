@@ -20,6 +20,26 @@ const FORMATS = [3, 5, null];
 const isValidIncrement = (n) => Number.isInteger(n) && n >= 0 && n <= 30; // bonus seconds per correct answer
 const MAX_PLAYERS = 2; // the 1v1 duel is always exactly 2
 const MAX_RACE_PLAYERS = 8; // race rooms allow a small group
+// Every spectator is listed in every roomState, and roomState goes to everyone in the room — so
+// the bytes on the wire grow with players × spectators, and an unbounded spectator list is an
+// amplifier: one socket joining makes every other socket's next update bigger, forever. None of
+// that egress is counted by the cost guard either, which only tallies HTTP.
+//
+// 20 is far above any real audience for a two-player word game and far below the point where the
+// broadcast matters.
+const MAX_SPECTATORS = 20;
+// Concurrent sockets from one address. Deliberately high: a household, an office or a school all
+// share one address, and a player legitimately keeps two or three tabs open — a cap tight enough to
+// be interesting to an attacker would lock out a classroom playing together, which is a worse
+// outcome than the abuse it prevents. What it actually protects is broadcastPresence, an io.emit to
+// every client on every connect, so N connects cost O(N²) emits; at 100 that is nothing and at
+// 10,000 it is a problem.
+//
+// Spoofable, like every IP-keyed limit here (the headers it reads are the caller's own), so it is a
+// speed bump against a naive loop rather than a boundary. The boundaries are the per-room caps and
+// the frame size above. Overridable for the same reason quickMatchGraceMs is: the socket tests hold
+// well over a hundred connections from 127.0.0.1 across one run.
+const MAX_SOCKETS_PER_IP = 100;
 const MIN_RACE_PLAYERS = 2;
 const { GRACE_MS } = require("../lib/match-rules.js"); // shared with the view builders, which say the number out loud
 const CHAT_MIN_GAP_MS = 400; // anti-spam gap between one player's chat messages
@@ -38,7 +58,11 @@ const NAME_REJECTED = "That name isn't allowed — pick a different one.";
 // via `resume` — nobody forfeits until GRACE_MS is fully spent. The extra heartbeat traffic is a
 // few bytes per client every 5s. The client inherits both values from the handshake, so its own
 // "reconnecting…" indicator speeds up by the same amount.
-const PING_OPTIONS = { pingInterval: 5000, pingTimeout: 5000 };
+// maxHttpBufferSize was Socket.IO's 1MB default. Nothing here has any use for a frame remotely
+// that size: the largest legitimate payload is a chat line (200 chars), a duel answer (160), a
+// name (20) or the clientMeta blob. 16KB is many times the real ceiling and takes a whole class of
+// memory-pressure games off the table on a 256MB machine.
+const PING_OPTIONS = { pingInterval: 5000, pingTimeout: 5000, maxHttpBufferSize: 16 * 1024 };
 
 // ---- client IP + rough geolocation (owner-only analytics) ----
 function clientIp(headers, fallback) {
@@ -67,7 +91,7 @@ const deviceOf = (socket) => (/Mobile|Android|iPhone|iPad|iPod/i.test(socket.han
 // io: the Socket.IO server. engine: game-engine.js (the 1v1 duel). raceEngine: race-engine.js
 // (the live "Challenge Race" mode — room.mode distinguishes which engine owns room.game).
 // analytics: stats.js (persistent history). CATEGORY_GROUPS/DEFAULT_GROUPS: lib/category-data.js.
-function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS, quickMatchGraceMs }) {
+function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS, quickMatchGraceMs, maxSocketsPerIp = MAX_SOCKETS_PER_IP }) {
   const rooms = new Map();
   const engineFor = (room) => (room.mode === "race" ? raceEngine : engine);
   const capFor = (room) => (room.mode === "race" ? (room.settings?.maxPlayers || MAX_RACE_PLAYERS) : MAX_PLAYERS);
@@ -214,12 +238,30 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     else if (room.spectators?.has(pid)) { room.spectators.delete(pid); broadcast(room); }
   }
 
+  // Concurrent sockets per address. Counted from the live socket set rather than kept in a Map, so
+  // there is no bookkeeping to leak and nothing to prune — and a spoofed header buys a fresh bucket
+  // rather than growing an unbounded one.
+  function socketsFromSameIp(ip) {
+    if (!ip) return 0;
+    let n = 0;
+    for (const s of io.sockets.sockets.values()) if (s.data?.ip === ip) n++;
+    return n;
+  }
+
   io.on("connection", (socket) => {
+    const ip = clientIp(socket.handshake?.headers, socket.handshake?.address);
+    socket.data.ip = ip;
+    if (socketsFromSameIp(ip) > maxSocketsPerIp) {
+      console.log(`🚫 refused ${socket.id}: too many connections from one address`);
+      socket.emit("announce", { text: "Too many connections from your network — close a tab and try again." });
+      socket.disconnect(true);
+      return;
+    }
     console.log(`✅ connected: ${socket.id}`);
     online++; broadcastPresence();
     socket.on("latencyPing", (ack) => { if (typeof ack === "function") ack(); }); // RTT probe for the client's "X ms" indicator
     socket.on("enterSingleplayer", () => { if (socket.data.session) socket.data.session.singleplayer = true; }); // they left the lobby for Solo/Daily
-    const ip = clientIp(socket.handshake.headers, socket.handshake.address);
+    // ip was resolved above, for the connection cap, and is already on socket.data.
     socket.data.session = { connectedAt: Date.now(), device: deviceOf(socket), joined: false, spectated: false, played: false, name: null, ip, visitor_id: null, tz: null, locale: null, geo: null, ref_source: null, referrer: null };
     geoLookup(ip).then((g) => { if (socket.data.session) socket.data.session.geo = g; }); // async; resolved well before disconnect
     // Client reports its persistent visitor id + timezone/locale + where the visit came from, right
@@ -330,8 +372,13 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       }
       const badSpec = nameRejected(name);
       if (badSpec) return ack?.({ ok: false, error: badSpec }); // a spectator's name shows in the roster and in chat too
-      leaveCurrentRoom(socket);
       if (!room.spectators) room.spectators = new Map();
+      // Checked BEFORE leaving the room they're in, so a refusal costs them nothing — same reason
+      // the name check sits where it does.
+      if (room.spectators.size >= MAX_SPECTATORS && !room.spectators.has(pid)) {
+        return ack?.({ ok: false, error: "That room already has the maximum number of watchers." });
+      }
+      leaveCurrentRoom(socket);
       const specName = uniqueName(room, name, pid);
       room.spectators.set(pid, { id: pid, name: specName, socketId: socket.id });
       socket.join(code);

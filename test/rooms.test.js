@@ -29,7 +29,7 @@ before(() => {
     const app = express();
     httpServer = http.createServer(app);
     const io = new Server(httpServer);
-    roomsApi = createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS });
+    roomsApi = createRooms({ io, engine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS, maxSocketsPerIp: 1e6 });
     httpServer.listen(0, () => { port = httpServer.address().port; resolve(); });
   });
 });
@@ -84,7 +84,7 @@ function trackEvent(socket, event) {
 async function withOwnServer({ socketOptions, analytics: analyticsDouble } = {}, fn) {
   const httpServer2 = http.createServer(express());
   const io2 = new Server(httpServer2, socketOptions);
-  const api = createRooms({ io: io2, engine, analytics: analyticsDouble || analytics, CATEGORY_GROUPS, DEFAULT_GROUPS });
+  const api = createRooms({ io: io2, engine, analytics: analyticsDouble || analytics, CATEGORY_GROUPS, DEFAULT_GROUPS, maxSocketsPerIp: 1e6 });
   await new Promise((resolve) => httpServer2.listen(0, resolve));
   const port2 = httpServer2.address().port;
   const opened = [];
@@ -918,5 +918,51 @@ describe("rooms.js — rematch clears the same bar as starting a match", () => {
     const res = await emit(c, "rematch");
     assert.equal(res.ok, false);
     assert.match(res.error, /not in a room/i);
+  });
+});
+
+// Every spectator is listed in every roomState, and roomState goes to everyone in the room — so
+// the bytes on the wire grow with players × spectators. An unbounded spectator list is an
+// amplifier: one socket joining makes every other socket's next update bigger, permanently. None
+// of that egress is counted by the cost guard either, which only tallies HTTP.
+describe("rooms.js — a room's audience is bounded", () => {
+  test("spectators are capped, and the refusal says why", async () => {
+    const host = await connect();
+    const created = await emit(host, "createRoom", { name: "Alice", mode: "race" });
+    // Fill past the cap. 20 is the limit; the 21st must be turned away.
+    let refused = null;
+    for (let i = 0; i < 24 && !refused; i++) {
+      const w = await connect();
+      const res = await emit(w, "spectateRoom", { code: created.code, name: `W${i}` });
+      if (!res.ok) refused = res;
+    }
+    assert.ok(refused, "the spectator list never filled up");
+    assert.match(refused.error, /watchers/i);
+    assert.ok(roomsApi.rooms.get(created.code).spectators.size <= 20);
+  });
+
+  test("a refused watcher keeps the room they were already in", async () => {
+    // The cap is checked before leaveCurrentRoom, so a refusal costs them nothing — the same
+    // ordering the name check uses.
+    const host = await connect();
+    const full = await emit(host, "createRoom", { name: "Alice", mode: "race" });
+    for (let i = 0; i < 20; i++) {
+      const w = await connect();
+      await emit(w, "spectateRoom", { code: full.code, name: `F${i}` });
+    }
+    const mine = await connect();
+    const own = await emit(mine, "createRoom", { name: "Bob" });
+    const res = await emit(mine, "spectateRoom", { code: full.code, name: "Bob" });
+    assert.equal(res.ok, false);
+    assert.ok(roomsApi.rooms.has(own.code), "their own room survives the refusal");
+    assert.equal(roomsApi.rooms.get(own.code).players.size, 1);
+  });
+
+  test("a socket frame is bounded well below the transport default", async () => {
+    // Socket.IO's default is 1MB. The largest legitimate payload here is a 200-char chat line, so
+    // a megabyte frame has no honest use on a 256MB machine.
+    const { PING_OPTIONS: opts } = require("../server/rooms.js");
+    assert.ok(opts.maxHttpBufferSize <= 64 * 1024, "the 1MB default is too much for this app");
+    assert.ok(opts.maxHttpBufferSize >= 4 * 1024, "but it must still clear a real chat line and roster");
   });
 });

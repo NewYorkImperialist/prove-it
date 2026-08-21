@@ -36,12 +36,15 @@ export const metadata = {
     description: SITE.home.twitterDescription,
     images: [`${SITE.ogImage.url}?v=${SITE.ogImage.v}`],
   },
+  // Launched from an iOS home screen this is what makes the game open without Safari's chrome.
+  // statusBarStyle is "black" rather than "black-translucent" on purpose: translucent puts the
+  // page under the status bar, and none of these layouts reserve safe-area insets for that.
+  //
+  // This has to live INSIDE metadata. As its own `export const appleWebApp` it was silently
+  // ignored — the App Router resolves a fixed set of top-level exports and reads this one as a
+  // field of metadata — so the built HTML shipped none of the apple-mobile-web-app tags.
+  appleWebApp: { capable: true, title: SITE.pwa.shortName, statusBarStyle: "black" },
 };
-
-// Launched from an iOS home screen this is what makes the game open without Safari's chrome.
-// statusBarStyle is "black" rather than "black-translucent" on purpose: translucent puts the page
-// under the status bar, and none of these layouts reserve safe-area insets for that.
-export const appleWebApp = { capable: true, title: SITE.pwa.shortName, statusBarStyle: "black" };
 
 export const viewport = { themeColor: SITE.themeColor, width: "device-width", initialScale: 1 };
 

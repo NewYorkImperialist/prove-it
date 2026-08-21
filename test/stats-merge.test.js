@@ -73,6 +73,23 @@ const auditRow = (row) => selects.push({ match: "SELECT id, snapshot, undone_at 
 const stmts = (frag) => log.filter((e) => e.sql.includes(frag));
 const only = (frag) => { const m = stmts(frag); assert.equal(m.length, 1, `expected exactly one ${frag}, got ${m.length}`); return m[0]; };
 
+// Read an INSERT's bound values BY COLUMN NAME, by pairing its column list against its placeholder
+// list. Asserting on args[4] instead breaks every time a column is added — which it did, when the
+// name merge added `kind` and the two labels — and a shifted index fails somewhere unrelated to the
+// change that caused it. Literals baked into VALUES (…,'name',…) are returned as their own value.
+function fields(stmt) {
+  const cols = stmt.sql.slice(stmt.sql.indexOf("(") + 1, stmt.sql.indexOf(")")).split(",").map((s) => s.trim());
+  const vals = stmt.sql.slice(stmt.sql.lastIndexOf("VALUES (") + 8, stmt.sql.lastIndexOf(")")).split(",").map((s) => s.trim());
+  assert.equal(cols.length, vals.length, `column/value count mismatch in: ${stmt.sql}`);
+  const out = {};
+  let i = 0;
+  vals.forEach((v, n) => {
+    out[cols[n]] = v === "?" ? stmt.args[i++] : v.replace(/^'|'$/g, "");
+  });
+  assert.equal(i, stmt.args.length, "every bound arg should be consumed");
+  return out;
+}
+
 describe("server/stats.js — mergeVisitors", () => {
   test("the schema keeps a per-merge snapshot of the rows it moved", () => {
     const src = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "server", "stats.js"), "utf8");
@@ -124,7 +141,7 @@ describe("server/stats.js — mergeVisitors", () => {
     const iRead = log.findIndex((e) => e.sql.startsWith("SELECT id, visitor_id, name FROM challenge_results"));
     const iUpd = log.findIndex((e) => e.sql.startsWith("UPDATE challenge_results SET visitor_id"));
     assert.ok(iRead >= 0 && iUpd > iRead, "the snapshot read must precede the update");
-    const snap = JSON.parse(only("INSERT INTO merge_audit").args[4]);
+    const snap = JSON.parse(fields(only("INSERT INTO merge_audit")).snapshot);
     assert.deepEqual(snap, [{ i: 7, v: "v-b", n: "diddy kong" }, { i: 9, v: "v-b", n: "doodooblud" }]);
   });
 
@@ -132,12 +149,13 @@ describe("server/stats.js — mergeVisitors", () => {
     moving([{ id: 1, visitor_id: "v-b", name: "x" }]);
     selects.push({ match: "UPDATE challenge_results SET visitor_id=?, name=?", rowsAffected: 4 });
     const out = await analytics.mergeVisitors({ keep: "v-a", from: "v-b", name: "jayden", by: "admin" });
-    const a = only("INSERT INTO merge_audit");
-    assert.equal(a.args[1], "v-a", "keep_visitor");
-    assert.equal(a.args[2], "v-b", "from_visitor");
-    assert.equal(a.args[3], 4, "rows");
-    assert.equal(a.args[5], "jayden", "renamed");
-    assert.equal(a.args[6], "admin", "by_who");
+    const a = fields(only("INSERT INTO merge_audit"));
+    assert.equal(a.kind, "visitor");
+    assert.equal(a.keep_visitor, "v-a");
+    assert.equal(a.from_visitor, "v-b");
+    assert.equal(a.rows, 4);
+    assert.equal(a.renamed, "jayden");
+    assert.equal(a.by_who, "admin");
     assert.equal(out.rows, 4);
   });
 
@@ -314,6 +332,199 @@ describe("server/stats.js — merging with persistence off", () => {
       assert.deepEqual(await off.undoMerge(1), { ok: false, rows: 0, reason: "off" });
       assert.deepEqual(await off.resultVisitors(10), []);
       assert.deepEqual(await off.mergeAuditList(10), []);
+    } finally {
+      console.log = realL;
+      if (prevUrl) process.env.TURSO_URL = prevUrl;
+      delete require.cache[STATS];
+      require.cache[STATS] = saved;
+    }
+  });
+});
+
+// Merging two display NAMES, which is the duplicate an owner actually sees on a board. Different
+// from mergeVisitors in two ways that matter: a name is not an identity (one name can span several
+// visitor_ids), and the KEEP side's rows move too, because they may be getting a new visitor_id.
+//
+// It has to move visitor_id and not just rewrite `name`: collapseBoard()/geoGoat group by
+// visitor_id, so two rows that merely share a name stay two board entries — the exact thing this is
+// supposed to fix.
+describe("server/stats.js — mergeNames", () => {
+  const BOTH = "WHERE name=? OR name=?";
+  const both = (rows) => selects.push({ match: `SELECT id, visitor_id, name FROM challenge_results ${BOTH}`, rows });
+
+  test("every entry under both names ends up on one visitor, under the kept name", async () => {
+    both([
+      { id: 1, visitor_id: "v-a", name: "jayden" },
+      { id: 2, visitor_id: "v-b", name: "Jayden" },
+    ]);
+    const out = await analytics.mergeNames({ keepName: "jayden", fromName: "Jayden" });
+    assert.equal(out.ok, true);
+    const upd = only("UPDATE challenge_results SET visitor_id=?, name=?");
+    assert.match(upd.sql, /WHERE name=\? OR name=\?$/);
+    assert.deepEqual(upd.args, ["v-a", "jayden", "jayden", "Jayden"]);
+  });
+
+  test("it rewrites visitor_id, not just the name — a shared name alone is still two board entries", async () => {
+    both([{ id: 1, visitor_id: "v-a", name: "jayden" }, { id: 2, visitor_id: "v-b", name: "Jayden" }]);
+    await analytics.mergeNames({ keepName: "jayden", fromName: "Jayden" });
+    assert.equal(stmts("SET name=? WHERE").length, 0, "a name-only update would not merge anything");
+    assert.match(only("UPDATE challenge_results SET visitor_id=?, name=?").sql, /SET visitor_id=\?, name=\?/);
+  });
+
+  test("the canonical visitor comes from the KEPT name's best row", async () => {
+    // The query is ordered by total DESC, so the first keep-side row with an id is its best.
+    both([
+      { id: 5, visitor_id: "v-keep-best", name: "jayden" },
+      { id: 6, visitor_id: "v-keep-worse", name: "jayden" },
+      { id: 7, visitor_id: "v-other", name: "Jayden" },
+    ]);
+    const out = await analytics.mergeNames({ keepName: "jayden", fromName: "Jayden" });
+    assert.equal(out.visitorId, "v-keep-best");
+    assert.equal(only("UPDATE challenge_results SET visitor_id=?, name=?").args[0], "v-keep-best");
+  });
+
+  test("it falls back to the other side's id when the kept name has none", async () => {
+    both([{ id: 1, visitor_id: null, name: "jayden" }, { id: 2, visitor_id: "v-b", name: "Jayden" }]);
+    const out = await analytics.mergeNames({ keepName: "jayden", fromName: "Jayden" });
+    assert.equal(out.visitorId, "v-b");
+  });
+
+  test("with no visitor_id on either side it synthesises one rather than grouping on NULL", async () => {
+    // Rows predating the visitor_id column. NULL groups nothing, so they'd stay separate entries.
+    // Inventing an id is safe here precisely because these rows never matched a real device.
+    both([{ id: 1, visitor_id: null, name: "jayden" }, { id: 2, visitor_id: "", name: "Jayden" }]);
+    const out = await analytics.mergeNames({ keepName: "jayden", fromName: "Jayden" });
+    assert.equal(out.ok, true);
+    assert.match(out.visitorId, /^m-/);
+    assert.equal(only("UPDATE challenge_results SET visitor_id=?, name=?").args[0], out.visitorId);
+  });
+
+  test("the snapshot covers BOTH sides, since the kept rows move too", async () => {
+    // mergeVisitors only ever moves one side. Here the keep side can get a new visitor_id, so an
+    // undo that only restored the folded-in side would leave the other half wrong.
+    both([{ id: 1, visitor_id: "v-a", name: "jayden" }, { id: 2, visitor_id: "v-b", name: "Jayden" }]);
+    await analytics.mergeNames({ keepName: "jayden", fromName: "Jayden" });
+    const snap = JSON.parse(fields(only("INSERT INTO merge_audit")).snapshot);
+    assert.deepEqual(snap, [{ i: 1, v: "v-a", n: "jayden" }, { i: 2, v: "v-b", n: "Jayden" }]);
+  });
+
+  test("the snapshot is read before the update", async () => {
+    both([{ id: 1, visitor_id: "v-a", name: "jayden" }]);
+    await analytics.mergeNames({ keepName: "jayden", fromName: "Jayden" });
+    const iRead = log.findIndex((e) => e.sql.startsWith("SELECT id, visitor_id, name FROM challenge_results"));
+    const iUpd = log.findIndex((e) => e.sql.startsWith("UPDATE challenge_results SET visitor_id"));
+    assert.ok(iRead >= 0 && iUpd > iRead);
+  });
+
+  test("the audit row is tagged as a name merge and carries both names", async () => {
+    both([{ id: 1, visitor_id: "v-a", name: "jayden" }]);
+    selects.push({ match: "UPDATE challenge_results SET visitor_id=?, name=?", rowsAffected: 6 });
+    const out = await analytics.mergeNames({ keepName: "jayden", fromName: "Jayden", by: "admin" });
+    const a = fields(only("INSERT INTO merge_audit"));
+    assert.equal(a.kind, "name", "kind must distinguish it from a visitor merge");
+    assert.equal(a.keep_label, "jayden");
+    assert.equal(a.from_label, "Jayden");
+    assert.equal(a.from_visitor, "NULL", "a name merge has no single source visitor");
+    assert.equal(a.rows, 6);
+    assert.equal(out.rows, 6);
+  });
+
+  test("case differences are what make two names mergeable, so they are not treated as the same", async () => {
+    both([{ id: 1, visitor_id: "v-a", name: "jayden" }]);
+    const out = await analytics.mergeNames({ keepName: "jayden", fromName: "JAYDEN" });
+    assert.equal(out.ok, true, "refusing this would block the commonest duplicate");
+  });
+
+  test("the identical name on both sides is refused", async () => {
+    for (const [keep, from] of [["jayden", "jayden"], ["  jayden  ", "jayden"]]) {
+      log = [];
+      const out = await analytics.mergeNames({ keepName: keep, fromName: from });
+      assert.equal(out.ok, false, `${keep}/${from}`);
+      assert.equal(out.reason, "same");
+      assert.equal(log.length, 0);
+    }
+  });
+
+  test("a missing side is refused before anything is read", async () => {
+    for (const args of [{ keepName: "", fromName: "x" }, { keepName: "x", fromName: "" }, {}, { keepName: "  ", fromName: "x" }]) {
+      log = [];
+      const out = await analytics.mergeNames(args);
+      assert.equal(out.ok, false, JSON.stringify(args));
+      assert.equal(out.reason, "missing");
+      assert.equal(log.length, 0);
+    }
+  });
+
+  test("names with no entries between them are refused rather than recorded", async () => {
+    const out = await analytics.mergeNames({ keepName: "nobody", fromName: "nobody else" });
+    assert.equal(out.ok, false);
+    assert.equal(out.reason, "nothing-to-merge");
+    assert.equal(stmts("UPDATE challenge_results").length, 0);
+    assert.equal(stmts("INSERT INTO merge_audit").length, 0);
+  });
+
+  test("an implausibly large pair is refused rather than writing an unbounded snapshot", async () => {
+    both(Array.from({ length: 2001 }, (_, i) => ({ id: i + 1, visitor_id: "v-a", name: "jayden" })));
+    const out = await analytics.mergeNames({ keepName: "jayden", fromName: "Jayden" });
+    assert.equal(out.ok, false);
+    assert.equal(out.reason, "too-many");
+    assert.equal(stmts("UPDATE challenge_results").length, 0);
+  });
+
+  test("a failed update writes no audit row", async () => {
+    both([{ id: 1, visitor_id: "v-a", name: "jayden" }]);
+    throwOn = ["UPDATE challenge_results SET visitor_id=?, name=?"];
+    const out = await analytics.mergeNames({ keepName: "jayden", fromName: "Jayden" });
+    assert.equal(out.ok, false);
+    assert.equal(out.reason, "write-failed");
+    assert.equal(stmts("INSERT INTO merge_audit").length, 0);
+  });
+
+  test("a name merge is undone by the same snapshot machinery as a visitor merge", async () => {
+    // Nothing in undoMerge is kind-specific: it replays (id → visitor_id, name) triples, which is
+    // exactly what both merges record.
+    auditRow({ id: 8, snapshot: JSON.stringify([{ i: 1, v: "v-a", n: "jayden" }, { i: 2, v: "v-b", n: "Jayden" }]), undone_at: null });
+    const out = await analytics.undoMerge(8);
+    assert.equal(out.ok, true);
+    assert.deepEqual(batches[0].map((s) => s.args), [["v-a", "jayden", 1], ["v-b", "Jayden", 2]]);
+  });
+});
+
+describe("server/stats.js — the name picker's list", () => {
+  test("it groups entries by name and counts how many browsers use each", async () => {
+    // The browser count is the only thing that tells the owner whether merging a name is safe.
+    await analytics.resultNames(300);
+    const s = only("FROM challenge_results WHERE name IS NOT NULL");
+    assert.match(s.sql, /GROUP BY name/);
+    assert.match(s.sql, /COUNT\(DISTINCT visitor_id\) visitors/);
+    assert.match(s.sql, /ORDER BY entries DESC, last_at DESC/);
+    assert.match(s.sql, /name <> ''/);
+  });
+
+  test("the limit is clamped", async () => {
+    for (const [asked, want] of [[300, 300], [0, 300], [-1, 1], [99999, 1000], ["abc", 300]]) {
+      log = [];
+      await analytics.resultNames(asked);
+      assert.equal(only("FROM challenge_results WHERE name IS NOT NULL").args[0], want, `limit ${asked}`);
+    }
+  });
+
+  test("mergeAuditList carries the kind and both labels, so the history can say which merge it was", async () => {
+    await analytics.mergeAuditList(25);
+    const s = only("FROM merge_audit ORDER BY");
+    for (const f of ["kind", "keep_label", "from_label"]) assert.ok(s.sql.includes(f), `missing ${f}`);
+  });
+
+  test("with persistence off both new entry points no-op", async () => {
+    const saved = require.cache[STATS];
+    delete require.cache[STATS];
+    const prevUrl = process.env.TURSO_URL;
+    delete process.env.TURSO_URL;
+    const realL = console.log; console.log = () => {};
+    try {
+      const off = require(STATS);
+      assert.deepEqual(await off.mergeNames({ keepName: "a", fromName: "b" }), { ok: false, rows: 0, reason: "off" });
+      assert.deepEqual(await off.resultNames(10), []);
     } finally {
       console.log = realL;
       if (prevUrl) process.env.TURSO_URL = prevUrl;

@@ -89,7 +89,11 @@ async function init() {
       // Challenge Race additions: format (bo3/bo5/endless) + sudden-death flag + player count on `games`;
       // tie/tiebreaker flags on `rounds` (duel rows just leave these 0/NULL).
       ["games", "format TEXT"], ["games", "sudden_death INTEGER DEFAULT 0"], ["games", "player_count INTEGER"],
-      ["rounds", "tie INTEGER DEFAULT 0"], ["rounds", "tiebreaker INTEGER DEFAULT 0"]]) { // gid→guesses; times[]=speed; mode=solo/daily/link (keeps solo boards separate); verdict=ok/miss/dup
+      ["rounds", "tie INTEGER DEFAULT 0"], ["rounds", "tiebreaker INTEGER DEFAULT 0"],
+      // merge_audit gained a second kind of merge (by display name, not by visitor). `kind` tells
+      // them apart and the two labels are what the history shows — a name merge's "sides" are names,
+      // and keep_visitor/from_visitor can't hold those meaningfully.
+      ["merge_audit", "kind TEXT DEFAULT 'visitor'"], ["merge_audit", "keep_label TEXT"], ["merge_audit", "from_label TEXT"]]) { // gid→guesses; times[]=speed; mode=solo/daily/link (keeps solo boards separate); verdict=ok/miss/dup
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
     // one-time backfill: tag pre-`mode` challenge_results so old solo scores stay on the geography boards.
@@ -713,11 +717,81 @@ async function mergeVisitors({ keep, from, name = null, by = null }) {
   if (rows == null) return { ok: false, rows: 0, reason: "write-failed" };
   try {
     await client.execute({
-      sql: `INSERT INTO merge_audit (at, keep_visitor, from_visitor, rows, snapshot, renamed, by_who, undone_at) VALUES (?,?,?,?,?,?,?,NULL)`,
-      args: [Date.now(), to, src, rows, snapshot, newName, by ? String(by).slice(0, 60) : null],
+      sql: `INSERT INTO merge_audit (at, kind, keep_visitor, from_visitor, keep_label, from_label, rows, snapshot, renamed, by_who, undone_at) VALUES (?,'visitor',?,?,?,?,?,?,?,?,NULL)`,
+      args: [Date.now(), to, src, to, src, rows, snapshot, newName, by ? String(by).slice(0, 60) : null],
     });
   } catch (e) { console.error("📊 merge audit:", e.message); }
   return { ok: true, rows, keep: to, from: src, renamed: newName };
+}
+
+// ---- merging two display NAMES into one ----
+// The duplicate an owner actually sees is two names, not two ids: "jayden" and "Jayden" side by side
+// on a board, obviously one person. mergeVisitors can fix that a pair at a time, but a name is not
+// an identity — one name can span several visitor_ids (a phone, a laptop, a cleared cache), and each
+// of those is a separate merge. This does the whole thing in one action.
+//
+// Merging names has to move visitor_id too, not just rewrite `name`. collapseBoard()/geoGoat group by
+// visitor_id, so two rows that merely share a name stay two entries — which is the exact complaint
+// this is meant to fix. So every row under both names ends up on ONE canonical visitor_id.
+//
+// The risk, stated plainly because it cannot be designed away: if two genuinely different people
+// picked the same display name, this fuses them into one player and their scores become one score.
+// Nothing in the data can distinguish that case from the intended one. resultNames() therefore
+// reports how many distinct visitors each name covers, so the picker can show it and the admin page
+// can warn before a name covering several is merged.
+async function resultNames(limit = 300) {
+  return q(`SELECT name,
+      COUNT(*) entries, COUNT(DISTINCT visitor_id) visitors, MAX(total) best,
+      MIN(at) first_at, MAX(at) last_at, MAX(crown) crown
+    FROM challenge_results WHERE name IS NOT NULL AND name <> ''
+    GROUP BY name ORDER BY entries DESC, last_at DESC LIMIT ?`,
+  [Math.max(1, Math.min(1000, parseInt(limit, 10) || 300))]);
+}
+
+async function mergeNames({ keepName, fromName, by = null }) {
+  if (!client) return { ok: false, rows: 0, reason: "off" };
+  const keep = String(keepName || "").trim();
+  const drop = String(fromName || "").trim();
+  if (!keep || !drop) return { ok: false, rows: 0, reason: "missing" };
+  // Compared exactly, not case-insensitively: "jayden" vs "Jayden" being DIFFERENT options is what
+  // makes them mergeable here, so treating them as the same would refuse the commonest case.
+  if (keep === drop) return { ok: false, rows: 0, reason: "same" };
+  // Snapshot both sides before anything moves — the keep side included, because its rows may be
+  // getting a new visitor_id too, and an undo has to put those back as well.
+  const moving = await q(
+    `SELECT id, visitor_id, name FROM challenge_results WHERE name=? OR name=? ORDER BY total DESC, at DESC`,
+    [keep, drop]);
+  if (!moving.length) return { ok: false, rows: 0, reason: "nothing-to-merge" };
+  if (moving.length > MERGE_ROW_CAP) return { ok: false, rows: 0, reason: "too-many", found: moving.length };
+  // Canonical id: prefer one already used by the name being KEPT (its highest-scoring row, since the
+  // query is ordered by total), then any id on either side. Synthesised only if neither side has one
+  // at all — rows predating the visitor_id column. Inventing an id for those is safe precisely
+  // because they never matched a real device: it groups them without taking anything from anyone.
+  const canonical =
+    moving.find((r) => r.name === keep && r.visitor_id)?.visitor_id ||
+    moving.find((r) => r.visitor_id)?.visitor_id ||
+    "m-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  const snapshot = JSON.stringify(moving.map((r) => ({ i: Number(r.id), v: r.visitor_id, n: r.name })));
+  const rows = await (async () => {
+    try {
+      const r = await client.execute({
+        sql: `UPDATE challenge_results SET visitor_id=?, name=? WHERE name=? OR name=?`,
+        args: [canonical, keep, keep, drop],
+      });
+      return Number(r.rowsAffected) || 0;
+    } catch (e) {
+      console.error("📊 merge names:", e.message);
+      return null;
+    }
+  })();
+  if (rows == null) return { ok: false, rows: 0, reason: "write-failed" };
+  try {
+    await client.execute({
+      sql: `INSERT INTO merge_audit (at, kind, keep_visitor, from_visitor, keep_label, from_label, rows, snapshot, renamed, by_who, undone_at) VALUES (?,'name',?,NULL,?,?,?,?,?,?,NULL)`,
+      args: [Date.now(), canonical, keep, drop, rows, snapshot, keep, by ? String(by).slice(0, 60) : null],
+    });
+  } catch (e) { console.error("📊 merge names audit:", e.message); }
+  return { ok: true, rows, keep, from: drop, visitorId: canonical };
 }
 
 // Put a merge back: every row named in the snapshot returns to the visitor_id and name it had.
@@ -751,7 +825,7 @@ async function undoMerge(auditId, by = null) {
 
 // The merge history, newest first. Carries enough to undo each one (and whether it already was).
 async function mergeAuditList(limit = 25) {
-  return q(`SELECT id, at, keep_visitor, from_visitor, rows, renamed, by_who, undone_at
+  return q(`SELECT id, at, kind, keep_visitor, from_visitor, keep_label, from_label, rows, renamed, by_who, undone_at
             FROM merge_audit ORDER BY id DESC LIMIT ?`, [Math.max(1, Math.min(200, parseInt(limit, 10) || 25))]);
 }
 
@@ -817,4 +891,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList, resultVisitors, mergeVisitors, undoMerge, mergeAuditList };
+module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList, resultVisitors, mergeVisitors, undoMerge, mergeAuditList, resultNames, mergeNames };

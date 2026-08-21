@@ -18,8 +18,10 @@ const K = "test-owner-key";
 process.env.OWNER_KEY = K;
 
 let merges = [];
+let nameMerges = [];
 let undos = [];
 let people = [];
+let names = [];
 let history = [];
 let result = { ok: true, rows: 3 };
 let server, origin, saved;
@@ -33,9 +35,12 @@ test.beforeAll(async () => {
   saved = {
     enabled: analytics.enabled, resultVisitors: analytics.resultVisitors,
     mergeVisitors: analytics.mergeVisitors, undoMerge: analytics.undoMerge, mergeAuditList: analytics.mergeAuditList,
+    resultNames: analytics.resultNames, mergeNames: analytics.mergeNames,
   };
   analytics.enabled = () => true;
   analytics.resultVisitors = async () => people;
+  analytics.resultNames = async () => names;
+  analytics.mergeNames = async (a) => { nameMerges.push(a); return result; };
   analytics.mergeAuditList = async () => history;
   analytics.mergeVisitors = async (a) => { merges.push(a); return result; };
   analytics.undoMerge = async (id, by) => { undos.push({ id, by }); return result; };
@@ -62,8 +67,15 @@ test.afterAll(async () => {
   if (server) await new Promise((resolve) => server.close(resolve));
 });
 
+const nameRow = (over = {}) => ({ name: "jayden", entries: 4, visitors: 1, best: 2997, first_at: Date.now() - 864e5, last_at: Date.now(), crown: 0, ...over });
+
 test.beforeEach(() => {
-  merges = []; undos = []; history = [];
+  merges = []; nameMerges = []; undos = []; history = [];
+  names = [
+    nameRow({ name: "jayden", visitors: 1, entries: 4 }),
+    nameRow({ name: "Jayden", visitors: 1, entries: 2, best: 41 }),
+    nameRow({ name: "diddy kong", visitors: 3, entries: 9, best: 61 }),
+  ];
   result = { ok: true, rows: 3 };
   people = [
     person({ visitor_id: "v-aaaaaaaaaaaa", names: "doodooblud" }),
@@ -235,5 +247,170 @@ test.describe("the merge-players form", () => {
     await merge(page);
     await expect(page.locator("#mf button")).toBeDisabled();
     await expect(page.getByText("No merges yet")).toBeVisible();
+  });
+});
+
+// Merging by NAME is the picker an owner reaches for, because the duplicate they see is two names on
+// a board. It carries a risk the visitor picker does not: a name is not an identity, so one name can
+// cover several browsers, and nothing in the data says whether that is one person on three devices
+// or three people who picked the same word. The form's whole job is to make that visible before the
+// click, which is behaviour only a browser can check.
+test.describe("the merge-by-name form", () => {
+  test("the button is dead until two different names are picked", async ({ page }) => {
+    await merge(page);
+    const btn = page.locator("#nf button");
+    await expect(btn).toBeDisabled();
+    await page.selectOption("#keepName", "jayden");
+    await expect(btn).toBeDisabled();
+    await page.selectOption("#fromName", "Jayden");
+    await expect(btn).toBeEnabled();
+  });
+
+  test("case-different names are two options, and merging them is allowed", async ({ page }) => {
+    // This is the commonest duplicate there is. A form that treated them as "the same name" would
+    // refuse exactly the case it exists for.
+    accept(page);
+    await merge(page);
+    await page.selectOption("#keepName", "jayden");
+    await page.selectOption("#fromName", "Jayden");
+    await expect(page.locator("#nf button")).toBeEnabled();
+    await page.locator("#nf button").click();
+    await page.waitForURL(/done=merged-names/);
+    expect(nameMerges[0]).toMatchObject({ keepName: "jayden", fromName: "Jayden" });
+  });
+
+  test("the identical name on both sides says so instead of merging", async ({ page }) => {
+    await merge(page);
+    await page.selectOption("#keepName", "jayden");
+    await page.selectOption("#fromName", "jayden");
+    const btn = page.locator("#nf button");
+    await expect(btn).toBeDisabled();
+    await expect(btn).toHaveText("Pick two different names");
+    await page.selectOption("#fromName", "Jayden");
+    await expect(btn).toBeEnabled();
+  });
+
+  test("two single-browser names carry no warning", async ({ page }) => {
+    await merge(page);
+    await page.selectOption("#keepName", "jayden");
+    await page.selectOption("#fromName", "Jayden");
+    await expect(page.locator("#nwarn")).toBeHidden();
+  });
+
+  test("a name covering several browsers warns before the click, with the count", async ({ page }) => {
+    // "diddy kong" spans 3 browsers, so this merge fuses 4 identities. If any of them is somebody
+    // else, their scores merge too — and that is unrecoverable except through the put-back.
+    await merge(page);
+    await page.selectOption("#keepName", "jayden");
+    await page.selectOption("#fromName", "diddy kong");
+    const warn = page.locator("#nwarn");
+    await expect(warn).toBeVisible();
+    await expect(warn).toContainText("4 browsers");
+    await expect(warn).toContainText(/if any of them is somebody else/i);
+  });
+
+  test("the warning clears again when the risky name is deselected", async ({ page }) => {
+    await merge(page);
+    await page.selectOption("#keepName", "jayden");
+    await page.selectOption("#fromName", "diddy kong");
+    await expect(page.locator("#nwarn")).toBeVisible();
+    await page.selectOption("#fromName", "Jayden");
+    await expect(page.locator("#nwarn")).toBeHidden();
+  });
+
+  test("the confirm repeats the browser count when there is one to repeat", async ({ page }) => {
+    const asked = [];
+    page.on("dialog", (d) => { asked.push(d.message()); d.accept(); });
+    await merge(page);
+    await page.selectOption("#keepName", "jayden");
+    await page.selectOption("#fromName", "diddy kong");
+    await page.locator("#nf button").click();
+    await page.waitForURL(/done=merged-names/);
+    expect(asked[0]).toContain("jayden");
+    expect(asked[0]).toContain("diddy kong");
+    expect(asked[0]).toContain("4 different browsers");
+  });
+
+  test("cancelling the confirm merges nothing", async ({ page }) => {
+    page.on("dialog", (d) => d.dismiss());
+    await merge(page);
+    await page.selectOption("#keepName", "jayden");
+    await page.selectOption("#fromName", "Jayden");
+    await page.locator("#nf button").click();
+    await page.waitForTimeout(200);
+    expect(nameMerges).toEqual([]);
+    expect(page.url()).not.toContain("done=");
+  });
+
+  test("the outcome is reported, and distinguishes itself from a by-player merge", async ({ page }) => {
+    accept(page);
+    result = { ok: true, rows: 9 };
+    await merge(page);
+    await page.selectOption("#keepName", "jayden");
+    await page.selectOption("#fromName", "Jayden");
+    await page.locator("#nf button").click();
+    await page.waitForURL(/done=merged-names/);
+    await expect(page.getByText("9 entries now belong to one player under one name")).toBeVisible();
+  });
+
+  test("a refused name merge names the right picker", async ({ page }) => {
+    accept(page);
+    result = { ok: false, reason: "same", rows: 0 };
+    await merge(page);
+    await page.selectOption("#keepName", "jayden");
+    await page.selectOption("#fromName", "Jayden");
+    await page.locator("#nf button").click();
+    await page.waitForURL(/done=same-name/);
+    await expect(page.getByText(/same name/i)).toBeVisible();
+  });
+
+  test("the two forms are independent — using one leaves the other alone", async ({ page }) => {
+    accept(page);
+    await merge(page);
+    await page.selectOption("#keepName", "jayden");
+    await page.selectOption("#fromName", "Jayden");
+    await page.locator("#nf button").click();
+    await page.waitForURL(/done=merged-names/);
+    expect(merges, "the by-player merge must not have fired").toEqual([]);
+    expect(nameMerges).toHaveLength(1);
+  });
+
+  test("both forms fit the viewport, with tappable controls", async ({ page }) => {
+    await merge(page);
+    for (const sel of ["#keepName", "#fromName", "#nf button", "#keep", "#from", "#mf button"]) {
+      const box = await page.locator(sel).boundingBox();
+      expect(box, `${sel} has no box`).not.toBeNull();
+      expect(box.height, `${sel} is too short to tap`).toBeGreaterThanOrEqual(38);
+    }
+    const { sw, cw } = await page.evaluate(() => ({ sw: document.documentElement.scrollWidth, cw: document.documentElement.clientWidth }));
+    expect(sw, "the page scrolls sideways").toBeLessThanOrEqual(cw + 1);
+  });
+
+  test("a name merge shows up in the history as a name merge, and can be put back", async ({ page }) => {
+    history = [{ id: 4, at: Date.now(), kind: "name", keep_visitor: "v-a", from_visitor: null, keep_label: "jayden", from_label: "Jayden", rows: 9, renamed: "jayden", by_who: "admin", undone_at: null }];
+    result = { ok: true, rows: 9 };
+    page.on("dialog", (d) => d.accept());
+    await merge(page);
+    await expect(page.getByText("name").first()).toBeVisible();
+    await page.locator("a.rn").first().click();
+    await page.waitForURL(/done=undone/);
+    expect(undos).toEqual([{ id: "4", by: "admin" }]);
+  });
+
+  test("the page logs no console error with both forms on it", async ({ page }) => {
+    const errs = [];
+    page.on("console", (m) => m.type() === "error" && errs.push(m.text()));
+    page.on("pageerror", (e) => errs.push(`pageerror: ${e.message}`));
+    history = [{ id: 4, at: Date.now(), kind: "name", keep_visitor: "v-a", from_visitor: null, keep_label: "jayden", from_label: "Jayden", rows: 9, renamed: "jayden", by_who: "admin", undone_at: null }];
+    await merge(page);
+    await page.selectOption("#keepName", "jayden");
+    await page.selectOption("#fromName", "diddy kong");
+    expect(errs).toEqual([]);
+  });
+
+  test("with no names yet the form is present but unusable", async ({ page }) => {
+    names = [];
+    await merge(page);
+    await expect(page.locator("#nf button")).toBeDisabled();
   });
 });

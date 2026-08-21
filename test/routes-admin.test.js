@@ -638,26 +638,31 @@ describe("routes/admin.js — renaming a leaderboard entry", () => {
 // good enough for an operation this destructive.
 describe("routes/admin.js — merging two players", () => {
   const K = "test-owner-key";
-  let realEnabled, realVisitors, realMerge, realUndo, realHistory;
+  let realEnabled, realVisitors, realMerge, realUndo, realHistory, realNames, realMergeNames;
   before(() => {
     realEnabled = analytics.enabled; realVisitors = analytics.resultVisitors;
     realMerge = analytics.mergeVisitors; realUndo = analytics.undoMerge; realHistory = analytics.mergeAuditList;
+    realNames = analytics.resultNames; realMergeNames = analytics.mergeNames;
   });
   after(() => {
     analytics.enabled = realEnabled; analytics.resultVisitors = realVisitors;
     analytics.mergeVisitors = realMerge; analytics.undoMerge = realUndo; analytics.mergeAuditList = realHistory;
+    analytics.resultNames = realNames; analytics.mergeNames = realMergeNames;
   });
 
-  let merges, undos, result;
-  const withData = ({ people = [], history = [] } = {}) => {
-    merges = []; undos = [];
+  let merges, undos, nameMerges, result;
+  const withData = ({ people = [], history = [], names = [] } = {}) => {
+    merges = []; undos = []; nameMerges = [];
     result = { ok: true, rows: 3 };
     analytics.enabled = () => true;
     analytics.resultVisitors = async () => people;
+    analytics.resultNames = async () => names;
     analytics.mergeAuditList = async () => history;
     analytics.mergeVisitors = async (a) => { merges.push(a); return result; };
+    analytics.mergeNames = async (a) => { nameMerges.push(a); return result; };
     analytics.undoMerge = async (id, by) => { undos.push({ id, by }); return result; };
   };
+  const nameRow = (over = {}) => ({ name: "jayden", entries: 4, visitors: 1, best: 2997, first_at: Date.now() - 864e5, last_at: Date.now(), crown: 0, ...over });
   const person = (over = {}) => ({ visitor_id: "v-abcdef123456", entries: 4, best: 2997, first_at: Date.now() - 864e5, last_at: Date.now(), crown: 0, names: "doodooblud,diddy kong", ...over });
 
   test("both merge routes 404 without the owner key, and merge nothing", async () => {
@@ -837,6 +842,134 @@ describe("routes/admin.js — merging two players", () => {
     for (const bad of ["<script>alert(1)", "<script>alert(2)", "<script>alert(3)", '<img src=x>']) {
       assert.equal(res.text.includes(bad), false, bad);
     }
+    assert.match(res.text, /&lt;script&gt;/);
+  });
+
+  test("the name picker offers every name on a board, on both sides", async () => {
+    withData({ names: [nameRow(), nameRow({ name: "Jayden", entries: 2, visitors: 1 })] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    assert.match(res.text, /name="keepName"/);
+    assert.match(res.text, /name="fromName"/);
+    assert.equal((res.text.match(/<option value="jayden"/g) || []).length, 2);
+    assert.equal((res.text.match(/<option value="Jayden"/g) || []).length, 2);
+  });
+
+  test("a name option says how many browsers use it — the only safety signal there is", async () => {
+    // Nothing in the data distinguishes one person on three browsers from three people who picked
+    // the same name, so the count is what lets the owner make that call.
+    withData({ names: [nameRow({ visitors: 3, entries: 9, best: 61 })] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    assert.match(res.text, /9 entries from 3 browsers/);
+    assert.match(res.text, /best 61/);
+    assert.match(res.text, /data-visitors="3"/, "and the script needs it to warn on submit");
+  });
+
+  test("a picked pair of names is passed through exactly as picked", async () => {
+    withData({ names: [nameRow()] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge-names?key=${K}&keepName=jayden&fromName=Jayden`);
+    assert.equal(res.status, 302);
+    assert.equal(nameMerges.length, 1);
+    assert.equal(nameMerges[0].keepName, "jayden");
+    assert.equal(nameMerges[0].fromName, "Jayden");
+  });
+
+  test("case is preserved on the way through, since that is often the whole difference", async () => {
+    withData();
+    const { app } = buildApp();
+    await request(app).get(`/admin/merge-names?key=${K}&keepName=jayden&fromName=JAYDEN`);
+    assert.equal(nameMerges[0].keepName, "jayden");
+    assert.equal(nameMerges[0].fromName, "JAYDEN");
+  });
+
+  test("the name route 404s without the owner key, and merges nothing", async () => {
+    withData();
+    const { app } = buildApp();
+    for (const url of ["/admin/merge-names?keepName=a&fromName=b", "/admin/merge-names?key=nope&keepName=a&fromName=b"]) {
+      assert.equal((await request(app).get(url)).status, 404, url);
+    }
+    assert.deepEqual(nameMerges, []);
+  });
+
+  test("a successful name merge reports its own outcome, not the visitor one's", async () => {
+    withData({ names: [nameRow()] });
+    result = { ok: true, rows: 9 };
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge-names?key=${K}&keepName=jayden&fromName=Jayden`);
+    assert.match(res.headers.location, /done=merged-names&n=9/);
+    const page = await request(app).get(`/admin/merge?key=${K}&done=merged-names&n=9`);
+    assert.match(page.text, /9 entries now belong to one player under one name/);
+  });
+
+  test("its refusals say NAME, so the message matches the picker that was used", async () => {
+    // "pick two different players" under the name form would just be confusing.
+    withData({ names: [nameRow()] });
+    const { app } = buildApp();
+    for (const [reason, mapped, re] of [["same", "same-name", /same name/i], ["missing", "missing-name", /pick a name on both sides/i]]) {
+      result = { ok: false, reason, rows: 0 };
+      const res = await request(app).get(`/admin/merge-names?key=${K}&keepName=a&fromName=b`);
+      assert.match(res.headers.location, new RegExp(`done=${mapped}`), reason);
+      const page = await request(app).get(`/admin/merge?key=${K}&done=${mapped}`);
+      assert.match(page.text, re, reason);
+    }
+  });
+
+  test("shared refusal reasons keep their shared wording", async () => {
+    withData({ names: [nameRow()] });
+    const { app } = buildApp();
+    for (const reason of ["nothing-to-merge", "too-many", "write-failed"]) {
+      result = { ok: false, reason, rows: 0 };
+      const res = await request(app).get(`/admin/merge-names?key=${K}&keepName=a&fromName=b`);
+      assert.match(res.headers.location, new RegExp(`done=${reason}`), reason);
+    }
+  });
+
+  test("a thrown error in the name merge is reported, not a 500", async () => {
+    withData({ names: [nameRow()] });
+    analytics.mergeNames = async () => { throw new Error("connection reset"); };
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge-names?key=${K}&keepName=a&fromName=b`);
+    assert.equal(res.status, 302);
+    assert.match(res.headers.location, /done=write-failed/);
+  });
+
+  test("the history says which kind each merge was", async () => {
+    withData({ history: [
+      { id: 4, at: Date.now(), kind: "name", keep_visitor: "v-a", from_visitor: null, keep_label: "jayden", from_label: "Jayden", rows: 9, renamed: "jayden", by_who: "admin", undone_at: null },
+      { id: 3, at: Date.now() - 6e4, kind: "visitor", keep_visitor: "v-aaaaaaaaaaaa", from_visitor: "v-bbbbbbbbbbbb", keep_label: "v-aaaaaaaaaaaa", from_label: "v-bbbbbbbbbbbb", rows: 4, renamed: null, by_who: "admin", undone_at: null },
+    ] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    assert.match(res.text, /<span class="tag">name<\/span> Jayden → <b>jayden<\/b>/);
+    assert.match(res.text, /<span class="tag">player<\/span>/);
+    assert.match(res.text, /merge-undo\?key=test-owner-key&id=4/, "a name merge is undoable too");
+  });
+
+  test("a merge recorded before this feature existed still renders, from its visitor ids", async () => {
+    // Rows written by the previous version have no kind and no labels.
+    withData({ history: [{ id: 1, at: Date.now(), kind: null, keep_visitor: "v-aaaaaaaaaaaa", from_visitor: "v-bbbbbbbbbbbb", keep_label: null, from_label: null, rows: 2, renamed: null, by_who: "admin", undone_at: null }] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    // Both ids are shown truncated to 12 characters, as elsewhere on the page.
+    assert.match(res.text, /v-bbbbbbbbbb\b/);
+    assert.match(res.text, /v-aaaaaaaaaa\b/);
+    assert.match(res.text, /<span class="tag">player<\/span>/);
+  });
+
+  test("the page explains that case matters, since that is the commonest duplicate", async () => {
+    withData({ names: [nameRow()] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    assert.match(res.text, /Case matters/i);
+  });
+
+  test("a hostile display name can't inject markup into the name picker", async () => {
+    withData({ names: [nameRow({ name: '"><script>alert(9)</script>' })] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    assert.equal(res.text.includes("<script>alert(9)"), false);
     assert.match(res.text, /&lt;script&gt;/);
   });
 

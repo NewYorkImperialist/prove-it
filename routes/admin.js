@@ -835,15 +835,23 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const n = Number(v.entries || 0);
     return `${v.crown ? "👑 " : ""}${shown || "(no name)"} — ${n} ${n === 1 ? "entry" : "entries"}, best ${Number(v.best || 0)}, last ${easternDay(Number(v.last_at || 0))} · ${String(v.visitor_id || "").slice(0, 12)}`;
   };
+  // A name's option has to answer the one question that decides whether merging it is safe: how many
+  // separate browsers are using it. One means it is a person; several means either their own devices
+  // or two different people, and only the owner can tell which.
+  const nameLabel = (n) => {
+    const e = Number(n.entries || 0), v = Number(n.visitors || 0);
+    return `${n.crown ? "👑 " : ""}${n.name} — ${e} ${e === 1 ? "entry" : "entries"} from ${v} ${v === 1 ? "browser" : "browsers"}, best ${Number(n.best || 0)}, last ${easternDay(Number(n.last_at || 0))}`;
+  };
   router.get("/admin/merge", async (req, res) => {
     if (!ownerOk(req)) return res.status(404).send("Not found");
     const k = encodeURIComponent(req.query.key || "");
     const head = adminHead({ k, title: "Merge players", css: MERGE_CSS });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
     if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Merge players</h1><p class="sub">Persistence not configured.</p></body>`);
-    const [people, history] = await Promise.all([
+    const [people, history, names] = await Promise.all([
       analytics.resultVisitors(200).catch(() => []),
       analytics.mergeAuditList(25).catch(() => []),
+      analytics.resultNames(300).catch(() => []),
     ]);
     // `done` reports the outcome of the merge that redirected back here. Without it the page looks
     // identical whether the merge moved forty entries or was refused, which for an operation this
@@ -854,9 +862,12 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       const n = parseInt(req.query.n, 10) || 0;
       const msg = {
         merged: `✅ Merged — ${n} ${n === 1 ? "entry" : "entries"} moved. The boards now show them as one player.`,
+        "merged-names": `✅ Merged — ${n} ${n === 1 ? "entry" : "entries"} now belong to one player under one name.`,
         undone: `↩️ Put back — ${n} ${n === 1 ? "entry" : "entries"} returned to the player they came from.`,
         same: "⚠️ Nothing done: those are the same player. Pick two different ones.",
+        "same-name": "⚠️ Nothing done: those are the same name. Pick two different ones.",
         missing: "⚠️ Nothing done: pick a player on both sides.",
+        "missing-name": "⚠️ Nothing done: pick a name on both sides.",
         "nothing-to-merge": "⚠️ Nothing done: that player has no entries to move.",
         "too-many": "⚠️ Nothing done: that player has more entries than one merge will move at once.",
         "already-undone": "⚠️ Nothing done: that merge has already been put back.",
@@ -864,24 +875,60 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         "no-snapshot": "⚠️ Can't put that one back — it has no record of which entries moved.",
         "write-failed": "⚠️ The database refused the write. Nothing changed; try again.",
       }[r] || "⚠️ Nothing done.";
-      const bad = !["merged", "undone"].includes(r);
+      const bad = !["merged", "merged-names", "undone"].includes(r);
       return `<p class="sub" style="color:${bad ? "#ffb4b4" : "#8ef0b4"};font-weight:600">${esc(msg)}</p>`;
     })();
     const options = people.map((v) => `<option value="${esc(v.visitor_id)}">${esc(visitorLabel(v))}</option>`).join("");
-    const histRows = history.map((h) => `<tr${h.undone_at ? ' class="undone"' : ""}>
+    // `data-visitors` is read by the form script to warn when a name covers more than one player.
+    const nameOptions = names.map((n) => `<option value="${esc(n.name)}" data-visitors="${Number(n.visitors || 0)}">${esc(nameLabel(n))}</option>`).join("");
+    const histRows = history.map((h) => {
+      const byName = h.kind === "name";
+      // Older rows predate `kind`/the labels and only ever recorded visitor ids, so fall back to
+      // those rather than rendering a blank cell for every merge made before this feature existed.
+      const from = byName ? (h.from_label || "?") : String(h.from_label || h.from_visitor || "").slice(0, 12);
+      const keep = byName ? (h.keep_label || "?") : String(h.keep_label || h.keep_visitor || "").slice(0, 12);
+      return `<tr${h.undone_at ? ' class="undone"' : ""}>
         <td class="dim">${easternTime(Number(h.at || 0))}</td>
-        <td>${esc(String(h.from_visitor || "").slice(0, 12))} → <b>${esc(String(h.keep_visitor || "").slice(0, 12))}</b>${h.renamed ? `<br><span class="dim" style="font-size:11px">renamed to ${esc(h.renamed)}</span>` : ""}</td>
+        <td><span class="tag">${byName ? "name" : "player"}</span> ${esc(from)} → <b>${esc(keep)}</b>${!byName && h.renamed ? `<br><span class="dim" style="font-size:11px">renamed to ${esc(h.renamed)}</span>` : ""}</td>
         <td class="dim">${Number(h.rows || 0)}</td>
         <td>${h.undone_at
           ? `<span class="dim">put back ${easternTime(Number(h.undone_at))}</span>`
-          : `<a class="rn" href="/admin/merge-undo?key=${k}&id=${Number(h.id)}" onclick="return confirm('Put this merge back? Every entry it moved returns to the player it came from, under the name it had.')">↩️ put back</a>`}</td>
-      </tr>`).join("");
+          : `<a class="rn" href="/admin/merge-undo?key=${k}&id=${Number(h.id)}" onclick="return confirm('Put this merge back? Every entry it moved returns to the player and name it came from.')">↩️ put back</a>`}</td>
+      </tr>`;
+    }).join("");
     res.set("content-type", "text/html").send(`${head}${back}
-      <h1>🔗 Merge two players into one</h1>
+      <h1>🔗 Merge duplicates into one</h1>
       <p class="sub">This game has no accounts — a player on the leaderboards is a browser. The same person on their
-        phone and their laptop is two entries, and a third after they clear site data. Merging moves one of them onto
-        the other, so the boards count them as one person and show their best.</p>
+        phone and their laptop is two entries, and a third after they clear site data. Merging puts their entries on one
+        player, so the boards count them once and show their best.</p>
       ${done}
+
+      <h2>By name</h2>
+      <p class="sub">For the duplicate you actually see: two names on a board that are obviously one person
+        (<b>jayden</b> and <b>Jayden</b>). Every entry under both names ends up on one player under the name you keep —
+        including when a name spans several browsers, which by player would be one merge each.</p>
+      <form class="mf" action="/admin/merge-names" method="get" id="nf">
+        <input type="hidden" name="key" value="${k}">
+        <div class="mpair">
+          <div>
+            <label for="keepName">Keep this name</label>
+            <select id="keepName" name="keepName" required><option value="">— pick one —</option>${nameOptions}</select>
+          </div>
+          <div>
+            <label for="fromName">…and fold this name into it</label>
+            <select id="fromName" name="fromName" required><option value="">— pick one —</option>${nameOptions}</select>
+          </div>
+        </div>
+        <button type="submit">Merge these two names</button>
+        <p class="hint" id="nwarn" style="display:none;color:#ffb454"></p>
+        <p class="hint">Case matters here, deliberately — <b>jayden</b> and <b>Jayden</b> being separate options is what
+          lets you merge them. Each option says how many browsers use that name; if it is more than one, all of them are
+          being treated as the same person.</p>
+      </form>
+
+      <h2>By player</h2>
+      <p class="sub">When the duplicates share a name already, or have none, and you need to say exactly which two
+        browsers are one person.</p>
       <form class="mf" action="/admin/merge-do" method="get" id="mf">
         <input type="hidden" name="key" value="${k}">
         <div class="mpair">
@@ -908,6 +955,34 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       <div class="tw"><table class="aud"><tr><th>When (ET)</th><th>Merge</th><th>Entries</th><th></th></tr>${histRows || `<tr><td class="dim" colspan="4">No merges yet.</td></tr>`}</table></div>
       <script>
       (function(){
+        var nf = document.getElementById("nf"), nk = document.getElementById("keepName"), nfrom = document.getElementById("fromName");
+        var nbtn = nf.querySelector("button"), nwarn = document.getElementById("nwarn");
+        function opt(sel){ return sel.selectedIndex > 0 ? sel.options[sel.selectedIndex] : null; }
+        function browsers(sel){ var o = opt(sel); return o ? (parseInt(o.dataset.visitors, 10) || 0) : 0; }
+        function nsync(){
+          // Exact comparison, matching the server: "jayden" and "Jayden" are DIFFERENT options here,
+          // and that is the whole point — refusing them as "the same" would block the common case.
+          var same = nk.value && nk.value === nfrom.value;
+          nbtn.disabled = !nk.value || !nfrom.value || same;
+          nbtn.textContent = same ? "Pick two different names" : "Merge these two names";
+          // The unfixable risk, surfaced rather than designed away: nothing in the data can tell one
+          // person on three browsers apart from three people who picked the same name.
+          var n = browsers(nk) + browsers(nfrom);
+          if (!nbtn.disabled && n > 2) {
+            nwarn.textContent = "⚠ These two names cover " + n + " browsers between them. All of them will become one player — if any of them is somebody else, their scores merge into this one too.";
+            nwarn.style.display = "";
+          } else { nwarn.style.display = "none"; }
+        }
+        nk.addEventListener("change", nsync); nfrom.addEventListener("change", nsync); nsync();
+        nf.addEventListener("submit", function(e){
+          if (nbtn.disabled) { e.preventDefault(); return; }
+          var n = browsers(nk) + browsers(nfrom);
+          var msg = "Put every entry named\\n\\n  " + nfrom.value + "\\n\\nunder\\n\\n  " + nk.value + "\\n\\nas one player?"
+            + (n > 2 ? "\\n\\nThis covers " + n + " different browsers. If they are not all the same person, their scores merge too." : "")
+            + "\\n\\nYou can put this back afterwards.";
+          if (!confirm(msg)) e.preventDefault();
+        });
+
         var f = document.getElementById("mf"), keep = document.getElementById("keep"), from = document.getElementById("from");
         var btn = f.querySelector("button");
         function label(sel){ return sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].text : ""; }
@@ -936,6 +1011,17 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const out = await analytics.mergeVisitors({ keep: req.query.keep, from: req.query.from, name, by: "admin" })
       .catch(() => ({ ok: false, reason: "write-failed", rows: 0 }));
     const q2 = out.ok ? `done=merged&n=${out.rows}` : `done=${encodeURIComponent(out.reason || "")}`;
+    res.redirect(`/admin/merge?key=${k}&${q2}`);
+  });
+  // Merge by display name. Distinct reasons from merge-do's so the page can say which picker was
+  // refused — "pick two different players" under the name form would just be confusing.
+  router.get("/admin/merge-names", async (req, res) => {
+    if (!ownerOk(req)) return res.status(404).send("Not found");
+    const k = encodeURIComponent(req.query.key || "");
+    const out = await analytics.mergeNames({ keepName: req.query.keepName, fromName: req.query.fromName, by: "admin" })
+      .catch(() => ({ ok: false, reason: "write-failed", rows: 0 }));
+    const reason = { same: "same-name", missing: "missing-name" }[out.reason] || out.reason || "";
+    const q2 = out.ok ? `done=merged-names&n=${out.rows}` : `done=${encodeURIComponent(reason)}`;
     res.redirect(`/admin/merge?key=${k}&${q2}`);
   });
   router.get("/admin/merge-undo", async (req, res) => {

@@ -9,8 +9,8 @@ describe("collapseResults", () => {
   test("keeps each visitor's best run, not every run", () => {
     const players = collapseResults({
       results: [
-        { name: "sam", visitor_id: "v1", total: 9, scores: [9] },
-        { name: "sam", visitor_id: "v1", total: 14, scores: [14] },
+        { name: "sam", vkey: "v1", total: 9, scores: [9] },
+        { name: "sam", vkey: "v1", total: 14, scores: [14] },
       ],
     });
     assert.equal(players.length, 1);
@@ -28,28 +28,48 @@ describe("collapseResults", () => {
     assert.deepEqual(players.map((p) => [p.name, p.total]), [["sam", 7], ["ada", 5]]);
   });
 
-  test("every crowned row and anyone sharing the creator's name merge into one crowned entry", () => {
+  test("crowned rows merge into one creator entry — but a matching NAME does not", () => {
+    // This used to merge any row whose name matched the creator's, which meant anyone could type
+    // "Jayden", post a score, and have it rendered as the creator's own crowned entry. The crown is
+    // server-validated against OWNER_KEY, so it is the only trustworthy signal; names are free.
     const players = collapseResults({
       creator: "Jayden",
       results: [
-        { name: "jayden", visitor_id: "v1", total: 10, scores: [10] },
-        { name: "Jayden", visitor_id: "v2", total: 21, scores: [21], crown: 1 },
-        { name: "JAYDEN", visitor_id: "v3", total: 6, scores: [6] },
-        { name: "sam", visitor_id: "v4", total: 8, scores: [8] },
+        { name: "jayden", vkey: "v1", total: 10, scores: [10] },
+        { name: "Jayden", vkey: "v2", total: 21, scores: [21], crown: 1 },
+        { name: "JAYDEN", vkey: "v3", total: 6, scores: [6] },
+        { name: "sam", vkey: "v4", total: 8, scores: [8] },
       ],
     });
-    assert.equal(players.length, 2);
     const creator = players.find((p) => p.crown);
     assert.equal(creator.name, "Jayden"); // the crowned row wins the display name
     assert.equal(creator.total, 21);
+    // Exactly one crowned entry, and the impostors stand on their own.
+    assert.equal(players.filter((p) => p.crown).length, 1);
+    assert.equal(players.length, 4);
+    // The cost of the change: a creator playing without their owner key shows as an ordinary row.
+    // That is the right trade against a stranger being displayed as the owner.
+    assert.deepEqual(players.map((p) => [p.name, p.total]), [["Jayden", 21], ["jayden", 10], ["sam", 8], ["JAYDEN", 6]]);
+  });
+
+  test("two crowned rows still collapse to the best one", () => {
+    const players = collapseResults({
+      creator: "Jayden",
+      results: [
+        { name: "Jayden", vkey: "v1", total: 12, scores: [12], crown: 1 },
+        { name: "Jayden", vkey: "v2", total: 30, scores: [30], crown: 1 },
+      ],
+    });
+    assert.equal(players.length, 1);
+    assert.equal(players[0].total, 30);
   });
 
   test("sorts by total, descending", () => {
     const players = collapseResults({
       results: [
-        { name: "a", visitor_id: "v1", total: 3, scores: [3] },
-        { name: "b", visitor_id: "v2", total: 12, scores: [12] },
-        { name: "c", visitor_id: "v3", total: 7, scores: [7] },
+        { name: "a", vkey: "v1", total: 3, scores: [3] },
+        { name: "b", vkey: "v2", total: 12, scores: [12] },
+        { name: "c", vkey: "v3", total: 7, scores: [7] },
       ],
     });
     assert.deepEqual(players.map((p) => p.total), [12, 7, 3]);

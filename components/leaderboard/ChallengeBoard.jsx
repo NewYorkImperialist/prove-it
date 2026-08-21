@@ -12,7 +12,7 @@ export default function ChallengeBoard({ id, visitorId, reloadKey = 0 }) {
   useEffect(() => {
     let live = true;
     setState({ loading: true });
-    getJSON(`/challenge/${id}/results`).then((data) => {
+    getJSON(`/challenge/${id}/results?me=${encodeURIComponent(visitorId || "")}`).then((data) => {
       if (!live) return;
       if (!data || !data.ok) return setState({ error: true });
       setState({ rounds: data.rounds || [], players: collapseResults(data) });
@@ -31,7 +31,9 @@ export default function ChallengeBoard({ id, visitorId, reloadKey = 0 }) {
   const colMax = columnMax(players, rounds.length, scoresOf);
   const wpmMax = columnMax(players, rounds.length, wpmsOf);
   const anyWpm = players.some((p) => wpmsOf(p).some((n) => n > 0));
-  const mineOf = (p) => !!p.visitor_id && p.visitor_id === visitorId;
+  // Server-supplied: visitor ids are no longer published to clients, since the rename endpoint
+  // was treating them as proof of ownership.
+  const mineOf = (p) => !!p.mine;
 
   const roundHead = rounds.map((r, i) => ({ label: `R${i + 1}`, title: r }));
   // Who took each individual round — the bragging-rights line under the table.

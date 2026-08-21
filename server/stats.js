@@ -555,9 +555,27 @@ async function recentResults(limit = 300) {
             FROM challenge_results cr LEFT JOIN challenges c ON c.id = cr.challenge_id
             ORDER BY cr.id DESC LIMIT ?`, [limit]);
 }
+// Does this run id belong to this visitor? The rename below rewrites every row a visitor owns, so
+// something has to prove the caller IS that visitor — and `visitor_id` cannot be that proof,
+// because every public leaderboard response publishes it for every row (see getChallengeResults,
+// dailyAllTime, categoryLeaderboard, geoGoat). Anyone could read a board and rename a stranger.
+//
+// `gid` is the run id the client mints per run. It is never included in any player-facing
+// response, so possessing one is evidence of having actually played a run as that visitor. Weaker
+// than a real account, which this game deliberately doesn't have — but it is a secret rather than
+// a public label, which is the property that matters here.
+async function gidOwnedBy(gid, visitorId) {
+  if (!client || !gid || !visitorId) return false;
+  const r = await one(`SELECT 1 ok FROM challenge_results WHERE gid=? AND visitor_id=? LIMIT 1`, [gid, visitorId]);
+  return !!r;
+}
+
 // Rename a player's leaderboard entries everywhere (across all challenges/days). Renames the
 // visitor's rows; when crownAll is set (verified owner key) also renames every crowned row, so the
 // creator's name stays consistent across devices.
+//
+// Callers must have established ownership first — see gidOwnedBy and the route in
+// routes/challenge.js. This function trusts what it is handed.
 async function renameResults({ name, visitorId, crownAll }) {
   if (!client) return 0;
   let n = 0;
@@ -623,4 +641,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats };
+module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy };

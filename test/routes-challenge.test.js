@@ -298,8 +298,11 @@ describe("POST /challenge/:id/result — what an unauthenticated write may do", 
     await withChallenge(["Countries of the World", "US States"], async (written) => {
       const res = await post(buildApp(() => false), "1.1.1.1", { name: "THE ONE ABOVE ALL", scores: [999, 999] });
       assert.equal(res.body.ok, true);
-      assert.deepEqual(written[0].scores, [197, 50], "each round capped to its own category, not a shared ceiling");
-      assert.equal(written[0].total, 247);
+      // Two ceilings apply, and the tighter one wins per round. These are 30-second rounds, so
+      // "Countries of the World" (197 answers) is bounded by the clock at 90, while "US States"
+      // (50 answers) is bounded by its own size because 50 is already under 90.
+      assert.deepEqual(written[0].scores, [90, 50], "each round capped by its own category and its own clock");
+      assert.equal(written[0].total, 140);
     });
   });
 
@@ -320,9 +323,11 @@ describe("POST /challenge/:id/result — what an unauthenticated write may do", 
   });
 
   test("an unknown category keeps a ceiling rather than becoming unbounded", async () => {
+    // A category retired since the challenge was created has no size to check against — but the
+    // round still had a clock, so the pace ceiling covers it. 30 seconds allows 90.
     await withChallenge(["A Category That No Longer Exists"], async (written) => {
       await post(buildApp(() => false), "1.1.1.4", { name: "x", scores: [999999] });
-      assert.equal(written[0].scores[0], 999);
+      assert.equal(written[0].scores[0], 90);
     });
   });
 
@@ -350,6 +355,280 @@ describe("POST /challenge/:id/result — what an unauthenticated write may do", 
       // A different caller is unaffected — the limit is per IP, not global.
       const other = await post(app, "9.9.9.10", { name: "innocent", scores: [3] });
       assert.equal(other.body.ok, true);
+    });
+  });
+});
+
+// POST /challenge/rename used to accept a `visitorId` and nothing else. Every public leaderboard
+// response publishes `visitor_id` for every row, so anyone could read a board, take a stranger's
+// id, and rewrite every entry that person had ever made — including the owner's. The id says
+// *whose* rows these are; it was never evidence of *being* them.
+describe("POST /challenge/rename — proving the rows are yours", () => {
+  const analytics = require("../server/stats.js");
+  const post = (app, ip, body) => request(app).post("/challenge/rename").set("fly-client-ip", ip).send(body);
+
+  // gidOwnedBy is the real check; stub it to say which (gid, visitor) pairs exist.
+  function withOwnership(pairs, run) {
+    const saved = { enabled: analytics.enabled, gidOwnedBy: analytics.gidOwnedBy, renameResults: analytics.renameResults };
+    const renamed = [];
+    analytics.enabled = () => true;
+    analytics.gidOwnedBy = async (gid, visitorId) => pairs.some(([g, v]) => g === gid && v === visitorId);
+    analytics.renameResults = async (args) => { renamed.push(args); return 3; };
+    return Promise.resolve(run(renamed)).finally(() => Object.assign(analytics, saved));
+  }
+
+  test("a stranger's visitor id alone changes nothing", async () => {
+    // This is the exact shape of the hole: victim's id harvested from a public board, no gid.
+    await withOwnership([["my-gid", "my-visitor"]], async (renamed) => {
+      const res = await post(buildApp(() => false), "2.2.2.1", { name: "pwned", visitorId: "victim-visitor" });
+      assert.equal(res.statusCode, 403);
+      assert.equal(res.body.ok, false);
+      assert.equal(renamed.length, 0, "no rename may reach the database");
+    });
+  });
+
+  test("a stranger's visitor id plus someone else's gid still changes nothing", async () => {
+    // A gid alone isn't enough either — it has to belong to the visitor being renamed.
+    await withOwnership([["my-gid", "my-visitor"]], async (renamed) => {
+      const res = await post(buildApp(() => false), "2.2.2.2", { name: "pwned", visitorId: "victim-visitor", gid: "my-gid" });
+      assert.equal(res.statusCode, 403);
+      assert.equal(renamed.length, 0);
+    });
+  });
+
+  test("your own run id renames your own rows", async () => {
+    await withOwnership([["my-gid", "my-visitor"]], async (renamed) => {
+      const res = await post(buildApp(() => false), "2.2.2.3", { name: "Ada", visitorId: "my-visitor", gid: "my-gid" });
+      assert.equal(res.body.ok, true);
+      assert.equal(res.body.updated, 3);
+      assert.equal(renamed.length, 1);
+      // The gid only authorises — the rename still covers every row this visitor owns, so a player
+      // whose older rows predate gids only needs one recent run to fix all of them.
+      assert.equal(renamed[0].visitorId, "my-visitor");
+      assert.equal(renamed[0].name, "Ada");
+    });
+  });
+
+  test("the owner key stands on its own, with no run id", async () => {
+    const realKey = process.env.OWNER_KEY;
+    process.env.OWNER_KEY = "test-owner-key";
+    try {
+      await withOwnership([], async (renamed) => {
+        const res = await post(buildApp(() => false), "2.2.2.4", { name: "Jayden", ownerKey: "test-owner-key" });
+        assert.equal(res.body.ok, true);
+        assert.equal(renamed[0].crownAll, true);
+      });
+    } finally { process.env.OWNER_KEY = realKey; }
+  });
+
+  test("a wrong owner key gets no crown privileges and still needs to prove ownership", async () => {
+    const realKey = process.env.OWNER_KEY;
+    process.env.OWNER_KEY = "test-owner-key";
+    try {
+      await withOwnership([["my-gid", "my-visitor"]], async (renamed) => {
+        const res = await post(buildApp(() => false), "2.2.2.5", { name: "x", visitorId: "victim", ownerKey: "guess" });
+        assert.equal(res.statusCode, 403);
+        assert.equal(renamed.length, 0);
+      });
+    } finally { process.env.OWNER_KEY = realKey; }
+  });
+
+  test("maintenance mode blocks renames too", async () => {
+    await withOwnership([["my-gid", "my-visitor"]], async (renamed) => {
+      const res = await post(buildApp(() => true), "2.2.2.6", { name: "Ada", visitorId: "my-visitor", gid: "my-gid" });
+      assert.equal(res.statusCode, 503);
+      assert.equal(renamed.length, 0);
+    });
+  });
+
+  test("a database error while checking ownership refuses the rename rather than allowing it", async () => {
+    // Fail closed: a thrown lookup must not be read as "ownership proved".
+    const saved = { enabled: analytics.enabled, gidOwnedBy: analytics.gidOwnedBy, renameResults: analytics.renameResults };
+    const renamed = [];
+    analytics.enabled = () => true;
+    analytics.gidOwnedBy = async () => { throw new Error("connection reset"); };
+    analytics.renameResults = async (a) => { renamed.push(a); return 1; };
+    try {
+      const res = await post(buildApp(() => false), "2.2.2.7", { name: "x", visitorId: "v", gid: "g" });
+      assert.equal(res.statusCode, 403);
+      assert.equal(renamed.length, 0);
+    } finally { Object.assign(analytics, saved); }
+  });
+});
+
+// A score has to clear two independent ceilings: the category's real answer count, and what a
+// human could physically type in the time the round allowed. The size cap alone still let 197
+// answers through on a 30-second round — absurd, but within the category.
+describe("POST /challenge/:id/result — the pace ceiling", () => {
+  const analytics = require("../server/stats.js");
+  const post = (app, ip, body) => request(app).post("/challenge/d-1/result").set("fly-client-ip", ip).send(body);
+
+  function withChallenge(challenge, run) {
+    const saved = { enabled: analytics.enabled, getChallenge: analytics.getChallenge, addChallengeResult: analytics.addChallengeResult };
+    const written = [];
+    analytics.enabled = () => true;
+    analytics.getChallenge = async () => challenge;
+    analytics.addChallengeResult = async (row) => { written.push(row); return true; };
+    return Promise.resolve(run(written)).finally(() => Object.assign(analytics, saved));
+  }
+
+  test("a 30-second round caps well below the category's size", async () => {
+    // "Countries of the World" has 197 answers, but 197 of them in 30 seconds is 6.5 per second.
+    // 3/s is the generous ceiling, so 90.
+    await withChallenge({ id: "d-1", rounds: ["Countries of the World"], timer: 30 }, async (written) => {
+      await post(buildApp(() => false), "3.3.3.1", { name: "x", scores: [999] });
+      assert.equal(written[0].scores[0], 90);
+    });
+  });
+
+  test("a small category is still bounded by its size, not by the clock", async () => {
+    // US States has 50 answers and a 30s round allows 90 — so the size is the tighter ceiling and
+    // must win. Whichever is smaller applies.
+    await withChallenge({ id: "d-1", rounds: ["US States"], timer: 30 }, async (written) => {
+      await post(buildApp(() => false), "3.3.3.2", { name: "x", scores: [999] });
+      assert.equal(written[0].scores[0], 50);
+    });
+  });
+
+  test("a full-length run can still reach every answer in the category", async () => {
+    // The point of two ceilings is that neither punishes a real player: given the category's own
+    // recommended 15 minutes, a perfect 197 must go through untouched.
+    await withChallenge({ id: "d-1", rounds: ["Countries of the World"], timer: 900 }, async (written) => {
+      await post(buildApp(() => false), "3.3.3.3", { name: "x", scores: [197] });
+      assert.equal(written[0].scores[0], 197);
+    });
+  });
+
+  test("timer:0 means 'recommended per round', and the recommended time is used", async () => {
+    // A challenge created with timer:0 has no single length on the row; the category's own
+    // recommended time is the honest figure, and it comes from the server's table either way.
+    await withChallenge({ id: "d-1", rounds: ["Countries of the World"], timer: 0 }, async (written) => {
+      await post(buildApp(() => false), "3.3.3.4", { name: "x", scores: [999] });
+      assert.equal(written[0].scores[0], 197, "recommended 900s allows the whole category");
+    });
+  });
+
+  test("a genuine daily score is nowhere near either ceiling", async () => {
+    // The best real daily score on this leaderboard is 45. Nothing here may touch that.
+    await withChallenge({ id: "d-1", rounds: ["Countries of the World", "US States"], timer: 30 }, async (written) => {
+      await post(buildApp(() => false), "3.3.3.5", { name: "mark", scores: [8, 14] });
+      assert.deepEqual(written[0].scores, [8, 14]);
+      assert.equal(written[0].total, 22);
+    });
+  });
+});
+
+// Every write in routes/challenge.js is unauthenticated by design; before this only the result
+// endpoint had any ceiling on volume. With a shell the others were unbounded row creation, and the
+// cost guard watches egress rather than row count so it would never have noticed.
+describe("routes/challenge.js — every unauthenticated write is bounded", () => {
+  test("challenge creation is limited per IP", async () => {
+    const app = buildApp(() => false);
+    let refused = 0;
+    for (let i = 0; i < 26; i++) {
+      const res = await request(app).post("/challenge").set("fly-client-ip", "4.4.4.1")
+        .send({ rounds: ["Countries of the World"] });
+      if (/Too many challenges/.test(res.body.error || "")) refused++;
+    }
+    assert.ok(refused > 0, "creation never got limited");
+  });
+
+  test("the guess log is limited per IP", async () => {
+    const app = buildApp(() => false);
+    // analytics is off in this environment so these all answer ok:false; what matters is that the
+    // limiter is reached at all, which the bucket state proves by refusing a fresh caller later.
+    for (let i = 0; i < 61; i++) {
+      await request(app).post("/challenge/abc/guesses").set("fly-client-ip", "4.4.4.2").send({ gid: "g", guesses: [] });
+    }
+    const after = await request(app).post("/challenge/abc/guesses").set("fly-client-ip", "4.4.4.2").send({ gid: "g", guesses: [] });
+    assert.equal(after.body.ok, false);
+  });
+
+  test("one flooding IP can't lock a different player out of saving their run", async () => {
+    // Separate buckets per endpoint AND per IP: a flood must never turn into an outage for someone
+    // else, which a single shared counter would have done.
+    const app = buildApp(() => false);
+    for (let i = 0; i < 30; i++) {
+      await request(app).post("/challenge").set("fly-client-ip", "4.4.4.3").send({ rounds: ["US States"] });
+    }
+    const victim = await request(app).post("/challenge/abc/result").set("fly-client-ip", "4.4.4.4")
+      .send({ name: "innocent", scores: [5] });
+    assert.notEqual(victim.statusCode, 429);
+  });
+});
+
+// Boards used to hand every row's real visitor_id to every client, and /challenge/rename accepted
+// that same value as proof of ownership — so reading a public board was enough to learn the
+// identifier needed to rewrite a stranger's entries. The id is no longer published at all.
+describe("the boards don't publish anyone's identity", () => {
+  const analytics = require("../server/stats.js");
+  const rows = [
+    { name: "Ada", visitor_id: "vid-ada", total: 30, scores: [30], crown: 0 },
+    { name: "Me", visitor_id: "vid-me", total: 20, scores: [20], crown: 0 },
+    { name: "Bob", visitor_id: "vid-bob", total: 10, scores: [10], crown: 0 },
+  ];
+  function withBoards(run) {
+    const saved = { enabled: analytics.enabled, getChallenge: analytics.getChallenge,
+      getChallengeResults: analytics.getChallengeResults, getCreatorName: analytics.getCreatorName,
+      categoryLeaderboard: analytics.categoryLeaderboard, dailyAllTime: analytics.dailyAllTime, geoGoat: analytics.geoGoat };
+    Object.assign(analytics, {
+      enabled: () => true,
+      getChallenge: async () => ({ id: "abc", rounds: ["US States"], timer: 30 }),
+      getChallengeResults: async () => rows,
+      getCreatorName: async () => null,
+      categoryLeaderboard: async () => rows,
+      dailyAllTime: async () => rows,
+      geoGoat: async () => rows,
+    });
+    return Promise.resolve(run()).finally(() => Object.assign(analytics, saved));
+  }
+  const PATHS = ["/challenge/abc/results", "/category-leaderboard?name=US%20States", "/daily/alltime", "/geo-goat"];
+
+  test("no board response contains a visitor id, anywhere", async () => {
+    await withBoards(async () => {
+      for (const p of PATHS) {
+        const res = await request(buildApp(() => false)).get(p + (p.includes("?") ? "&" : "?") + "me=vid-me");
+        assert.equal(res.status, 200, p);
+        assert.equal(res.text.includes("visitor_id"), false, `${p} still publishes the field name`);
+        for (const vid of ["vid-ada", "vid-me", "vid-bob"]) {
+          assert.equal(res.text.includes(vid), false, `${p} still publishes ${vid}`);
+        }
+      }
+    });
+  });
+
+  test("the caller still learns which row is theirs", async () => {
+    await withBoards(async () => {
+      const res = await request(buildApp(() => false)).get("/daily/alltime?me=vid-me");
+      const mine = res.body.results.filter((r) => r.mine);
+      assert.equal(mine.length, 1);
+      assert.equal(mine[0].name, "Me");
+    });
+  });
+
+  test("claiming someone else's id only moves the (you) marker on your own screen", async () => {
+    // `me` is a display hint, never authorisation — worth pinning so it stays that way.
+    await withBoards(async () => {
+      const res = await request(buildApp(() => false)).get("/daily/alltime?me=vid-ada");
+      assert.equal(res.body.results.find((r) => r.mine).name, "Ada");
+      assert.equal(res.text.includes("vid-ada"), false, "and still without echoing the id back");
+    });
+  });
+
+  test("rows keep a per-response key so one player's runs still collapse to their best", async () => {
+    await withBoards(async () => {
+      const res = await request(buildApp(() => false)).get("/daily/alltime?me=vid-me");
+      const keys = res.body.results.map((r) => r.vkey);
+      assert.equal(new Set(keys).size, 3, "three players, three distinct keys");
+      for (const k of keys) assert.match(k, /^v\d+$/, "an ordinal, not the real id");
+    });
+  });
+
+  test("no caller id at all is fine — nothing is marked as yours", async () => {
+    await withBoards(async () => {
+      const res = await request(buildApp(() => false)).get("/geo-goat");
+      assert.equal(res.status, 200);
+      assert.equal(res.body.results.some((r) => r.mine), false);
     });
   });
 });

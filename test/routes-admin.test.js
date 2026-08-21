@@ -45,7 +45,11 @@ describe("routes/admin.js — owner-key auth gate", () => {
   test("every /admin* route 404s with no key", async () => {
     const { app } = buildApp();
     for (const path of ["/admin", "/admin/ping", "/admin/health", "/admin/games", "/admin/chat", "/admin/visitors",
-      "/admin/sessions", "/admin/leaderboards", "/admin/category-leaderboards", "/admin/runs"]) {
+      "/admin/sessions", "/admin/leaderboards", "/admin/category-leaderboards", "/admin/runs",
+      // The two that MUTATE a leaderboard entry. They take their arguments in the query string
+      // (server/index.js mounts only express.json()), so they are reachable by a plain link —
+      // which is exactly why an unkeyed one must not do anything.
+      "/admin/result-delete?id=42", "/admin/result-rename?id=42&to=jayden"]) {
       const res = await request(app).get(path);
       assert.equal(res.status, 404, path);
     }
@@ -454,6 +458,176 @@ describe("routes/admin.js — the uptime panel", () => {
     const res = await request(app).get(`/admin?key=${K}&json=1`);
     assert.equal(typeof res.body.uptimeMs, "number", "this process's own uptime");
     assert.equal(res.body.uptime.day.probes, 24, "and what an outside prober saw");
+  });
+});
+
+// Renaming an entry is the owner's alternative to deleting it — a real score under an unusable name
+// shouldn't have to be thrown away to clean up a board. Unlike the player's own rename in
+// routes/challenge.js it needs no proof of identity, because it is gated on OWNER_KEY instead; that
+// is precisely why the scope it runs at, and the record it leaves, both have to be right.
+describe("routes/admin.js — renaming a leaderboard entry", () => {
+  const K = "test-owner-key";
+  let realEnabled, realRecent, realRename, realAudit;
+  before(() => {
+    realEnabled = analytics.enabled; realRecent = analytics.recentResults;
+    realRename = analytics.adminRename; realAudit = analytics.nameAuditList;
+  });
+  after(() => {
+    analytics.enabled = realEnabled; analytics.recentResults = realRecent;
+    analytics.adminRename = realRename; analytics.nameAuditList = realAudit;
+  });
+
+  let calls;
+  const withData = ({ results = [], audit = [] } = {}) => {
+    calls = [];
+    analytics.enabled = () => true;
+    analytics.recentResults = async () => results;
+    analytics.nameAuditList = async () => audit;
+    analytics.adminRename = async (args) => { calls.push(args); return { ok: true, rows: 1, from: "old", to: args.name, scope: args.scope }; };
+  };
+  const entry = (over = {}) => ({ id: 42, challenge_id: "d-20260820", name: "doodooblud", visitor_id: "v-abcdef123456", total: 2997, at: Date.now(), type: "daily", genre: null, ...over });
+
+  test("the route 404s without the owner key, and renames nothing", async () => {
+    withData();
+    const { app } = buildApp();
+    for (const url of ["/admin/result-rename?id=42&to=jayden", "/admin/result-rename?key=nope&id=42&to=jayden"]) {
+      const res = await request(app).get(url);
+      assert.equal(res.status, 404, url);
+    }
+    assert.deepEqual(calls, [], "a refused request must not reach the data layer");
+  });
+
+  test("a rename passes the row, the scope and the new name through, then returns to the board", async () => {
+    withData();
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/result-rename?key=${K}&id=42&to=jayden&scope=visitor`);
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.location, `/admin/leaderboards?key=${K}`);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].rowId, 42);
+    assert.equal(calls[0].name, "jayden");
+    assert.equal(calls[0].scope, "visitor");
+  });
+
+  test("only the literal scope=visitor asks for the bulk rename", async () => {
+    // Anything else — absent, misspelled, a truthy-looking string — must take the single row.
+    // Guessing wide from a malformed parameter would rewrite every entry a visitor ever made.
+    withData();
+    const { app } = buildApp();
+    for (const q of ["", "&scope=", "&scope=row", "&scope=all", "&scope=1", "&scope=true", "&scope=VISITOR"]) {
+      calls.length = 0;
+      await request(app).get(`/admin/result-rename?key=${K}&id=42&to=jayden${q}`);
+      assert.equal(calls[0].scope, "row", `scope from "${q}"`);
+    }
+  });
+
+  test("the new name goes through the same profanity filter a player's own name does", async () => {
+    // An owner-gated route still must not be able to put a string in that column which no ordinary
+    // submission could produce — the boards are public either way.
+    withData();
+    const { app } = buildApp();
+    await request(app).get(`/admin/result-rename?key=${K}&id=42&to=${encodeURIComponent("f" + "uck you")}`);
+    assert.equal(calls[0].name, "Anon");
+  });
+
+  test("the new name is capped at the same 24 characters as a submitted one", async () => {
+    withData();
+    const { app } = buildApp();
+    await request(app).get(`/admin/result-rename?key=${K}&id=42&to=${"j".repeat(80)}`);
+    assert.equal(calls[0].name.length, 24);
+  });
+
+  test("a missing row id renames nothing rather than guessing one", async () => {
+    withData();
+    const { app } = buildApp();
+    for (const q of ["", "&id=", "&id=0", "&id=abc"]) {
+      calls.length = 0;
+      const res = await request(app).get(`/admin/result-rename?key=${K}&to=jayden${q}`);
+      assert.equal(res.status, 302, `id "${q}"`);
+      assert.deepEqual(calls, [], `id "${q}" must not reach the data layer`);
+    }
+  });
+
+  test("a data-layer failure still lands the owner back on the board instead of a 500", async () => {
+    withData();
+    analytics.adminRename = async () => { throw new Error("connection reset"); };
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/result-rename?key=${K}&id=42&to=jayden`);
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.location, `/admin/leaderboards?key=${K}`);
+  });
+
+  test("with persistence off the route redirects rather than pretending it worked elsewhere", async () => {
+    analytics.enabled = () => false;
+    calls = [];
+    analytics.adminRename = async (a) => { calls.push(a); return { ok: true, rows: 1 }; };
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/result-rename?key=${K}&id=42&to=jayden`);
+    assert.equal(res.status, 302);
+    assert.deepEqual(calls, []);
+  });
+
+  test("the board offers a rename beside the remove, carrying the row's id and current name", async () => {
+    withData({ results: [entry()] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/leaderboards?key=${K}`);
+    assert.equal(res.status, 200);
+    assert.match(res.text, /class="rn"/);
+    assert.match(res.text, /data-id="42"/);
+    assert.match(res.text, /data-name="doodooblud"/);
+    assert.match(res.text, /data-has-v="1"/);
+    assert.match(res.text, /result-delete\?key=test-owner-key&id=42/, "remove must still be there");
+  });
+
+  test("an entry with no visitor_id doesn't offer the visitor-wide scope", async () => {
+    withData({ results: [entry({ visitor_id: null })] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/leaderboards?key=${K}`);
+    assert.match(res.text, /data-has-v="0"/);
+  });
+
+  test("the rename history shows the name each rename replaced", async () => {
+    // The whole point of the audit table: renameResults overwrites `name` in place, so this page is
+    // the only place the previous name still exists.
+    withData({ audit: [{ at: Date.now(), scope: "visitor", row_id: 42, visitor_id: "v-abcdef123456", old_name: "THE ONE ABOVE ALL", new_name: "jayden", rows: 4, by_who: "admin" }] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/leaderboards?key=${K}`);
+    assert.match(res.text, /Rename history/);
+    assert.match(res.text, /THE ONE ABOVE ALL/);
+    assert.match(res.text, /jayden/);
+    assert.match(res.text, /4 entries/);
+    assert.match(res.text, /all of v-abcdef123/, "and which scope it ran at");
+  });
+
+  test("an empty history says so rather than looking like a missing panel", async () => {
+    withData({ results: [entry()] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/leaderboards?key=${K}`);
+    assert.match(res.text, /No renames yet/);
+  });
+
+  test("a name containing a quote or markup can't break the row's handlers or inject script", async () => {
+    // Names are player-supplied. The old remove link built a JS string literal inside an HTML
+    // attribute out of one, which an apostrophe alone was enough to break.
+    withData({
+      results: [entry({ name: `" onmouseover="alert(1)` }), entry({ id: 43, name: "<script>alert(2)</script>" }), entry({ id: 44, name: "it's me" })],
+      audit: [{ at: Date.now(), scope: "row", row_id: 42, visitor_id: "v-a", old_name: "<script>alert(3)</script>", new_name: "jayden", rows: 1, by_who: "admin" }],
+    });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/leaderboards?key=${K}`);
+    assert.equal(res.text.includes(`onmouseover="alert(1)`), false);
+    assert.equal(res.text.includes("<script>alert(2)"), false);
+    assert.equal(res.text.includes("<script>alert(3)"), false);
+    assert.match(res.text, /&quot; onmouseover/);
+    assert.match(res.text, /it&#39;s me|it's me/, "an apostrophe is fine inside a double-quoted attribute");
+  });
+
+  test("the row's name is read as data, never built into an inline onclick", async () => {
+    withData({ results: [entry({ name: "it's me" })] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/leaderboards?key=${K}`);
+    const row = res.text.slice(res.text.indexOf('class="rn"'));
+    assert.equal(row.slice(0, row.indexOf("</td>")).includes("onclick"), false);
   });
 });
 

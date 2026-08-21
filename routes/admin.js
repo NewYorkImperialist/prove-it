@@ -10,6 +10,7 @@ const { ownerOk } = require("../lib/owner-auth.js");
 const { FLY_COST, projectCost } = require("../lib/cost-guard.js");
 const { esc, easternHour, easternTime, easternFull, easternDay, fmtHour12, fmtDur, fmtMs, bar, tbl } = require("../lib/html.js");
 const { CAT_SIZES, CAT_ITEMS, CAT_GROUP } = require("../lib/category-data.js");
+const { cleanName } = require("../lib/name-filter.js");
 
 const DASH = SITE.adminDashboard;
 
@@ -688,29 +689,90 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       </body>`);
   });
 
-  // Leaderboard moderation: list recent entries with a one-click remove (for junk/abusive names).
+  // Leaderboard moderation: list recent entries, each with a one-click remove and a rename
+  // (for junk/abusive self-entered names). Rename exists because removal is the blunt instrument —
+  // a real score under an unusable name shouldn't have to be thrown away to clean up the board.
+  //
+  // Both actions are plain GET links with a confirm(), which is the convention here for a reason:
+  // server/index.js mounts only express.json(), so a <form method="post"> body would arrive
+  // unparsed. The key travels in the query string like every other /admin link.
+  const LB_CSS = `
+  .rn{color:#7aa2ff;font-weight:700} td.act{white-space:nowrap} td.act a{margin-right:10px}
+  .aud{font-size:12px} .aud .was{color:#8a92a6;text-decoration:line-through}
+`;
   router.get("/admin/leaderboards", async (req, res) => {
     if (!ownerOk(req)) return res.status(404).send("Not found");
     const k = encodeURIComponent(req.query.key || "");
     const num = (x) => Number(x || 0);
-    const head = adminHead({ k, title: "Leaderboards" });
+    const head = adminHead({ k, title: "Leaderboards", css: LB_CSS });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
     if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Leaderboards</h1><p class="sub">Persistence not configured.</p></body>`);
-    const list = await analytics.recentResults(300).catch(() => []);
+    const [list, audit] = await Promise.all([
+      analytics.recentResults(300).catch(() => []),
+      analytics.nameAuditList(25).catch(() => []),
+    ]);
     const label = (r) => String(r.challenge_id || "").startsWith("d-")
       ? `<span class="tag">daily</span> ${esc(String(r.challenge_id).replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3"))}`
       : `<span class="tag">${esc(r.type || "challenge")}</span> ${esc(r.genre || r.challenge_id || "")}`;
+    // The name and visitor id go into data-* attributes rather than into an inline onclick: a name
+    // is player-supplied text, and hand-escaping it for a JS string literal nested inside an HTML
+    // attribute is how an apostrophe (or a quote) breaks the handler for every row on the page.
+    // esc() covers the attribute; the script reads the value back as data, never as code.
     const rows = list.map((r) => `<tr>
         <td class="dim">${easternTime(num(r.at))}</td>
         <td>${label(r)}</td>
         <td><b>${esc(r.name || "?")}</b><br><span class="dim" style="font-size:11px">${esc(String(r.visitor_id || "").slice(0, 12))}</span></td>
         <td class="tot">${num(r.total)}</td>
-        <td><a class="rm" href="/admin/result-delete?key=${k}&id=${num(r.id)}" onclick="return confirm('Remove ${esc((r.name || '?').replace(/'/g, ''))} (${num(r.total)}) from this leaderboard?')">✕ remove</a></td>
+        <td class="act">
+          <a class="rn" href="#" data-id="${num(r.id)}" data-name="${esc(r.name || "")}" data-v="${esc(String(r.visitor_id || "").slice(0, 12))}" data-has-v="${r.visitor_id ? 1 : 0}">✎ rename</a>
+          <a class="rm" href="/admin/result-delete?key=${k}&id=${num(r.id)}" data-del="${esc(r.name || "?")}" data-tot="${num(r.total)}">✕ remove</a>
+        </td>
+      </tr>`).join("");
+    const auditRows = audit.map((a) => `<tr>
+        <td class="dim">${easternTime(num(a.at))}</td>
+        <td><span class="was">${esc(a.old_name || "(blank)")}</span> → <b>${esc(a.new_name || "")}</b></td>
+        <td class="dim">${a.scope === "visitor" ? `all of ${esc(String(a.visitor_id || "").slice(0, 12))}` : `row ${num(a.row_id)}`}</td>
+        <td class="dim">${num(a.rows)} ${num(a.rows) === 1 ? "entry" : "entries"}</td>
       </tr>`).join("");
     res.set("content-type", "text/html").send(`${head}${back}
       <h1>🏆 Leaderboard entries</h1>
-      <p class="sub">Newest ${list.length} entries across daily + link challenges. Remove junk or abusive self-entered names. This deletes one entry permanently.</p>
+      <p class="sub">Newest ${list.length} entries across daily + link challenges. <b>Rename</b> keeps the score and changes only the
+        displayed name; <b>remove</b> deletes the entry permanently. A rename offers to cover every entry that visitor ever
+        submitted, on every board — and is logged below with the name it replaced, so it can be put back.</p>
       <div class="tw"><table><tr><th>When (ET)</th><th>Board</th><th>Name</th><th>Score</th><th></th></tr>${rows || `<tr><td class="dim" colspan="5">No entries yet.</td></tr>`}</table></div>
+      <h2>Rename history</h2>
+      <p class="sub">The last ${audit.length} renames made from here. Renaming overwrites the name in place, so this is the only
+        record of what it used to be. Note that separate entries renamed to the same name stay separate rows on the public
+        boards — only the 👑 crown merges them.</p>
+      <div class="tw"><table class="aud"><tr><th>When (ET)</th><th>Change</th><th>Scope</th><th>Affected</th></tr>${auditRows || `<tr><td class="dim" colspan="4">No renames yet.</td></tr>`}</table></div>
+      <script>
+      (function(){
+        var K = ${JSON.stringify(String(req.query.key || ""))};
+        document.addEventListener("click", function(e){
+          var rn = e.target.closest && e.target.closest("a.rn");
+          if (rn) {
+            e.preventDefault();
+            var was = rn.dataset.name || "";
+            var to = prompt("Rename \\u201c" + (was || "(blank)") + "\\u201d to:", was);
+            if (to === null) return;
+            to = to.trim();
+            if (!to || to === was) return;
+            // Cancel is the narrow option on purpose: dismissing a scope prompt should do the
+            // smaller thing, never the bulk one.
+            var wide = rn.dataset.hasV === "1" && confirm(
+              "Rename EVERY entry by visitor " + rn.dataset.v + " to \\u201c" + to + "\\u201d?\\n\\n" +
+              "OK = all of their entries, on every board.\\nCancel = only this one entry.");
+            location.href = "/admin/result-rename?key=" + encodeURIComponent(K)
+              + "&id=" + encodeURIComponent(rn.dataset.id)
+              + "&to=" + encodeURIComponent(to)
+              + "&scope=" + (wide ? "visitor" : "row");
+            return;
+          }
+          var rm = e.target.closest && e.target.closest("a.rm");
+          if (rm && !confirm("Remove " + rm.dataset.del + " (" + rm.dataset.tot + ") from this leaderboard?")) e.preventDefault();
+        });
+      })();
+      </script>
       </body>`);
   });
   router.get("/admin/result-delete", async (req, res) => {
@@ -718,6 +780,23 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const rowId = parseInt(req.query.id, 10);
     if (rowId && analytics.enabled()) await analytics.deleteResult(rowId).catch(() => {});
     res.redirect(`/admin/leaderboards?key=${encodeURIComponent(req.query.key || "")}`);
+  });
+  // Rename an entry (or every entry by the same visitor). Owner-gated, so unlike the player's own
+  // rename in routes/challenge.js this needs no proof of identity — which is exactly why
+  // analytics.adminRename writes an audit row carrying the previous name.
+  router.get("/admin/result-rename", async (req, res) => {
+    if (!ownerOk(req)) return res.status(404).send("Not found");
+    const k = encodeURIComponent(req.query.key || "");
+    const rowId = parseInt(req.query.id, 10);
+    // Same trim/cap/profanity gate a player's own name goes through, so a name typed here can't
+    // land in a column a normal submission could never produce. cleanName() substitutes "Anon"
+    // for a blocked name rather than refusing — for a moderation tool that is the right direction.
+    const to = cleanName(String(req.query.to || "").slice(0, 24));
+    const scope = req.query.scope === "visitor" ? "visitor" : "row";
+    if (rowId && analytics.enabled()) {
+      await analytics.adminRename({ rowId, scope, name: to, by: "admin" }).catch(() => {});
+    }
+    res.redirect(`/admin/leaderboards?key=${k}`);
   });
 
   // Private per-category leaderboards (not public yet — watching how solo play unfolds).

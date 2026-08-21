@@ -47,6 +47,14 @@ async function init() {
       `CREATE TABLE IF NOT EXISTS bandwidth (day TEXT PRIMARY KEY, bytes INTEGER DEFAULT 0, reqs INTEGER DEFAULT 0)`,
       // tiny key/value store (used by the cost guard to remember a per-cycle budget override across restarts)
       `CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)`,
+      // Every rename of a leaderboard entry, with the name it had before. renameResults overwrites
+      // `name` in place, so without this the previous name is gone from the database entirely — the
+      // one destructive edit here that isn't a DELETE, and the only one with nothing to restore from.
+      // `rows` is how many entries that one rename rewrote, so a visitor-wide rename is legible as
+      // one action rather than as an unexplained batch.
+      `CREATE TABLE IF NOT EXISTS name_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, scope TEXT, row_id INTEGER,
+        visitor_id TEXT, old_name TEXT, new_name TEXT, rows INTEGER, by_who TEXT)`,
       // Reachability, written by scripts/probe.js from OUTSIDE this process (see the uptime
       // workflow). It is the one table this server never writes to itself, and deliberately so:
       // a dashboard running inside the app can report anything except that the app was gone.
@@ -585,6 +593,61 @@ async function renameResults({ name, visitorId, crownAll }) {
   } catch (e) { console.error("📊 rename:", e.message); }
   return n;
 }
+// ---- owner-side rename (admin moderation) ----
+// Distinct from renameResults above, which is the *player's* own "update my name" path and is gated
+// on proving they own the identity (gidOwnedBy). This one is gated on OWNER_KEY at the route and can
+// therefore rewrite anybody's entry — so it is the one that has to leave a record, and it writes the
+// audit row itself rather than trusting a caller to remember.
+//
+// scope is a deliberate choice at the call site, not an inference:
+//   "row"     → this one entry
+//   "visitor" → every entry that visitor ever submitted, on every board
+// A "rename every row that happens to share this display name" scope is intentionally absent: two
+// unrelated players can pick the same name, and that scope would silently rewrite the innocent one.
+async function adminRename({ rowId, scope = "row", name, by = null }) {
+  if (!client) return { ok: false, rows: 0, reason: "off" };
+  const id = parseInt(rowId, 10);
+  if (!id) return { ok: false, rows: 0, reason: "no-row" };
+  const to = String(name == null ? "" : name).trim();
+  if (!to) return { ok: false, rows: 0, reason: "no-name" };
+  const row = await one(`SELECT id, name, visitor_id FROM challenge_results WHERE id=?`, [id]);
+  if (!row) return { ok: false, rows: 0, reason: "not-found" };
+  // Read the old name BEFORE the update, or the audit row records the new name as the old one.
+  const from = row.name == null ? "" : String(row.name);
+  const visitorId = row.visitor_id ? String(row.visitor_id) : null;
+  // Fall back to the single row when the entry has no visitor_id at all (rows predating the column,
+  // and anonymous submissions): a visitor-wide rename keyed on NULL would match every such row.
+  const wide = scope === "visitor" && !!visitorId;
+  const rows = await (async () => {
+    const sql = wide
+      ? `UPDATE challenge_results SET name=? WHERE visitor_id=?`
+      : `UPDATE challenge_results SET name=? WHERE id=?`;
+    try {
+      const r = await client.execute({ sql, args: [to, wide ? visitorId : id] });
+      return Number(r.rowsAffected) || 0;
+    } catch (e) {
+      console.error("📊 admin rename:", e.message);
+      return null; // distinct from 0: the write failed, rather than matching nothing
+    }
+  })();
+  if (rows == null) return { ok: false, rows: 0, reason: "write-failed" };
+  // Awaited, not fire()'d: the whole point is that the old name survives the update, and a
+  // fire-and-forget insert can lose the race with a process restart.
+  try {
+    await client.execute({
+      sql: `INSERT INTO name_audit (at, scope, row_id, visitor_id, old_name, new_name, rows, by_who) VALUES (?,?,?,?,?,?,?,?)`,
+      args: [Date.now(), wide ? "visitor" : "row", id, visitorId, from, to, rows, by ? String(by).slice(0, 60) : null],
+    });
+  } catch (e) { console.error("📊 rename audit:", e.message); }
+  return { ok: true, rows, from, to, scope: wide ? "visitor" : "row", visitorId };
+}
+
+// The rename history, newest first — what makes an owner rename undoable.
+async function nameAuditList(limit = 25) {
+  return q(`SELECT at, scope, row_id, visitor_id, old_name, new_name, rows, by_who
+            FROM name_audit ORDER BY id DESC LIMIT ?`, [Math.max(1, Math.min(200, parseInt(limit, 10) || 25))]);
+}
+
 // Delete a single leaderboard entry by its row id (owner moderation).
 async function deleteResult(rowId) {
   if (!client) return 0;
@@ -641,4 +704,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy };
+module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList };

@@ -101,6 +101,10 @@ const DASH_CSS = `
   .tools a:hover{border-color:${DASH.accent};text-decoration:none}
   .tools b{display:block;color:#dfe4ee;font-size:13px;font-weight:700}
   .tools span{display:block;color:#8a92a6;font-size:12px;line-height:1.35;margin-top:1px}
+  /* One bar per recorded probe, oldest on the left. They flex rather than sit at a fixed width so
+     forty-eight of them fit a 320px phone as readily as a desktop. */
+  .ups{display:flex;gap:2px;align-items:stretch;margin:8px 0 0;height:18px}
+  .ups i{flex:1 1 0;min-width:2px;border-radius:2px}
 `;
 
 // `k` is the already-url-encoded owner key. It has to travel into the manifest link: every /admin
@@ -202,6 +206,40 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
   }
   // Top-of-page at-a-glance health check — meant to answer "is it the server, the DB, or my own
   // network?" in one look, without digging into the cost/bandwidth section further down.
+  // Reachability, as measured from outside this process by scripts/probe.js. Everything else on
+  // this dashboard is the server describing itself, which means it can never account for the one
+  // period you most want explained afterwards — the stretch when it wasn't running.
+  function uptimeHtml(up, now) {
+    if (!up) return "";
+    if (!up.last) {
+      return `<div class="announce"><span class="lbl">📡 Uptime:</span> no probe has recorded anything yet.
+        The <b>Uptime</b> workflow writes here every 5 minutes once OWNER_KEY, TURSO_URL and TURSO_TOKEN
+        are set as repository secrets — see .github/workflows/uptime.yml.</div>`;
+    }
+    // Probes, not wall-clock: a scheduled runner can be late or skipped, so "23 of 24 answered" is
+    // a claim this data supports where "99.6% of the last day" would quietly overstate it.
+    const win = (w) => w.probes
+      ? `<b>${w.up}</b>/${w.probes} probes${w.pct != null ? ` · ${w.pct >= 99.95 ? "100" : w.pct.toFixed(1)}%` : ""}${w.down ? ` · <span style="color:#e5484d">${w.down} down</span>` : ""}`
+      : "<span class=\"dim\">no probes yet</span>";
+    const age = fmtDur(now - up.last.at);
+    const state = up.last.ok
+      ? `🟢 <b>Reachable</b> <span class="dim">(${up.last.ms}ms, checked ${age} ago)</span>`
+      : `🔴 <b style="color:#e5484d">UNREACHABLE</b> <span class="dim">(last checked ${age} ago)</span>`;
+    // Oldest to newest, so it reads left-to-right like every other timeline here.
+    const bars = up.recent.slice().reverse().map((r) =>
+      `<i style="background:${r.ok ? "#3ecf8e" : "#e5484d"}" title="${easternFull(r.at)} · ${r.ok ? `up, ${r.ms}ms` : esc(r.err || "down")}"></i>`).join("");
+    const fail = up.lastFail
+      ? `Last failure ${fmtDur(now - up.lastFail.at)} ago — <span class="dim">${easternFull(up.lastFail.at)} · ${esc(up.lastFail.err || "no reason recorded")}</span>`
+      : `<span class="dim">No failure on record.</span>`;
+    return `
+      <div class="announce"${up.last.ok ? "" : ' style="border-color:#e5484d;background:#2a1618"'}>
+        <span class="lbl">📡 Uptime (measured from outside):</span> ${state}
+        <div class="g" style="margin-top:6px">Last 24h: ${win(up.day)}${up.day.avgMs ? ` · avg ${up.day.avgMs}ms` : ""} &nbsp;·&nbsp; Last 7d: ${win(up.week)}</div>
+        <div class="g meta">${fail}</div>
+        <div class="ups">${bars}</div>
+      </div>`;
+  }
+
   function siteHealthHtml(dbPing, now, k) {
     const { coldTripped, hardTripped } = costGuard.getState();
     const site = isLockdown()
@@ -390,11 +428,15 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       const hist = analytics.enabled() ? await analytics.summary().catch(() => null) : null;
       const bw = analytics.enabled() ? await analytics.bandwidthStats().catch(() => null) : null;
       const dbPing = await analytics.ping().catch(() => ({ configured: false, ok: false }));
-      return res.json({ now, uptimeMs: now - serverStartedAt, online: getOnline(), stats, history: hist, bandwidth: bw, roomCount: list.length, rooms: list, db: dbPing, costGuard: costGuard.getState(), lockdown: isLockdown() });
+      const up = analytics.enabled() ? await analytics.uptimeStats().catch(() => null) : null;
+      // `uptimeMs` is how long THIS process has been up; `uptime` is what an outside prober saw,
+      // which is the only one of the two that can describe a period the process wasn't running.
+      return res.json({ now, uptimeMs: now - serverStartedAt, online: getOnline(), stats, history: hist, bandwidth: bw, roomCount: list.length, rooms: list, db: dbPing, uptime: up, costGuard: costGuard.getState(), lockdown: isLockdown() });
     }
     const hist = analytics.enabled() ? await analytics.summary().catch(() => null) : null;
     const bw = analytics.enabled() ? await analytics.bandwidthStats().catch(() => null) : null;
     const dbPing = await analytics.ping().catch(() => ({ configured: false, ok: false }));
+    const up = analytics.enabled() ? await analytics.uptimeStats().catch(() => null) : null;
     const playing = list.filter((r) => r.status === "playing").length;
     const k = encodeURIComponent(req.query.key || "");
     const card = (r) => {
@@ -429,6 +471,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       <h1>${SITE.adminDashboard.heading}</h1>
       <p class="sub">🟢 <b style="color:#3ecf8e">${getOnline()}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 60s · ${easternFull(now)}</p>
       ${siteHealthHtml(dbPing, now, k)}
+      ${uptimeHtml(up, now)}
       <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
       ${costHtml(bw, now, k)}
       <div class="announce">

@@ -9,10 +9,11 @@ name: Deploy
 # (Note this is a *GitHub* secret, used to authenticate the deploy. The server's runtime cost
 # guard needs the same token as a *Fly* secret as well — see the note in fly.toml.)
 #
-# Also needs a repository secret named OWNER_KEY, matching the OWNER_KEY already set as a Fly
-# secret (the one that gates /admin) — run this in your own terminal, not through an assistant,
-# since gh will read the value straight off your paste without it ever touching this workflow's
-# logs or git history:
+# OWNER_KEY is no longer used by this workflow — the pre-deploy player warning that needed it is
+# gone, because its curl had no timeout and a stalled connection hung the deploy indefinitely.
+# The secret is still worth having: .github/workflows/uptime.yml probes the owner-gated
+# /admin/ping with it. Set it in your own terminal rather than through an assistant, so the value
+# never touches a log or git history:
 #   gh secret set OWNER_KEY --repo NewYorkImperialist/prove-it
 
 on:

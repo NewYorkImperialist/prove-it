@@ -346,3 +346,113 @@ describe("routes/admin.js — every page is mobile-ready and installable", () =>
     }
   });
 });
+
+// Reachability measured from outside the process (scripts/probe.js writes it; the uptime workflow
+// runs it). This is the only panel on the dashboard whose data the server didn't produce, and the
+// only one that can describe a stretch when the server wasn't running at all — so the states that
+// matter are "nothing has ever probed" versus "a probe says down", which must not look alike.
+describe("routes/admin.js — the uptime panel", () => {
+  const K = "test-owner-key";
+  let realEnabled, realUptime;
+  before(() => { realEnabled = analytics.enabled; realUptime = analytics.uptimeStats; });
+  after(() => { analytics.enabled = realEnabled; analytics.uptimeStats = realUptime; });
+  const withUptime = (up) => { analytics.enabled = () => true; analytics.uptimeStats = async () => up; };
+
+  const probes = (n, ok = true) => Array.from({ length: n }, (_, i) => ({ at: Date.now() - i * 3e5, ok, status: ok ? 200 : 0, ms: 120, err: ok ? null : "timeout" }));
+  const shaped = (over = {}) => ({
+    last: { at: Date.now() - 6e4, ok: true, status: 200, ms: 120 },
+    day: { probes: 24, up: 24, down: 0, pct: 100, avgMs: 118 },
+    week: { probes: 168, up: 167, down: 1, pct: 99.4, avgMs: 121 },
+    lastFail: null,
+    recent: probes(12),
+    ...over,
+  });
+
+  test("with no persistence the panel is absent rather than empty", async () => {
+    analytics.enabled = realEnabled; analytics.uptimeStats = realUptime;
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin?key=${K}`);
+    assert.equal(res.status, 200);
+    assert.equal(res.text.includes("Uptime (measured from outside)"), false);
+  });
+
+  test("nothing probed yet says so — it must not read as an outage", async () => {
+    // A red dot here would be a lie: no probe having run is not the same as the site being down,
+    // and confusing the two is exactly the kind of thing this dashboard has done before.
+    withUptime({ last: null, day: { probes: 0, up: 0, down: 0, pct: null, avgMs: 0 }, week: { probes: 0, up: 0, down: 0, pct: null, avgMs: 0 }, lastFail: null, recent: [] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin?key=${K}`);
+    assert.match(res.text, /no probe has recorded anything yet/);
+    // Scoped to this panel: the database-health panel above it legitimately shows a red dot in
+    // this environment, and asserting against the whole page just catches that instead.
+    const i = res.text.indexOf("📡 Uptime");
+    const panel = res.text.slice(i, res.text.indexOf("</div>", i));
+    assert.equal(panel.includes("UNREACHABLE"), false);
+    assert.equal(panel.includes("🔴"), false);
+    assert.equal(panel.includes("🟢"), false, "nor should it claim reachable");
+  });
+
+  test("a healthy last probe reports reachable, with its latency and age", async () => {
+    withUptime(shaped());
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin?key=${K}`);
+    assert.match(res.text, /Uptime \(measured from outside\)/);
+    assert.match(res.text, /Reachable/);
+    assert.match(res.text, /120ms/);
+    assert.equal(res.text.includes("UNREACHABLE"), false);
+  });
+
+  test("a failed last probe is loud, and the panel turns red", async () => {
+    withUptime(shaped({
+      last: { at: Date.now() - 6e4, ok: false, status: 0, ms: 15000 },
+      day: { probes: 24, up: 20, down: 4, pct: 83.3, avgMs: 400 },
+      lastFail: { at: Date.now() - 6e4, status: 0, err: "timeout after 15000ms" },
+      recent: probes(6, false),
+    }));
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin?key=${K}`);
+    assert.match(res.text, /UNREACHABLE/);
+    assert.match(res.text, /border-color:#e5484d/, "the panel should read as an alarm");
+    assert.match(res.text, /timeout after 15000ms/);
+    assert.match(res.text, /4 down/);
+  });
+
+  test("counts are reported as probes answered, not as a share of wall-clock time", async () => {
+    // A scheduled runner can be late or skipped, so "23/24 probes" is a claim the rows support
+    // where "99.6% of the last day" would quietly overstate what was actually measured.
+    withUptime(shaped({ day: { probes: 24, up: 23, down: 1, pct: 95.8, avgMs: 130 } }));
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin?key=${K}`);
+    assert.match(res.text, /<b>23<\/b>\/24 probes/);
+  });
+
+  test("one bar per recorded probe", async () => {
+    withUptime(shaped({ recent: probes(9) }));
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin?key=${K}`);
+    const strip = res.text.slice(res.text.indexOf('<div class="ups">'));
+    assert.equal((strip.slice(0, strip.indexOf("</div>")).match(/<i /g) || []).length, 9);
+  });
+
+  test("a hostile error string from the probe row can't inject markup", async () => {
+    // err is written by a process outside this app, so it is not trusted input here.
+    withUptime(shaped({
+      last: { at: Date.now(), ok: false, status: 0, ms: 1 },
+      lastFail: { at: Date.now(), status: 0, err: '<script>alert(1)</script>' },
+      recent: [{ at: Date.now(), ok: false, status: 0, ms: 1, err: '"><script>alert(2)</script>' }],
+    }));
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin?key=${K}`);
+    assert.equal(res.text.includes("<script>alert(1)"), false);
+    assert.equal(res.text.includes("<script>alert(2)"), false);
+    assert.match(res.text, /&lt;script&gt;/);
+  });
+
+  test("?json=1 exposes the outside view alongside this process's own uptime", async () => {
+    withUptime(shaped());
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin?key=${K}&json=1`);
+    assert.equal(typeof res.body.uptimeMs, "number", "this process's own uptime");
+    assert.equal(res.body.uptime.day.probes, 24, "and what an outside prober saw");
+  });
+});

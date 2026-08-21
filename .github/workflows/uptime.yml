@@ -1,0 +1,62 @@
+name: Uptime
+
+# Asks whether the game is up, from somewhere that isn't the game, and records the answer.
+#
+# The point is the "somewhere else". The admin dashboard reads the running server's own memory, so
+# it can show you anything except the one thing you most want to know afterwards — that the server
+# was gone. A process cannot record its own downtime. This runs on GitHub's machines, writes to
+# Turso directly, and turns a gap in the record into a row in the record.
+#
+# Needs three repository secrets, all of which already exist for the deploy:
+#   OWNER_KEY   — /admin/ping is owner-gated, same key as the Fly secret
+#   TURSO_URL   — where the result goes
+#   TURSO_TOKEN
+#
+# Honest limits, because they shape how the dashboard reports this:
+#   • Five minutes is GitHub's floor for `schedule`, and scheduled runs are best-effort — under
+#     load they can be minutes late or skipped entirely. So this is a coarse monitor, not an SLA
+#     instrument, and the dashboard counts probes ("23 of 24 succeeded") rather than claiming a
+#     percentage of wall-clock time it cannot actually account for.
+#   • GitHub disables cron on a repository with no pushes for 60 days. If the uptime panel goes
+#     quiet after a long break, that's this, not the game.
+#   • It cannot record Turso itself being unreachable, since that is what it writes to. Such a run
+#     fails loudly instead of looking like a clean probe.
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+# Never let probes pile up on each other; a late run is better dropped than queued behind another.
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    # Belt and braces over the probe's own 15s fetch timeout: nothing here should ever sit for long,
+    # and an unbounded job waiting on a network call is how the old pre-deploy step wedged.
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      # @libsql/client is a production dependency, so the dev tree isn't needed here.
+      - run: npm ci --omit=dev --ignore-scripts
+      - name: Probe the site and record the result
+        run: node scripts/probe.js
+        env:
+          PROBE_URL: https://proveit.fly.dev
+          OWNER_KEY: ${{ secrets.OWNER_KEY }}
+          TURSO_URL: ${{ secrets.TURSO_URL }}
+          TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}
+          # Set this to "1" to also fail the run on a confirmed outage, which turns GitHub's own
+          # failed-workflow email into an outage alert at no extra cost. Left off by default so the
+          # run history stays a signal about the *prober* rather than about the site.
+          PROBE_FAIL_ON_OUTAGE: "0"

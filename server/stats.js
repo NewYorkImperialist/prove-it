@@ -47,6 +47,11 @@ async function init() {
       `CREATE TABLE IF NOT EXISTS bandwidth (day TEXT PRIMARY KEY, bytes INTEGER DEFAULT 0, reqs INTEGER DEFAULT 0)`,
       // tiny key/value store (used by the cost guard to remember a per-cycle budget override across restarts)
       `CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)`,
+      // Reachability, written by scripts/probe.js from OUTSIDE this process (see the uptime
+      // workflow). It is the one table this server never writes to itself, and deliberately so:
+      // a dashboard running inside the app can report anything except that the app was gone.
+      `CREATE TABLE IF NOT EXISTS uptime (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, ok INTEGER, status INTEGER, ms INTEGER, err TEXT)`,
       // one row per player per completed "Challenge Race" match (mode='race' games in `games`) —
       // a separate child table rather than widening `games` with p3_id..p6_id-style columns,
       // since a race can have 2-8 players.
@@ -90,6 +95,59 @@ init();
 
 const enabled = () => !!client;
 const fire = (sql, args) => { if (client) client.execute({ sql, args }).catch((e) => console.error("📊 stats write:", e.message)); };
+
+// ---- uptime, recorded from outside ----
+// Unlike every other write here this one is awaited: the caller is scripts/probe.js, a process that
+// exits the moment it returns, so a fire-and-forget insert would be dropped before it left.
+// Resolves false rather than throwing — a probe that can't reach the database is not a crash, and
+// it is also the one outage this table can never record (see the note in the probe script).
+async function recordProbe({ ok, status, ms, err }) {
+  if (!client) return false;
+  try {
+    await client.execute({
+      sql: `INSERT INTO uptime (at, ok, status, ms, err) VALUES (?,?,?,?,?)`,
+      args: [Date.now(), ok ? 1 : 0, Number(status) || 0, Math.max(0, Math.round(Number(ms) || 0)), err ? String(err).slice(0, 200) : null],
+    });
+    return true;
+  } catch (e) {
+    console.error("📊 probe write:", e.message);
+    return false;
+  }
+}
+
+// Keep the table bounded: at one probe every five minutes this is ~8.6k rows a month, and nothing
+// reads past the retention window. Awaited for the same reason as the insert.
+async function pruneProbes(days = 30) {
+  if (!client) return 0;
+  try {
+    const r = await client.execute({ sql: `DELETE FROM uptime WHERE at < ?`, args: [Date.now() - days * 864e5] });
+    return Number(r.rowsAffected) || 0;
+  } catch (e) { return 0; }
+}
+
+// What the dashboard's uptime panel reads. Windows are counted in probes rather than in wall-clock
+// time on purpose: a scheduled runner can be late or skipped, so "23 of 24 probes succeeded" is a
+// claim the data supports, where "99.6% of the last hour" would not be.
+async function uptimeStats() {
+  const now = Date.now();
+  const win = async (sinceMs) => {
+    const r = await one(`SELECT COUNT(*) n, COALESCE(SUM(ok),0) up, COALESCE(AVG(ms),0) ms FROM uptime WHERE at >= ?`, [now - sinceMs]);
+    const n = Number(r?.n) || 0, up = Number(r?.up) || 0;
+    return { probes: n, up, down: n - up, pct: n ? (up / n) * 100 : null, avgMs: Math.round(Number(r?.ms) || 0) };
+  };
+  const [day, week] = await Promise.all([win(864e5), win(7 * 864e5)]);
+  const recent = await q(`SELECT at, ok, status, ms, err FROM uptime ORDER BY at DESC LIMIT 48`);
+  const lastFail = await one(`SELECT at, status, err FROM uptime WHERE ok=0 ORDER BY at DESC LIMIT 1`);
+  const last = recent[0] || null;
+  return {
+    // `last` is null when nothing has ever probed — which is different from "it is down", and the
+    // panel has to say so rather than showing a red dot for a probe that never ran.
+    last: last ? { at: Number(last.at), ok: !!Number(last.ok), status: Number(last.status), ms: Number(last.ms) } : null,
+    day, week,
+    lastFail: lastFail ? { at: Number(lastFail.at), status: Number(lastFail.status), err: lastFail.err } : null,
+    recent: recent.map((r) => ({ at: Number(r.at), ok: !!Number(r.ok), status: Number(r.status), ms: Number(r.ms), err: r.err })),
+  };
+}
 
 function recordGame(g) {
   fire(
@@ -565,4 +623,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet };
+module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats };

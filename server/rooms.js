@@ -551,9 +551,27 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       if (!p) return;
       socket.to(room.code).emit("typing", { id: p.id, name: p.name, typing: !!typing });
     });
+    // A rematch restarts a match that is OVER. It used to check only host + player count, so it
+    // cleared every guard startMatch has: a host losing 0-4 could emit it and wipe the scoreboard,
+    // it left room.status desynced from a running game (which then let an outsider joinRoom into a
+    // live race), it never counted the game, and it could start against a disconnected player the
+    // startMatch guard exists to protect.
     socket.on("rematch", (_p, ack) => {
       const room = rooms.get(socket.data.roomCode);
-      if (room) engineFor(room).handleRematch(io, room, socket, ack);
+      if (!room) return ack?.({ ok: false, error: "You're not in a room." });
+      if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
+      if (room.hostId !== socket.data.playerId) return ack?.({ ok: false, error: "Only the host can restart." });
+      if (room.players.size < minFor(room)) return ack?.({ ok: false, error: room.mode === "race" ? "Need at least 2 players to start." : "Need 2 players to start." });
+      // Mid-match this would throw away everyone's scores and leave the old game's timers firing
+      // against the new one. Both engines settle on "matchover".
+      if (room.game && room.game.phase !== "matchover") return ack?.({ ok: false, error: "Finish this match first." });
+      for (const pl of room.players.values()) {
+        if (!pl.connected) return ack?.({ ok: false, error: `Waiting for ${pl.name} to reconnect…` });
+      }
+      room.status = "started";
+      stats.gamesStarted++;
+      for (const pl of room.players.values()) { const sk = io.sockets.sockets.get(pl.socketId); if (sk?.data?.session) sk.data.session.played = true; }
+      engineFor(room).handleRematch(io, room, socket, ack);
     });
 
     socket.on("leaveRoom", () => leaveCurrentRoom(socket));

@@ -853,3 +853,70 @@ describe("rooms.js — a seat can only be reclaimed by whoever holds it", () => 
     assert.equal(rooms[0].code, second.code);
   });
 });
+
+// `rematch` used to check only host + player count, so it bypassed every guard startMatch has: a
+// host losing 0-4 could emit it and wipe the scoreboard, it left room.status out of step with a
+// running game (which then let an outsider joinRoom into a live race), and it could start against
+// a player who was mid-reconnect — the exact case startMatch refuses.
+describe("rooms.js — rematch clears the same bar as starting a match", () => {
+  async function startedDuel() {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    const started = await emit(a, "startMatch");
+    assert.equal(started.ok, true);
+    return { a, b, created, joined, room: roomsApi.rooms.get(created.code) };
+  }
+
+  test("a host cannot restart a match that is still running", async () => {
+    const { a, room } = await startedDuel();
+    room.game.scores = { ...room.game.scores };
+    const res = await emit(a, "rematch");
+    assert.equal(res.ok, false);
+    assert.match(res.error, /Finish this match first/i);
+  });
+
+  test("a losing host cannot wipe the scoreboard", async () => {
+    const { a, room, created, joined } = await startedDuel();
+    // Host behind 1-4.
+    room.game.scores[created.you] = 1;
+    room.game.scores[joined.you] = 4;
+    const res = await emit(a, "rematch");
+    assert.equal(res.ok, false);
+    assert.equal(room.game.scores[joined.you], 4, "the leader's score survives");
+    assert.equal(room.game.scores[created.you], 1);
+  });
+
+  test("a finished match can be restarted", async () => {
+    const { a, room } = await startedDuel();
+    room.game.phase = "matchover";
+    const res = await emit(a, "rematch");
+    assert.equal(res.ok, true);
+    assert.equal(room.status, "started");
+  });
+
+  test("a rematch waits for a disconnected player, like starting does", async () => {
+    const { a, b, room } = await startedDuel();
+    room.game.phase = "matchover";
+    b.close();
+    await sleep(140);
+    const res = await emit(a, "rematch");
+    assert.equal(res.ok, false);
+    assert.match(res.error, /reconnect/i);
+  });
+
+  test("only the host may rematch", async () => {
+    const { b, room } = await startedDuel();
+    room.game.phase = "matchover";
+    const res = await emit(b, "rematch");
+    assert.equal(res.ok, false);
+    assert.match(res.error, /host/i);
+  });
+
+  test("a socket in no room gets a clean refusal rather than silence", async () => {
+    const c = await connect();
+    const res = await emit(c, "rematch");
+    assert.equal(res.ok, false);
+    assert.match(res.error, /not in a room/i);
+  });
+});

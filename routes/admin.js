@@ -848,10 +848,11 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const head = adminHead({ k, title: "Merge players", css: MERGE_CSS });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
     if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Merge players</h1><p class="sub">Persistence not configured.</p></body>`);
-    const [people, history, names] = await Promise.all([
+    const [people, history, names, crownHistory] = await Promise.all([
       analytics.resultVisitors(200).catch(() => []),
       analytics.mergeAuditList(25).catch(() => []),
       analytics.resultNames(300).catch(() => []),
+      analytics.crownAuditList(25).catch(() => []),
     ]);
     // `done` reports the outcome of the merge that redirected back here. Without it the page looks
     // identical whether the merge moved forty entries or was refused, which for an operation this
@@ -864,18 +865,20 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         merged: `✅ Merged — ${n} ${n === 1 ? "entry" : "entries"} moved. The boards now show them as one player.`,
         "merged-names": `✅ Merged — ${n} ${n === 1 ? "entry" : "entries"} now belong to one player under one name.`,
         undone: `↩️ Put back — ${n} ${n === 1 ? "entry" : "entries"} returned to the player they came from.`,
+        crowned: `✅ Crowned — ${n} ${n === 1 ? "entry" : "entries"} now show with 👑, same as the rest of that player's history.`,
         same: "⚠️ Nothing done: those are the same player. Pick two different ones.",
         "same-name": "⚠️ Nothing done: those are the same name. Pick two different ones.",
         missing: "⚠️ Nothing done: pick a player on both sides.",
         "missing-name": "⚠️ Nothing done: pick a name on both sides.",
         "nothing-to-merge": "⚠️ Nothing done: that player has no entries to move.",
+        "nothing-to-crown": "⚠️ Nothing done: that player is already crowned everywhere.",
         "too-many": "⚠️ Nothing done: that player has more entries than one merge will move at once.",
         "already-undone": "⚠️ Nothing done: that merge has already been put back.",
         "not-found": "⚠️ Nothing done: no record of that merge.",
         "no-snapshot": "⚠️ Can't put that one back — it has no record of which entries moved.",
         "write-failed": "⚠️ The database refused the write. Nothing changed; try again.",
       }[r] || "⚠️ Nothing done.";
-      const bad = !["merged", "merged-names", "undone"].includes(r);
+      const bad = !["merged", "merged-names", "undone", "crowned"].includes(r);
       return `<p class="sub" style="color:${bad ? "#ffb4b4" : "#8ef0b4"};font-weight:600">${esc(msg)}</p>`;
     })();
     const options = people.map((v) => `<option value="${esc(v.visitor_id)}">${esc(visitorLabel(v))}</option>`).join("");
@@ -949,6 +952,26 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         <p class="hint">The person whose entries were folded in loses their own <b>(you)</b> marker on the boards: their
           browser still holds the id you merged away from. Playing again re-creates it as a new player.</p>
       </form>
+
+      <h2>Fix a split crown</h2>
+      <p class="sub">Crown is set per-run — whether OWNER_KEY was live in the browser the moment that run finished —
+        not per-browser, so the owner's own device can end up with some runs crowned and some not (the toggle was off
+        for a session). That isn't two players — it's one visitor_id already, so merging above refuses it — this just
+        corrects the flag across everything that player has ever played.</p>
+      <form class="mf" action="/admin/crown-visitor" method="get" id="cf">
+        <input type="hidden" name="key" value="${k}">
+        <label for="cvisitor">This player</label>
+        <select id="cvisitor" name="visitorId" required><option value="">— pick one —</option>${options}</select>
+        <button type="submit">Crown every run of theirs</button>
+        <p class="hint">Only rows that aren't already crowned change. Their whole history collapses into the one
+          crowned entry on every board, same as it would if every run had been crowned from the start.</p>
+      </form>
+      ${crownHistory.length ? `<div class="tw"><table class="aud"><tr><th>When (ET)</th><th>Player</th><th>Entries</th></tr>${crownHistory.map((h) => `<tr>
+        <td class="dim">${easternTime(Number(h.at || 0))}</td>
+        <td>${h.crowned ? "👑 crowned" : "un-crowned"} ${esc(String(h.visitor_id || "").slice(0, 12))}</td>
+        <td class="dim">${Number(h.rows || 0)}</td>
+      </tr>`).join("")}</table></div>` : ""}
+
       <h2>Merge history</h2>
       <p class="sub">Each merge records every entry it moved, so it can be put back under the name and player it had.
         ${history.length ? "" : "Nothing merged yet."}</p>
@@ -998,6 +1021,12 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
           if (btn.disabled) { e.preventDefault(); return; }
           if (!confirm("Fold\\n\\n  " + label(from) + "\\n\\ninto\\n\\n  " + label(keep) + "\\n\\n?\\n\\nEvery leaderboard entry of the first becomes the second's. You can put this back afterwards.")) e.preventDefault();
         });
+
+        var cf = document.getElementById("cf"), cvisitor = document.getElementById("cvisitor");
+        cf.addEventListener("submit", function(e){
+          if (!cvisitor.value) { e.preventDefault(); return; }
+          if (!confirm("Crown every run " + label(cvisitor) + " has played?\\n\\nAnything of theirs not already crowned joins the rest of their history in the single crowned entry on every board.")) e.preventDefault();
+        });
       })();
       </script>
       </body>`);
@@ -1029,6 +1058,16 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const k = encodeURIComponent(req.query.key || "");
     const out = await analytics.undoMerge(req.query.id, "admin").catch(() => ({ ok: false, reason: "write-failed", rows: 0 }));
     const q2 = out.ok ? `done=undone&n=${out.rows}` : `done=${encodeURIComponent(out.reason || "")}`;
+    res.redirect(`/admin/merge?key=${k}&${q2}`);
+  });
+  // Crowns every un-crowned run a visitor has ever played — see crownVisitorRows()'s comment for
+  // why this is a different problem than the merges above (same visitor_id both "sides").
+  router.get("/admin/crown-visitor", async (req, res) => {
+    if (!ownerOk(req)) return res.status(404).send("Not found");
+    const k = encodeURIComponent(req.query.key || "");
+    const out = await analytics.crownVisitorRows({ visitorId: req.query.visitorId, on: true, by: "admin" })
+      .catch(() => ({ ok: false, reason: "write-failed", rows: 0 }));
+    const q2 = out.ok ? `done=crowned&n=${out.rows}` : `done=${encodeURIComponent(out.reason || "")}`;
     res.redirect(`/admin/merge?key=${k}&${q2}`);
   });
 

@@ -63,6 +63,14 @@ async function init() {
       `CREATE TABLE IF NOT EXISTS merge_audit (
         id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, keep_visitor TEXT, from_visitor TEXT,
         rows INTEGER, snapshot TEXT, renamed TEXT, by_who TEXT, undone_at INTEGER)`,
+      // crown is set per-run (behind OWNER_KEY), not per-browser, so the same visitor_id can end
+      // up with a mix of crowned and un-crowned rows — the owner's own crown toggle was off for
+      // some of their plays. That isn't two players (mergeVisitors refuses a same-id "merge"); it's
+      // one visitor's flag needing correcting across their history. `crowned` is the direction
+      // (1 = crowned, 0 = un-crowned), so the same audit trail covers either.
+      `CREATE TABLE IF NOT EXISTS crown_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, visitor_id TEXT, crowned INTEGER,
+        rows INTEGER, by_who TEXT)`,
       // Reachability, written by scripts/probe.js from OUTSIDE this process (see the uptime
       // workflow). It is the one table this server never writes to itself, and deliberately so:
       // a dashboard running inside the app can report anything except that the app was gone.
@@ -724,6 +732,40 @@ async function mergeVisitors({ keep, from, name = null, by = null }) {
   return { ok: true, rows, keep: to, from: src, renamed: newName };
 }
 
+// ---- fixing a split crown ----
+// Crown is decided per-submission (whether OWNER_KEY was live in the browser at the moment that
+// run finished), not per-visitor, so the owner's own device can end up with a mix of crowned and
+// un-crowned rows — mergeVisitors can't fix this, since both sides are already the same
+// visitor_id. This just corrects the flag across everything one visitor has ever played.
+async function crownVisitorRows({ visitorId, on = true, by = null }) {
+  if (!client) return { ok: false, rows: 0, reason: "off" };
+  const vid = String(visitorId || "").trim();
+  if (!vid) return { ok: false, rows: 0, reason: "missing" };
+  const want = on ? 1 : 0;
+  const rows = await (async () => {
+    try {
+      const r = await client.execute({ sql: `UPDATE challenge_results SET crown=? WHERE visitor_id=? AND crown=?`, args: [want, vid, want ? 0 : 1] });
+      return Number(r.rowsAffected) || 0;
+    } catch (e) {
+      console.error("📊 crown visitor:", e.message);
+      return null;
+    }
+  })();
+  if (rows == null) return { ok: false, rows: 0, reason: "write-failed" };
+  if (rows === 0) return { ok: false, rows: 0, reason: "nothing-to-crown" };
+  try {
+    await client.execute({
+      sql: `INSERT INTO crown_audit (at, visitor_id, crowned, rows, by_who) VALUES (?,?,?,?,?)`,
+      args: [Date.now(), vid, want, rows, by ? String(by).slice(0, 60) : null],
+    });
+  } catch (e) { console.error("📊 crown audit:", e.message); }
+  return { ok: true, rows, visitorId: vid, crowned: !!want };
+}
+async function crownAuditList(limit = 25) {
+  return q(`SELECT id, at, visitor_id, crowned, rows, by_who FROM crown_audit ORDER BY id DESC LIMIT ?`,
+    [Math.max(1, Math.min(200, parseInt(limit, 10) || 25))]);
+}
+
 // ---- merging two display NAMES into one ----
 // The duplicate an owner actually sees is two names, not two ids: "jayden" and "Jayden" side by side
 // on a board, obviously one person. mergeVisitors can fix that a pair at a time, but a name is not
@@ -891,4 +933,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList, resultVisitors, mergeVisitors, undoMerge, mergeAuditList, resultNames, mergeNames };
+module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList, resultVisitors, mergeVisitors, undoMerge, mergeAuditList, resultNames, mergeNames, crownVisitorRows, crownAuditList };

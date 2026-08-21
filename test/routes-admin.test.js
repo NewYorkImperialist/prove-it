@@ -683,9 +683,10 @@ describe("routes/admin.js — merging two players", () => {
     assert.equal(res.status, 200);
     assert.match(res.text, /name="keep"/);
     assert.match(res.text, /name="from"/);
-    // Two selects × two visitors.
-    assert.equal((res.text.match(/<option value="v-abcdef123456"/g) || []).length, 2);
-    assert.equal((res.text.match(/<option value="v-second"/g) || []).length, 2);
+    assert.match(res.text, /name="visitorId"/); // the "fix a split crown" picker reuses the same option list
+    // Three selects (keep, from, and the crown-fix picker) × two visitors.
+    assert.equal((res.text.match(/<option value="v-abcdef123456"/g) || []).length, 3);
+    assert.equal((res.text.match(/<option value="v-second"/g) || []).length, 3);
   });
 
   test("each option says enough to tell two visitors apart", async () => {

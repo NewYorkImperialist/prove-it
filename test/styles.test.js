@@ -95,3 +95,50 @@ describe("the geography board re-measures when its box changes", () => {
     assert.ok(fillReturn !== -1 && watch !== -1 && fillReturn < watch, "fill mode must return before the observer is attached");
   });
 });
+
+// The brand mark exists two ways round on purpose, which is exactly the kind of thing a later
+// tidy-up "fixes" into consistency. Both halves are asserted here so that lands as a failing test
+// with a reason rather than as a silent visual change:
+//
+//   favicon + in-app badge  → dark ◎ on a FILLED AMBER plate. They compete with other favicons in
+//     a tab strip and sit on this app's own near-black panels; the filled plate is what makes the
+//     mark findable there, and 1acaf45's amber-on-black version needed a border to stop the plate
+//     vanishing into the background behind it.
+//   PWA / home-screen icons → amber ◎ on a NEAR-BLACK plate. Those sit on the user's wallpaper
+//     among their other apps, where a solid amber square is a bright blob.
+describe("the brand mark is filled amber in the browser and dark-plated once installed", () => {
+  const FAV = fs.readFileSync(path.join(ROOT, "lib/favicon.js"), "utf8");
+  const LOGO = fs.readFileSync(path.join(ROOT, "components/ui/Logo.jsx"), "utf8");
+  const ICONS = fs.readFileSync(path.join(ROOT, "scripts/make-icons.js"), "utf8");
+
+  test("the favicon plate is amber and its glyph is dark", () => {
+    const rect = FAV.match(/<rect[^>]*fill='%23([0-9a-f]{6})'/i);
+    const text = FAV.match(/<text[^>]*fill='%23([0-9a-f]{6})'/i);
+    assert.equal(rect && rect[1].toLowerCase(), "f5a623", "plate should be --accent");
+    assert.equal(text && text[1].toLowerCase(), "241500", "glyph should be --markfg");
+  });
+
+  test("the in-app badge matches the favicon, and needs no border because it is filled", () => {
+    const badge = LOGO.slice(LOGO.indexOf("export function LogoBadge"), LOGO.indexOf("export function Wordmark"));
+    assert.match(badge, /bg-\[linear-gradient\(140deg,#f5a623,#e0801a\)\]/);
+    assert.match(badge, /text-markfg/);
+    assert.equal(/\bborder\b/.test(badge), false, "a filled plate is its own edge");
+  });
+
+  test("the generated icons are the inverse: amber mark, near-black plate", () => {
+    // sample() paints the ring/dot amber and everything else inside the plate near-black (with the
+    // admin build's blue stripe in between) — so the mark is the bright half, unlike the favicon.
+    const s = ICONS.slice(ICONS.indexOf("function sample("), ICONS.indexOf("const SS ="));
+    assert.match(s, /if \(onMark\) return AMBER;/);
+    assert.match(s, /return PANEL;/);
+    assert.equal(/return onMark \? PANEL : AMBER/.test(s), false, "that would be the favicon's way round");
+    assert.match(ICONS, /const AMBER = \[0xf5, 0xa6, 0x23\]/);
+    assert.match(ICONS, /const PANEL = \[0x14, 0x11, 0x0c\]/);
+  });
+
+  test("and each file says the divergence is deliberate, so it reads as a decision", () => {
+    for (const [name, src] of [["lib/favicon.js", FAV], ["components/ui/Logo.jsx", LOGO], ["scripts/make-icons.js", ICONS]]) {
+      assert.match(src, /home-screen icons|installed icon|INVERSE|favicon/i, name);
+    }
+  });
+});

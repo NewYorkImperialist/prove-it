@@ -6,56 +6,62 @@ import { LogoBadge, Wordmark } from "@/components/ui/Logo";
 import LaurelButton from "./LaurelButton";
 import { cx } from "@/lib/browser/cx";
 
-const FULL = "mt-2.5 w-full p-[13px]";
+// At 844x390 these five stacked past the bottom of the card — "Live Multiplayer" sliced in half,
+// "Challenge Race" and the credit line gone entirely, behind a 2px scrollbar gutter that gave no
+// hint there was more. A landscape phone is wide and short, so `short:` puts them two-up and lets
+// the grid's gap do the spacing instead of each button's own top margin.
+const FULL = "mt-2.5 w-full p-[13px] short:mt-0! short:p-2.5!";
 
 export default function HomeCard({ leaving, dailyPlayed, onSolo, onDaily, onGeography, onMultiplayer, onRace, onLeaderboards }) {
   return (
     <Card leaving={leaving}>
-      <div className="mb-3 flex items-center gap-3">
+      <div className="mb-3 flex items-center gap-3 short:mb-2">
         <h1 className="m-0 flex items-center gap-3">
           <LogoBadge className="h-[38px]! w-[38px]! text-[21px]!" />
           <Wordmark className="text-[26px]" />
         </h1>
         <LaurelButton onClick={onLeaderboards} />
       </div>
-      <p className="m-0 mb-6 text-sm text-muted">Think you&apos;ve got what it takes to name it all in time? Prove it!</p>
+      <p className="m-0 mb-6 text-sm text-muted short:mb-3">Think you&apos;ve got what it takes to name it all in time? Prove it!</p>
 
-      <Button variant="primary" className="mt-0!" onClick={onSolo}>
-        Play Solo
-      </Button>
+      <div className="short:grid short:grid-cols-2 short:gap-2">
+        <Button variant="primary" className="mt-0! short:col-span-2" onClick={onSolo}>
+          Play Solo
+        </Button>
 
-      {/* Glowing amber while today is unplayed; quiet with a "come back tomorrow" tooltip once
-          done. The tooltip is the styled ::after below — a native `title` with the same text on
-          top of it meant hovering produced two tooltips saying the same thing. */}
-      <Button
-        variant="secondary"
-        onClick={onDaily}
-        aria-label={dailyPlayed ? "Daily Challenge — you played! Check back tomorrow." : undefined}
-        className={cx(
-          FULL,
-          dailyPlayed
-            ? "relative after:pointer-events-none after:absolute after:bottom-[calc(100%+8px)] after:left-1/2 after:z-[5] after:-translate-x-1/2 after:rounded-lg after:border after:border-line2 after:bg-[#0c0d10] after:px-2.5 after:py-1.5 after:text-xs after:font-semibold after:whitespace-nowrap after:text-white after:opacity-0 after:transition-opacity after:duration-[140ms] after:content-['You_played!_Check_back_tomorrow.'] hover:after:opacity-100"
-            : "animate-daily-glow border-accent! bg-accent! text-markfg!",
-        )}
-      >
-        Daily Challenge
-      </Button>
+        {/* Glowing amber while today is unplayed; quiet with a "come back tomorrow" tooltip once
+            done. The tooltip is the styled ::after below — a native `title` with the same text on
+            top of it meant hovering produced two tooltips saying the same thing. */}
+        <Button
+          variant="secondary"
+          onClick={onDaily}
+          aria-label={dailyPlayed ? "Daily Challenge — you played! Check back tomorrow." : undefined}
+          className={cx(
+            FULL,
+            dailyPlayed
+              ? "relative after:pointer-events-none after:absolute after:bottom-[calc(100%+8px)] after:left-1/2 after:z-[5] after:-translate-x-1/2 after:rounded-lg after:border after:border-line2 after:bg-[#0c0d10] after:px-2.5 after:py-1.5 after:text-xs after:font-semibold after:whitespace-nowrap after:text-white after:opacity-0 after:transition-opacity after:duration-[140ms] after:content-['You_played!_Check_back_tomorrow.'] hover:after:opacity-100"
+              : "animate-daily-glow border-accent! bg-accent! text-markfg!",
+          )}
+        >
+          Daily Challenge
+        </Button>
 
-      {/* Geography is its own mode, not a category: 27 boards across maps, flags, borders and
-          capitals, each with its own leaderboard. It used to be a dropdown on the solo builder,
-          directly under the one that already listed all 282 categories. */}
-      <Button variant="secondary" highlight className={FULL} onClick={onGeography}>
-        Geography <NewTag />
-      </Button>
+        {/* Geography is its own mode, not a category: 27 boards across maps, flags, borders and
+            capitals, each with its own leaderboard. It used to be a dropdown on the solo builder,
+            directly under the one that already listed all 282 categories. */}
+        <Button variant="secondary" highlight className={FULL} onClick={onGeography}>
+          Geography <NewTag />
+        </Button>
 
-      <Button variant="secondary" className={FULL} onClick={onMultiplayer}>
-        Live Multiplayer
-      </Button>
-      <Button variant="secondary" highlight className={FULL} onClick={onRace}>
-        Challenge Race <NewTag />
-      </Button>
+        <Button variant="secondary" className={FULL} onClick={onMultiplayer}>
+          Live Multiplayer
+        </Button>
+        <Button variant="secondary" highlight className={FULL} onClick={onRace}>
+          Challenge Race <NewTag />
+        </Button>
+      </div>
 
-      <p className="mt-4 mb-0 text-center text-xs text-muted">
+      <p className="mt-4 mb-0 text-center text-xs text-muted short:mt-2">
         Created by{" "}
         <a href={SITE.credit.url} target="_blank" rel="noopener" className="inline-block py-2 font-semibold text-accent no-underline hover:underline">
           {SITE.credit.name}

@@ -164,14 +164,17 @@ export default function SprintSection({ solo, onBack }) {
           }, 260);
         }}
         className={cx(
-          "w-full rounded-[10px] border border-line2 bg-bg px-[13px] py-3 text-base text-ink outline-none focus:border-accent",
+          // scroll-mb keeps the line below this box on screen. block:"end" above aligns the input's
+          // own bottom edge with the viewport's, which put solo.cmsg — "✗ not on the list", "already
+          // named" — exactly one line past it, and re-pushed it off on every tap of the box.
+          "w-full scroll-mb-12 rounded-[10px] border border-line2 bg-bg px-[13px] py-3 text-base text-ink outline-none focus:border-accent",
           shaking && "animate-cshake",
         )}
       />
       <div className="mt-2 min-h-[18px] text-[13px] text-muted">{solo.cmsg}</div>
 
       {solo.geoMode !== "fill" && !pictureMode ? (
-        <div className={cx("mt-3 flex flex-wrap gap-1.5 overflow-y-auto", mapMode ? "max-h-[11vh]" : "max-h-[24vh] desk:max-h-[30vh]")}>
+        <div className={cx("mt-3 flex shrink-0 flex-wrap gap-1.5 overflow-y-auto", mapMode ? "max-h-[11vh]" : "max-h-[24vh] desk:max-h-[30vh]")}>
           {solo.chips.map((c, i) => (
             <span key={`${c}-${i}`} className="animate-chip rounded-lg border border-line2 bg-accdim px-[9px] py-[5px] text-[13px] text-ink">
               {c}

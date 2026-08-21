@@ -1,4 +1,5 @@
 "use client";
+import { useEffect, useRef } from "react";
 import { GENRES, GENRE_EMOJI, recommendedTime, genreRoundLimit, quickPlayPool, CATS, shuffle } from "@/lib/solo-catalog";
 import { BackButton } from "@/components/ui/Button";
 import TextInput, { FieldLabel, Select } from "@/components/ui/Field";
@@ -32,6 +33,22 @@ export default function CreateSection({ solo, onBack }) {
   // Genre rounds never repeat a category, so a genre with fewer categories than the round count
   // plays a shorter run — say so here rather than at the ready screen.
   const genreCap = solo.mode === "genre" ? genreRoundLimit(solo.genre) : 0;
+
+  // This one line carries two different messages: why you were bounced here (a dead challenge
+  // link, a daily that can't load) and why Start just failed. Both were invisible — measured at
+  // y=568 in a 568px viewport, and y=554 in a 390px one — so the screen looked like an ordinary
+  // "Play solo" card and the tap looked like it had done nothing at all. Keeping it next to Start
+  // and scrolling to it covers both cases; moving it to the top would only have swapped which one
+  // was off-screen.
+  const errRef = useRef(null);
+  useEffect(() => {
+    if (!solo.createErr) return;
+    try {
+      errRef.current?.scrollIntoView({ block: "center", behavior: "smooth" });
+    } catch {
+      /* older Safari: not worth a fallback */
+    }
+  }, [solo.createErr]);
 
   return (
     <SoloCard>
@@ -137,7 +154,9 @@ export default function CreateSection({ solo, onBack }) {
         </div>
       ) : null}
 
-      <SoloErr>{solo.createErr}</SoloErr>
+      <div ref={errRef}>
+        <SoloErr>{solo.createErr}</SoloErr>
+      </div>
     </SoloCard>
   );
 }

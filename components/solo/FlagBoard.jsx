@@ -15,6 +15,9 @@ export default function FlagBoard({ entries, selected, namedIds, onSelect, onUna
   const failed = useRef(new Set());
   const reported = useRef(false);
 
+  // The highlighted flag is always brought into view, which is what makes a short grid workable:
+  // the board can be only a row and a bit tall (see the `short:` floor below) and the flag you're
+  // being asked about is still on screen.
   useEffect(() => {
     selRef.current?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
   }, [selected]);
@@ -36,7 +39,7 @@ export default function FlagBoard({ entries, selected, namedIds, onSelect, onUna
   };
 
   return (
-    <div className="my-2 grid min-h-0 flex-1 grid-cols-4 gap-2 overflow-y-auto rounded-xl border border-line2 bg-bg p-2 desk:grid-cols-8">
+    <div className="my-2 grid min-h-[150px] flex-1 grid-cols-4 gap-2 overflow-y-auto rounded-xl border border-line2 bg-bg p-2 short:my-1 short:min-h-[96px] desk:grid-cols-8">
       {entries.map((e, i) => {
         const isSel = i === selected;
         const solved = namedIds.has(e.id);

@@ -7,7 +7,7 @@ export default function Card({ children, className, leaving = false, ...rest }) 
   return (
     <div
       className={cx(
-        "w-[min(94vw,460px)] max-h-[92vh] overflow-y-auto rounded-2xl border border-line bg-panel px-8 py-[34px] shadow-[0_24px_70px_rgba(0,0,0,.6)]",
+        "w-[min(94vw,460px)] max-h-[92vh] overflow-y-auto rounded-2xl border border-line bg-panel px-8 py-[34px] shadow-[0_24px_70px_rgba(0,0,0,.6)] short:px-5 short:py-4",
         leaving ? "animate-view-leave" : "animate-view-enter",
         className,
       )}

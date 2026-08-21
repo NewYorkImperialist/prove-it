@@ -318,7 +318,8 @@ describe("rooms.js — lobby lifecycle", () => {
 
     // Same playerId as a seated player. The client keys its read-only spectator UI off this
     // ack's `spectator` flag, so saying "true" here would leave a real player unable to play.
-    const res = await emit(b, "spectateRoom", { code: created.code, name: "Bob", playerId: joined.you });
+    // With the seat token, as the real client sends (it stores whatever the join ack returned).
+    const res = await emit(b, "spectateRoom", { code: created.code, name: "Bob", playerId: joined.you, seat: joined.seat });
     assert.equal(res.ok, true);
     assert.notEqual(res.spectator, true, "a seated player must never be acked as a spectator");
     const room = roomsApi.rooms.get(created.code);
@@ -575,7 +576,7 @@ describe("rooms.js — display names go through the profanity filter", () => {
     const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
     // The name check has to sit AFTER the resume branch: a client re-sends whatever name it has
     // in storage on every reconnect, and refusing that would strand a seated player mid-match.
-    const again = await emit(b, "joinRoom", { code: created.code, name: "fuck you", playerId: joined.you });
+    const again = await emit(b, "joinRoom", { code: created.code, name: "fuck you", playerId: joined.you, seat: joined.seat });
     assert.equal(again.ok, true);
     assert.equal(roomsApi.rooms.get(created.code).players.get(joined.you).name, "Bob");
   });
@@ -749,5 +750,106 @@ describe("rooms.js — single-player session tagging", () => {
       assert.equal(sessions.length, 1);
       assert.ok(!sessions[0].singleplayer);
     });
+  });
+});
+
+// A seat used to be claimable by anyone who knew its playerId — and roomState broadcasts every
+// player's id to everyone in the room, spectators included. So: watch a room, read the roster,
+// emit `resume` with someone else's id, and you held their seat. Their chat identity, the host's
+// authority if they were host, and `leaveRoom` made THEM forfeit their own match.
+describe("rooms.js — a seat can only be reclaimed by whoever holds it", () => {
+  test("the join ack hands back a seat token, and roomState never carries it", async () => {
+    const a = await connect(), b = await connect();
+    const seen = trackRoomState(a);
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    assert.equal(typeof created.seat, "string");
+    assert.ok(created.seat.length >= 24);
+    assert.notEqual(created.seat, joined.seat, "each seat gets its own");
+    // The broadcast is the reason this has to be a secret at all.
+    await sleep(80);
+    for (const p of seen.current.players) {
+      assert.equal(p.token, undefined, "roomState must never publish a seat token");
+      assert.equal(JSON.stringify(p).includes(created.seat), false);
+    }
+  });
+
+  test("resume without the token is refused", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    const attacker = await connect();
+    // Exactly the published information: the room code and the victim's playerId.
+    const stolen = await emit(attacker, "resume", { code: created.code, playerId: joined.you });
+    assert.equal(stolen.ok, false, "a playerId alone must not reclaim a seat");
+    // The victim's seat still points at the victim's socket.
+    const seat = roomsApi.rooms.get(created.code).players.get(joined.you);
+    assert.equal(seat.socketId, b.id);
+    assert.notEqual(seat.socketId, attacker.id);
+  });
+
+  test("resume with a wrong or another seat's token is refused", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    const attacker = await connect();
+    for (const guess of ["", "x", created.seat, "z".repeat(32)]) {
+      const res = await emit(attacker, "resume", { code: created.code, playerId: joined.you, seat: guess });
+      assert.equal(res.ok, false, `token ${JSON.stringify(guess.slice(0, 8))} must not work`);
+    }
+    assert.equal(roomsApi.rooms.get(created.code).players.get(joined.you).socketId, b.id);
+  });
+
+  test("the real owner still reconnects into their own seat", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    b.close();
+    await sleep(120);
+    const back = await connect();
+    const res = await emit(back, "resume", { code: created.code, playerId: joined.you, seat: joined.seat });
+    assert.equal(res.ok, true);
+    assert.equal(res.you, joined.you);
+    assert.equal(roomsApi.rooms.get(created.code).players.get(joined.you).socketId, back.id);
+  });
+
+  test("claiming a seated id without its token gets a NEW seat, not that one", async () => {
+    // Falling through rather than refusing: an honest client that lost its token should still get
+    // into a room it can see, and it must not land on top of the seat it can't prove is its own.
+    // A race room, because a duel caps at two and the fall-through needs a free seat to land in.
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice", mode: "race" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    const attacker = await connect();
+    const res = await emit(attacker, "joinRoom", { code: created.code, name: "Eve", playerId: joined.you });
+    assert.equal(res.ok, true);
+    assert.notEqual(res.you, joined.you, "must not be handed the seat it claimed");
+    assert.equal(roomsApi.rooms.get(created.code).players.get(joined.you).socketId, b.id, "victim keeps their seat");
+  });
+
+  test("a spectator claiming a seated id just spectates", async () => {
+    const a = await connect(), b = await connect();
+    const created = await emit(a, "createRoom", { name: "Alice" });
+    const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+    const attacker = await connect();
+    const res = await emit(attacker, "spectateRoom", { code: created.code, name: "Eve", playerId: joined.you });
+    assert.equal(res.ok, true);
+    assert.equal(res.spectator, true, "no token means no seat");
+    assert.equal(roomsApi.rooms.get(created.code).players.get(joined.you).socketId, b.id);
+  });
+
+  test("one socket never holds seats in two rooms at once", async () => {
+    // The invariant behind the doResume fix. doResume never called leaveCurrentRoom, so a socket
+    // that resumed into another room kept its old seat forever — the room was never released and
+    // never reaped, and it still advertised a "connected" host nobody could play against.
+    const a = await connect(), b = await connect();
+    const first = await emit(a, "createRoom", { name: "Alice" });
+    const second = await emit(b, "createRoom", { name: "Bob", mode: "race" });
+    const moved = await emit(a, "joinRoom", { code: second.code, name: "Alice" });
+    assert.equal(moved.ok, true);
+    assert.equal(roomsApi.rooms.has(first.code), false, "the room left behind is released, not orphaned");
+    const rooms = [...roomsApi.rooms.values()].filter((r) => [...r.players.values()].some((p) => p.socketId === a.id));
+    assert.equal(rooms.length, 1, "exactly one room holds this socket");
+    assert.equal(rooms[0].code, second.code);
   });
 });

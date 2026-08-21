@@ -5,7 +5,9 @@
 // Identity is the stable playerId (the client keeps it in sessionStorage), NOT the
 // socket id — so a reconnect with a new socket re-claims the same player slot.
 
+const crypto = require("node:crypto");
 const { createMatchmaking } = require("./matchmaking.js");
+const { newSeatToken, seatTokenOk } = require("../lib/seat-token.js");
 const { isBlocked } = require("../lib/name-filter.js");
 const { sourceOf, safeReferrer } = require("../lib/referral.js");
 
@@ -86,8 +88,9 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     return code;
   }
   function genId() {
-    return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
+    return crypto.randomBytes(9).toString("base64url");
   }
+
   // Trim + cap; a blank name gets the house joke name.
   function cleanName(name) {
     return String(name || "").trim().slice(0, 20) || "Jayden Lin fanboy";
@@ -121,6 +124,8 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     return {
       code: room.code, hostId: room.hostId, status: room.status, mode: room.mode, settings: room.settings,
       players: [...room.players.values()].map((p) => ({
+        // Deliberately no `token`: it is the seat credential, and this object goes to everyone
+        // in the room including spectators.
         id: p.id, name: p.name, isHost: p.id === room.hostId, connected: p.connected, crown: !!p.crown,
       })),
       spectators: room.spectators ? [...room.spectators.values()].map((s) => ({ id: s.id, name: s.name })) : [],
@@ -139,7 +144,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
         ? { groups: [...DEFAULT_GROUPS], timer: 45, format: 5, suddenDeath: false, maxPlayers: MAX_RACE_PLAYERS, increment: 0 }
         : { groups: [...DEFAULT_GROUPS], timer: 30, target: 5, autoAdvance: true, increment: 0 }),
       players: new Map(), spectators: new Map(), graceTimeouts: new Map(), createdAt: now, lastActivityAt: now };
-    room.players.set(hostId, { id: hostId, name: cleanName(hostName), socketId, connected: true });
+    room.players.set(hostId, { id: hostId, name: cleanName(hostName), socketId, connected: true, token: newSeatToken() });
     rooms.set(code, room);
     stats.roomsCreated++; stats.peakRooms = Math.max(stats.peakRooms, rooms.size);
     return room;
@@ -237,12 +242,13 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     });
 
     function doResume(room, pid, ack) {
+      if (socket.data.roomCode && socket.data.roomCode !== room.code) leaveCurrentRoom(socket);
       attach(room, socket, pid);
       // They're back — cancel their own forfeit countdown, not another player's.
       clearTimeout(room.graceTimeouts?.get(pid));
       room.graceTimeouts?.delete(pid);
       io.to(room.code).emit("opponentStatus", { connected: true, name: room.players.get(pid).name });
-      ack?.({ ok: true, code: room.code, you: pid, inGame: !!room.game, mode: room.mode });
+      ack?.({ ok: true, code: room.code, you: pid, seat: room.players.get(pid).token, inGame: !!room.game, mode: room.mode });
       broadcast(room);
       // Unpause only once EVERYONE is back: with a per-player grace timer two players can be
       // away at the same time, and the first one to return must not restart the other's clock.
@@ -271,17 +277,23 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       const room = newRoom({ mode, hostId: pid, hostName: name, socketId: socket.id, settings });
       attach(room, socket, pid);
       console.log(`🏠 room ${room.code} created (${room.mode})`);
-      ack?.({ ok: true, code: room.code, you: pid, mode: room.mode });
+      ack?.({ ok: true, code: room.code, you: pid, seat: room.players.get(pid).token, mode: room.mode });
       broadcast(room);
     });
 
-    socket.on("joinRoom", ({ code, name, playerId } = {}, ack) => {
+    socket.on("joinRoom", ({ code, name, playerId, seat } = {}, ack) => {
       if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
       code = String(code || "").toUpperCase().trim();
       const room = rooms.get(code);
       if (!room) return ack?.({ ok: false, error: "No room with that code." });
-      const pid = playerId || genId();
-      if (room.players.has(pid)) return doResume(room, pid, ack); // rejoining your own slot
+      let pid = playerId || genId();
+      // Rejoining your own slot — but only with the seat token for it. Without the token we do NOT
+      // refuse: fall through and seat them fresh, since the honest case (a client that lost its
+      // token) should still get into the room rather than being locked out of a code it can see.
+      if (room.players.has(pid)) {
+        if (seatTokenOk(room.players.get(pid), seat)) return doResume(room, pid, ack);
+        pid = genId(); // someone else's seat, or ours without proof — take a new one
+      }
       if (room.players.size >= capFor(room)) return ack?.({ ok: false, error: "That room is full." });
       if (room.status !== "waiting") return ack?.({ ok: false, error: "That game already started." });
       // Only a NEW seat is name-checked: a resume (handled above) must never be blocked by a
@@ -289,10 +301,10 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       const badJoin = nameRejected(name);
       if (badJoin) return ack?.({ ok: false, error: badJoin });
       leaveCurrentRoom(socket);
-      room.players.set(pid, { id: pid, name: uniqueName(room, name, pid), socketId: socket.id, connected: true });
+      room.players.set(pid, { id: pid, name: uniqueName(room, name, pid), socketId: socket.id, connected: true, token: newSeatToken() });
       attach(room, socket, pid);
       console.log(`➕ joined room ${code}`);
-      ack?.({ ok: true, code, you: pid, mode: room.mode });
+      ack?.({ ok: true, code, you: pid, seat: room.players.get(pid).token, mode: room.mode });
       broadcast(room);
     });
 
@@ -305,13 +317,17 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     socket.on("quickMatchLeave", (_p, ack) => { matchmaking.leave(socket); ack?.({ ok: true }); });
 
     // Join a room as a read-only spectator (watch the game; can chat but can't play).
-    socket.on("spectateRoom", ({ code, name, playerId } = {}, ack) => {
+    socket.on("spectateRoom", ({ code, name, playerId, seat } = {}, ack) => {
       if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
       code = String(code || "").toUpperCase().trim();
       const room = rooms.get(code);
       if (!room) return ack?.({ ok: false, error: "No room with that code." });
-      const pid = playerId || genId();
-      if (room.players.has(pid)) return doResume(room, pid, ack); // they're actually a player → resume their slot
+      let pid = playerId || genId();
+      // A spectator claiming a seated id gets that seat only with its token; otherwise they watch.
+      if (room.players.has(pid)) {
+        if (seatTokenOk(room.players.get(pid), seat)) return doResume(room, pid, ack);
+        pid = genId();
+      }
       const badSpec = nameRejected(name);
       if (badSpec) return ack?.({ ok: false, error: badSpec }); // a spectator's name shows in the roster and in chat too
       leaveCurrentRoom(socket);
@@ -347,10 +363,13 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     });
 
     // Reconnect to an existing slot (after refresh / network drop).
-    socket.on("resume", ({ code, playerId } = {}, ack) => {
+    socket.on("resume", ({ code, playerId, seat } = {}, ack) => {
       code = String(code || "").toUpperCase().trim();
       const room = rooms.get(code);
       if (!room || !playerId || !room.players.has(playerId)) return ack?.({ ok: false });
+      // An explicit resume is a claim to be an existing player, so here the token is required
+      // outright — there is no honest fallback to offer, and this is the path a seat hijack used.
+      if (!seatTokenOk(room.players.get(playerId), seat)) return ack?.({ ok: false });
       console.log(`🔄 resumed room ${code}`);
       doResume(room, playerId, ack);
     });

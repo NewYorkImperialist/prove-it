@@ -55,6 +55,14 @@ async function init() {
       `CREATE TABLE IF NOT EXISTS name_audit (
         id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, scope TEXT, row_id INTEGER,
         visitor_id TEXT, old_name TEXT, new_name TEXT, rows INTEGER, by_who TEXT)`,
+      // Every merge of two visitors' leaderboard entries. `snapshot` is the (id, visitor_id, name)
+      // of every row the merge moved, which is what makes it undoable: the merge rewrites
+      // visitor_id in place, and once two visitors' rows share an id nothing else in the schema
+      // remembers which of them a row came from. undone_at marks a merge that has been rolled back
+      // rather than deleting the record of it.
+      `CREATE TABLE IF NOT EXISTS merge_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, keep_visitor TEXT, from_visitor TEXT,
+        rows INTEGER, snapshot TEXT, renamed TEXT, by_who TEXT, undone_at INTEGER)`,
       // Reachability, written by scripts/probe.js from OUTSIDE this process (see the uptime
       // workflow). It is the one table this server never writes to itself, and deliberately so:
       // a dashboard running inside the app can report anything except that the app was gone.
@@ -646,6 +654,107 @@ async function adminRename({ rowId, scope = "row", name, by = null }) {
   return { ok: true, rows, from, to, scope: wide ? "visitor" : "row", visitorId };
 }
 
+// ---- merging two visitors into one ----
+// There are no accounts in this game: a player's identity on the boards is `visitor_id`, minted in
+// localStorage per browser (lib/browser/storage.js). So the same person playing on their phone and
+// their laptop is two "players", and clearing site data makes a third. Merging is reassigning one
+// visitor's leaderboard rows to another, which is exactly what collapseBoard()/geoGoat group by —
+// so after a merge the boards show one entry instead of two.
+//
+// Renaming cannot do this. Since the crown fix, two rows sharing a display name confer nothing on
+// each other; they stay two entries. visitor_id is the only thing that joins rows into a player.
+//
+// Deliberately limited to `challenge_results`. `sessions` also carries visitor_id, and rewriting it
+// there would tidy /admin/visitors — but those rows are the record of who actually visited from
+// where and when, and rewriting history to make a report look neater is how a report stops being
+// evidence. The boards are the thing being merged; the visit log is left alone.
+const MERGE_ROW_CAP = 2000; // refuse rather than write an unbounded snapshot blob
+
+// Every visitor with at least one leaderboard entry, for the admin merge picker. Grouped from
+// challenge_results rather than sessions: these are the identities that actually appear on a board.
+async function resultVisitors(limit = 200) {
+  return q(`SELECT visitor_id,
+      COUNT(*) entries, MAX(total) best, MIN(at) first_at, MAX(at) last_at,
+      MAX(crown) crown, GROUP_CONCAT(DISTINCT name) names
+    FROM challenge_results WHERE visitor_id IS NOT NULL AND visitor_id <> ''
+    GROUP BY visitor_id ORDER BY entries DESC, last_at DESC LIMIT ?`,
+  [Math.max(1, Math.min(1000, parseInt(limit, 10) || 200))]);
+}
+
+// Fold `from`'s entries into `keep`. `name`, if given, is applied to the moved rows as well, since
+// merging two identities that display different names and leaving both on one entry's history is
+// rarely what the owner meant.
+async function mergeVisitors({ keep, from, name = null, by = null }) {
+  if (!client) return { ok: false, rows: 0, reason: "off" };
+  const to = String(keep || "").trim();
+  const src = String(from || "").trim();
+  if (!to || !src) return { ok: false, rows: 0, reason: "missing" };
+  // Not a no-op — a self-merge with a rename would silently become a bulk rename, which is a
+  // different operation with a different audit trail.
+  if (to === src) return { ok: false, rows: 0, reason: "same" };
+  const newName = name == null ? null : String(name).trim() || null;
+  // Snapshot BEFORE the update: once both sides share one visitor_id, which rows came from `src`
+  // is unrecoverable, so this is the only chance to record it.
+  const moving = await q(`SELECT id, visitor_id, name FROM challenge_results WHERE visitor_id=?`, [src]);
+  if (!moving.length) return { ok: false, rows: 0, reason: "nothing-to-merge" };
+  if (moving.length > MERGE_ROW_CAP) return { ok: false, rows: 0, reason: "too-many", found: moving.length };
+  const snapshot = JSON.stringify(moving.map((r) => ({ i: Number(r.id), v: r.visitor_id, n: r.name })));
+  const rows = await (async () => {
+    try {
+      const r = newName
+        ? await client.execute({ sql: `UPDATE challenge_results SET visitor_id=?, name=? WHERE visitor_id=?`, args: [to, newName, src] })
+        : await client.execute({ sql: `UPDATE challenge_results SET visitor_id=? WHERE visitor_id=?`, args: [to, src] });
+      return Number(r.rowsAffected) || 0;
+    } catch (e) {
+      console.error("📊 merge visitors:", e.message);
+      return null;
+    }
+  })();
+  if (rows == null) return { ok: false, rows: 0, reason: "write-failed" };
+  try {
+    await client.execute({
+      sql: `INSERT INTO merge_audit (at, keep_visitor, from_visitor, rows, snapshot, renamed, by_who, undone_at) VALUES (?,?,?,?,?,?,?,NULL)`,
+      args: [Date.now(), to, src, rows, snapshot, newName, by ? String(by).slice(0, 60) : null],
+    });
+  } catch (e) { console.error("📊 merge audit:", e.message); }
+  return { ok: true, rows, keep: to, from: src, renamed: newName };
+}
+
+// Put a merge back: every row named in the snapshot returns to the visitor_id and name it had.
+// Row-by-row rather than one UPDATE, because the rows are only identifiable individually now —
+// their visitor_id is the one they were merged INTO, shared with rows that were always there.
+async function undoMerge(auditId, by = null) {
+  if (!client) return { ok: false, rows: 0, reason: "off" };
+  const id = parseInt(auditId, 10);
+  if (!id) return { ok: false, rows: 0, reason: "missing" };
+  const rec = await one(`SELECT id, snapshot, undone_at FROM merge_audit WHERE id=?`, [id]);
+  if (!rec) return { ok: false, rows: 0, reason: "not-found" };
+  if (rec.undone_at) return { ok: false, rows: 0, reason: "already-undone" };
+  const snap = (() => { try { return JSON.parse(rec.snapshot || "[]"); } catch (e) { return []; } })();
+  if (!Array.isArray(snap) || !snap.length) return { ok: false, rows: 0, reason: "no-snapshot" };
+  try {
+    await client.batch(snap.map((r) => ({
+      sql: `UPDATE challenge_results SET visitor_id=?, name=? WHERE id=?`,
+      args: [r.v, r.n, Number(r.i)],
+    })), "write");
+  } catch (e) {
+    console.error("📊 undo merge:", e.message);
+    return { ok: false, rows: 0, reason: "write-failed" };
+  }
+  // Only after the restore actually landed: a merge marked undone that wasn't would hide the one
+  // record able to put it right.
+  try {
+    await client.execute({ sql: `UPDATE merge_audit SET undone_at=?, by_who=COALESCE(?,by_who) WHERE id=?`, args: [Date.now(), by ? String(by).slice(0, 60) : null, id] });
+  } catch (e) { console.error("📊 undo merge mark:", e.message); }
+  return { ok: true, rows: snap.length };
+}
+
+// The merge history, newest first. Carries enough to undo each one (and whether it already was).
+async function mergeAuditList(limit = 25) {
+  return q(`SELECT id, at, keep_visitor, from_visitor, rows, renamed, by_who, undone_at
+            FROM merge_audit ORDER BY id DESC LIMIT ?`, [Math.max(1, Math.min(200, parseInt(limit, 10) || 25))]);
+}
+
 // The rename history, newest first — what makes an owner rename undoable.
 async function nameAuditList(limit = 25) {
   return q(`SELECT at, scope, row_id, visitor_id, old_name, new_name, rows, by_who
@@ -708,4 +817,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList };
+module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList, resultVisitors, mergeVisitors, undoMerge, mergeAuditList };

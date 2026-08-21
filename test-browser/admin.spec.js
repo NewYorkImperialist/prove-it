@@ -10,7 +10,8 @@ const { test, expect } = require("@playwright/test");
 
 const K = "test-owner-key";
 const PAGES = ["/admin", "/admin/health", "/admin/games", "/admin/chat", "/admin/visitors",
-  "/admin/sessions", "/admin/leaderboards", "/admin/category-leaderboards", "/admin/runs"];
+  "/admin/sessions", "/admin/leaderboards", "/admin/category-leaderboards", "/admin/runs",
+  "/admin/merge"];
 
 const url = (p) => `${p}?key=${K}`;
 
@@ -61,10 +62,10 @@ test.describe("the owner dashboard", () => {
   test("the drill-down links are tiles you can actually hit, and they go where they say", async ({ page }) => {
     await page.goto(url("/admin"));
     const tiles = page.locator(".tools a");
-    await expect(tiles).toHaveCount(8);
+    await expect(tiles).toHaveCount(9);
     // As bare 13px links these were well under a comfortable tap target, and on a phone they
     // stacked into one wall of bold blue text taller than the rest of the page put together.
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 9; i++) {
       const box = await tiles.nth(i).boundingBox();
       expect(box.height, "tap target too short").toBeGreaterThanOrEqual(36);
     }

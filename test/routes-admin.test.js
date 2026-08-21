@@ -45,7 +45,7 @@ describe("routes/admin.js — owner-key auth gate", () => {
   test("every /admin* route 404s with no key", async () => {
     const { app } = buildApp();
     for (const path of ["/admin", "/admin/ping", "/admin/health", "/admin/games", "/admin/chat", "/admin/visitors",
-      "/admin/sessions", "/admin/leaderboards", "/admin/category-leaderboards", "/admin/runs",
+      "/admin/sessions", "/admin/leaderboards", "/admin/category-leaderboards", "/admin/runs", "/admin/merge",
       // The two that MUTATE a leaderboard entry. They take their arguments in the query string
       // (server/index.js mounts only express.json()), so they are reachable by a plain link —
       // which is exactly why an unkeyed one must not do anything.
@@ -300,7 +300,7 @@ describe("routes/admin.js — every page is mobile-ready and installable", () =>
   const K = "test-owner-key";
   const PAGES = ["/admin", "/admin/health", "/admin/games", "/admin/game", "/admin/chat",
     "/admin/visitors", "/admin/sessions", "/admin/leaderboards", "/admin/category-leaderboards",
-    "/admin/runs", "/admin/run"];
+    "/admin/runs", "/admin/run", "/admin/merge"];
 
   test("each page declares the viewport, so none of them render at desktop width on a phone", async () => {
     const { app } = buildApp();
@@ -628,6 +628,224 @@ describe("routes/admin.js — renaming a leaderboard entry", () => {
     const res = await request(app).get(`/admin/leaderboards?key=${K}`);
     const row = res.text.slice(res.text.indexOf('class="rn"'));
     assert.equal(row.slice(0, row.indexOf("</td>")).includes("onclick"), false);
+  });
+});
+
+// Merging two visitors is the one admin action that rewrites rows the owner never looked at — they
+// pick two identities out of a dropdown, and everything under the second one moves. So the route's
+// job is to pass exactly what was picked and to report what actually happened, including when
+// nothing did: a page that looks identical after a refused merge and after a forty-row one is not
+// good enough for an operation this destructive.
+describe("routes/admin.js — merging two players", () => {
+  const K = "test-owner-key";
+  let realEnabled, realVisitors, realMerge, realUndo, realHistory;
+  before(() => {
+    realEnabled = analytics.enabled; realVisitors = analytics.resultVisitors;
+    realMerge = analytics.mergeVisitors; realUndo = analytics.undoMerge; realHistory = analytics.mergeAuditList;
+  });
+  after(() => {
+    analytics.enabled = realEnabled; analytics.resultVisitors = realVisitors;
+    analytics.mergeVisitors = realMerge; analytics.undoMerge = realUndo; analytics.mergeAuditList = realHistory;
+  });
+
+  let merges, undos, result;
+  const withData = ({ people = [], history = [] } = {}) => {
+    merges = []; undos = [];
+    result = { ok: true, rows: 3 };
+    analytics.enabled = () => true;
+    analytics.resultVisitors = async () => people;
+    analytics.mergeAuditList = async () => history;
+    analytics.mergeVisitors = async (a) => { merges.push(a); return result; };
+    analytics.undoMerge = async (id, by) => { undos.push({ id, by }); return result; };
+  };
+  const person = (over = {}) => ({ visitor_id: "v-abcdef123456", entries: 4, best: 2997, first_at: Date.now() - 864e5, last_at: Date.now(), crown: 0, names: "doodooblud,diddy kong", ...over });
+
+  test("both merge routes 404 without the owner key, and merge nothing", async () => {
+    withData();
+    const { app } = buildApp();
+    for (const url of ["/admin/merge-do?keep=v-a&from=v-b", "/admin/merge-do?key=nope&keep=v-a&from=v-b",
+      "/admin/merge-undo?id=3", "/admin/merge-undo?key=nope&id=3"]) {
+      assert.equal((await request(app).get(url)).status, 404, url);
+    }
+    assert.deepEqual(merges, []);
+    assert.deepEqual(undos, []);
+  });
+
+  test("the picker offers every visitor with an entry, on both sides", async () => {
+    withData({ people: [person(), person({ visitor_id: "v-second", names: "claude code" })] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    assert.equal(res.status, 200);
+    assert.match(res.text, /name="keep"/);
+    assert.match(res.text, /name="from"/);
+    // Two selects × two visitors.
+    assert.equal((res.text.match(/<option value="v-abcdef123456"/g) || []).length, 2);
+    assert.equal((res.text.match(/<option value="v-second"/g) || []).length, 2);
+  });
+
+  test("each option says enough to tell two visitors apart", async () => {
+    withData({ people: [person({ crown: 1 })] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    assert.match(res.text, /doodooblud, diddy kong/, "the names they have used");
+    assert.match(res.text, /4 entries/);
+    assert.match(res.text, /best 2997/);
+    assert.match(res.text, /v-abcdef123/, "and a stable id, since two people can share a name");
+    assert.match(res.text, /👑/, "the crowned visitor is marked — merging that one away is a bigger deal");
+  });
+
+  test("a picked pair is passed through exactly as picked", async () => {
+    withData({ people: [person()] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge-do?key=${K}&keep=v-a&from=v-b`);
+    assert.equal(res.status, 302);
+    assert.equal(merges.length, 1);
+    assert.equal(merges[0].keep, "v-a");
+    assert.equal(merges[0].from, "v-b");
+  });
+
+  test("an optional name goes through the same filter and cap as any other name", async () => {
+    withData();
+    const { app } = buildApp();
+    await request(app).get(`/admin/merge-do?key=${K}&keep=v-a&from=v-b&name=${"j".repeat(80)}`);
+    assert.equal(merges[0].name.length, 24);
+    merges.length = 0;
+    await request(app).get(`/admin/merge-do?key=${K}&keep=v-a&from=v-b&name=${encodeURIComponent("f" + "uck you")}`);
+    assert.equal(merges[0].name, "Anon");
+  });
+
+  test("a blank name means leave the names alone — not rename everything to Anon", async () => {
+    // cleanName("") is "Anon", so passing it straight through would silently retitle every entry
+    // the merge touched.
+    withData();
+    const { app } = buildApp();
+    for (const q of ["", "&name=", "&name=%20%20"]) {
+      merges.length = 0;
+      await request(app).get(`/admin/merge-do?key=${K}&keep=v-a&from=v-b${q}`);
+      assert.equal(merges[0].name, null, `name from "${q}"`);
+    }
+  });
+
+  test("a successful merge says how many entries moved", async () => {
+    withData({ people: [person()] });
+    result = { ok: true, rows: 7 };
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge-do?key=${K}&keep=v-a&from=v-b`);
+    assert.match(res.headers.location, /done=merged&n=7/);
+    const page = await request(app).get(res.headers.location.replace(/^\//, "/"));
+    assert.match(page.text, /7 entries moved/);
+  });
+
+  test("every refusal reason gets its own explanation instead of a silent reload", async () => {
+    withData({ people: [person()] });
+    const { app } = buildApp();
+    const expected = {
+      same: /same player/i,
+      missing: /pick a player on both sides/i,
+      "nothing-to-merge": /no entries to move/i,
+      "too-many": /more entries than one merge/i,
+      "write-failed": /database refused/i,
+    };
+    for (const [reason, re] of Object.entries(expected)) {
+      result = { ok: false, reason, rows: 0 };
+      const res = await request(app).get(`/admin/merge-do?key=${K}&keep=v-a&from=v-b`);
+      assert.match(res.headers.location, new RegExp(`done=${reason.replace(/-/g, "-")}`), reason);
+      const page = await request(app).get(`/admin/merge?key=${K}&done=${encodeURIComponent(reason)}`);
+      assert.match(page.text, re, reason);
+    }
+  });
+
+  test("a thrown data-layer error is reported, not turned into a 500", async () => {
+    withData({ people: [person()] });
+    analytics.mergeVisitors = async () => { throw new Error("connection reset"); };
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge-do?key=${K}&keep=v-a&from=v-b`);
+    assert.equal(res.status, 302);
+    assert.match(res.headers.location, /done=write-failed/);
+  });
+
+  test("an unknown outcome still says nothing was done rather than implying success", async () => {
+    withData({ people: [person()] });
+    const { app } = buildApp();
+    const page = await request(app).get(`/admin/merge?key=${K}&done=something-new`);
+    assert.match(page.text, /Nothing done/);
+  });
+
+  test("the history offers a put-back per merge, and marks the ones already put back", async () => {
+    withData({ history: [
+      { id: 3, at: Date.now(), keep_visitor: "v-a", from_visitor: "v-b", rows: 4, renamed: "jayden", by_who: "admin", undone_at: null },
+      { id: 2, at: Date.now() - 6e4, keep_visitor: "v-c", from_visitor: "v-d", rows: 1, renamed: null, by_who: "admin", undone_at: Date.now() },
+    ] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    assert.match(res.text, /merge-undo\?key=test-owner-key&id=3/);
+    assert.equal(res.text.includes("id=2"), false, "an already-undone merge must not offer it again");
+    assert.match(res.text, /put back/);
+    assert.match(res.text, /renamed to jayden/);
+  });
+
+  test("a put-back passes the merge id through and reports the restored count", async () => {
+    withData();
+    result = { ok: true, rows: 4 };
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge-undo?key=${K}&id=3`);
+    assert.deepEqual(undos, [{ id: "3", by: "admin" }]);
+    assert.match(res.headers.location, /done=undone&n=4/);
+    const page = await request(app).get(`/admin/merge?key=${K}&done=undone&n=4`);
+    assert.match(page.text, /4 entries returned/);
+  });
+
+  test("a refused put-back explains why", async () => {
+    withData();
+    const { app } = buildApp();
+    for (const [reason, re] of Object.entries({ "already-undone": /already been put back/i, "not-found": /no record of that merge/i, "no-snapshot": /no record of which entries moved/i })) {
+      result = { ok: false, reason, rows: 0 };
+      const res = await request(app).get(`/admin/merge-undo?key=${K}&id=3`);
+      assert.match(res.headers.location, new RegExp(`done=${reason}`));
+      const page = await request(app).get(`/admin/merge?key=${K}&done=${reason}`);
+      assert.match(page.text, re, reason);
+    }
+  });
+
+  test("the page says which records a merge does NOT touch", async () => {
+    // The visit log keeps its own visitor_id. Rewriting it would tidy /admin/visitors and destroy
+    // the record of who actually visited from where — the owner has to know which they are getting.
+    withData({ people: [person()] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    assert.match(res.text, /Only leaderboard entries move/);
+    assert.match(res.text, /visit log/i);
+    assert.match(res.text, /\(you\)/, "and that the folded-in player loses their own marker");
+  });
+
+  test("with persistence off the page says so instead of offering an empty picker", async () => {
+    analytics.enabled = () => false;
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    assert.equal(res.status, 200);
+    assert.match(res.text, /Persistence not configured/);
+    assert.equal(res.text.includes('name="keep"'), false);
+  });
+
+  test("a hostile visitor name or id can't inject markup into the picker or the history", async () => {
+    withData({
+      people: [person({ names: '<script>alert(1)</script>', visitor_id: '"><script>alert(2)</script>' })],
+      history: [{ id: 3, at: Date.now(), keep_visitor: '"><img src=x>', from_visitor: "v-b", rows: 1, renamed: "<script>alert(3)</script>", by_who: "admin", undone_at: null }],
+    });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    for (const bad of ["<script>alert(1)", "<script>alert(2)", "<script>alert(3)", '<img src=x>']) {
+      assert.equal(res.text.includes(bad), false, bad);
+    }
+    assert.match(res.text, /&lt;script&gt;/);
+  });
+
+  test("the form is a GET, since only express.json() is mounted to parse a body", async () => {
+    withData({ people: [person()] });
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/merge?key=${K}`);
+    assert.match(res.text, /<form class="mf" action="\/admin\/merge-do" method="get"/);
+    assert.match(res.text, /<input type="hidden" name="key"/);
   });
 });
 

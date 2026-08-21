@@ -46,6 +46,9 @@ module.exports = defineConfig({
     command: `PORT=${PORT} NODE_ENV=production node server/index.js`,
     url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
+    // The admin dashboard is gated on OWNER_KEY, so without one every /admin route 404s and the
+    // admin spec has nothing to drive. A throwaway value for a local server only.
+    env: { OWNER_KEY: "test-owner-key" },
     timeout: 120_000,
     stdout: "ignore",
     stderr: "pipe",

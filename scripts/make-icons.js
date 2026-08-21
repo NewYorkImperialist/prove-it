@@ -1,6 +1,7 @@
 "use strict";
 // Generates the PWA / home-screen icons in public/ from the same mark as the favicon:
-// the amber target on a near-black plate.
+// the amber target on a near-black plate — once for the game, and once more with a blue stripe
+// beside the target for the admin dashboard, which installs as its own app.
 //
 // Why a script and not a checked-in binary someone hand-drew: lib/favicon.js is an inline SVG
 // data URI, so there was no raster icon anywhere in the repo, and a manifest needs real PNGs at
@@ -21,12 +22,26 @@ const path = require("node:path");
 const AMBER = [0xf5, 0xa6, 0x23]; // --accent, the mark
 const PANEL = [0x14, 0x11, 0x0c]; // --panel, the plate under it
 const MONO = [0xff, 0xff, 0xff]; // Android tints the monochrome layer, so only its alpha matters
+const DEV = [0x5b, 0x8c, 0xff]; // the admin dashboard's own link blue — see routes/admin.js
 
 // All geometry on a 0..100 canvas, so one set of numbers drives every size.
 const SHAPE = {
   plate: { x: 8, y: 8, w: 84, h: 84, r: 20 }, // matches the favicon's <rect rx='20'>
   ring: { cx: 50, cy: 50, outer: 31, inner: 23.5 },
   dot: { cx: 50, cy: 50, r: 11.5 },
+};
+
+// The admin dashboard's own icon: same plate and same target, plus a blue stripe beside the mark,
+// so the two tiles are not mistaken for each other on a home screen. The whole composition is
+// pulled inside the maskable safe zone — a circle of radius 40 about (50,50) — because a launcher
+// crops a maskable icon to its own shape, and a stripe out at the plate's edge is the first thing
+// a circular mask would cut off. That is why the target shifts right rather than staying centred:
+// it makes room for the stripe without either element leaving the safe circle.
+const SHAPE_ADMIN = {
+  plate: SHAPE.plate,
+  stripe: { x: 22, y: 26, w: 8, h: 48, r: 4 },
+  ring: { cx: 57, cy: 50, outer: 25, inner: 19 },
+  dot: { cx: 57, cy: 50, r: 9 },
 };
 
 const dist = (x, y, cx, cy) => Math.hypot(x - cx, y - cy);
@@ -47,14 +62,21 @@ function inRoundRect(x, y, { x: rx, y: ry, w, h, r }) {
 //  • `mono` drops the plate entirely and returns only the mark. Android 13+ themed icons take
 //    the monochrome layer as an alpha mask and tint it with the system palette, so a plate would
 //    swallow the whole tile and the RGB it comes back as is irrelevant.
-function sample(x, y, { bleed = false, mono = false } = {}) {
-  const dRing = dist(x, y, SHAPE.ring.cx, SHAPE.ring.cy);
+//  • `shape` picks the composition: SHAPE for the game, SHAPE_ADMIN for the dashboard. Only the
+//    admin one has a `stripe`, so the stripe test is skipped entirely for the game icon.
+function sample(x, y, { bleed = false, mono = false, shape = SHAPE } = {}) {
+  const dRing = dist(x, y, shape.ring.cx, shape.ring.cy);
   const onMark =
-    (dRing <= SHAPE.ring.outer && dRing >= SHAPE.ring.inner) ||
-    dist(x, y, SHAPE.dot.cx, SHAPE.dot.cy) <= SHAPE.dot.r;
-  if (mono) return onMark ? MONO : null;
-  if (!(bleed || inRoundRect(x, y, SHAPE.plate))) return null;
-  return onMark ? AMBER : PANEL;
+    (dRing <= shape.ring.outer && dRing >= shape.ring.inner) ||
+    dist(x, y, shape.dot.cx, shape.dot.cy) <= shape.dot.r;
+  // The stripe joins the mark in the monochrome layer too: it is the only thing telling the two
+  // icons apart, and a themed home screen that dropped it would show two identical tiles.
+  const onStripe = !!shape.stripe && inRoundRect(x, y, shape.stripe);
+  if (mono) return onMark || onStripe ? MONO : null;
+  if (!(bleed || inRoundRect(x, y, shape.plate))) return null;
+  if (onMark) return AMBER;
+  if (onStripe) return DEV;
+  return PANEL;
 }
 
 const SS = 4; // subsamples per axis
@@ -137,12 +159,20 @@ function png(size, rgba) {
 // The monochrome layer is what Android 13+ uses for themed icons, where the launcher recolours
 // every icon to match the wallpaper. Without it the amber plate stays amber on a themed home
 // screen and the game is the one tile that ignores the user's setting.
+//
+// The admin set mirrors it one-for-one, because the dashboard is a separate installed app with a
+// separate manifest (routes/admin.js serves it) and the OS needs the same sizes for both.
 const OUT = [
   { file: "icon-192.png", size: 192 },
   { file: "icon-512.png", size: 512 },
   { file: "icon-maskable-512.png", size: 512, bleed: true },
   { file: "icon-monochrome-512.png", size: 512, mono: true },
   { file: "apple-icon.png", size: 180, bleed: true },
+  { file: "admin-icon-192.png", size: 192, shape: SHAPE_ADMIN },
+  { file: "admin-icon-512.png", size: 512, shape: SHAPE_ADMIN },
+  { file: "admin-icon-maskable-512.png", size: 512, bleed: true, shape: SHAPE_ADMIN },
+  { file: "admin-icon-monochrome-512.png", size: 512, mono: true, shape: SHAPE_ADMIN },
+  { file: "admin-apple-icon.png", size: 180, bleed: true, shape: SHAPE_ADMIN },
 ];
 
 const dir = path.join(__dirname, "..", "public");

@@ -235,3 +235,114 @@ describe("routes/admin.js — category health", () => {
     assert.match(res.text, /Persistence not configured/);
   });
 });
+
+// The dashboard installs as its own app, separate from the game. Its manifest can't come from
+// app/manifest.js the way the game's does — /admin is Express-rendered, outside the Next app — so
+// it's a route, and being a route it needs the same owner gate as everything else here.
+describe("routes/admin.js — the installable dashboard", () => {
+  const K = "test-owner-key";
+
+  test("the manifest is owner-gated like every other /admin route", async () => {
+    const { app } = buildApp();
+    assert.equal((await request(app).get("/admin/manifest.webmanifest")).status, 404);
+    assert.equal((await request(app).get("/admin/manifest.webmanifest?key=nope")).status, 404);
+  });
+
+  test("it describes a separate app from the game, with its own name and icons", async () => {
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/manifest.webmanifest?key=${K}`);
+    assert.equal(res.status, 200);
+    assert.match(res.headers["content-type"], /application\/manifest\+json/);
+    const m = JSON.parse(res.text);
+    assert.equal(m.name, "Prove It! Admin");
+    assert.equal(m.short_name, "PI Admin");
+    assert.equal(m.display, "standalone");
+    assert.equal(m.scope, "/admin");
+    // Every icon is an admin-* variant: pointing at the game's icons would put two identical
+    // tiles on the home screen, which is the whole reason the dev stripe exists.
+    assert.ok(m.icons.length >= 4);
+    for (const i of m.icons) assert.match(i.src, /^\/admin-icon-/, i.src);
+    // Android won't offer to install without a 512 maskable; a themed home screen needs the
+    // monochrome layer or the tile ignores the user's wallpaper setting.
+    const purposes = m.icons.map((i) => i.purpose);
+    assert.ok(purposes.includes("maskable"), "needs a maskable icon");
+    assert.ok(purposes.includes("monochrome"), "needs a monochrome icon");
+  });
+
+  test("start_url carries the owner key, or the installed app would launch into a 404", async () => {
+    const { app } = buildApp();
+    const m = JSON.parse((await request(app).get(`/admin/manifest.webmanifest?key=${K}`)).text);
+    assert.equal(m.start_url, `/admin?key=${K}`);
+    // …which is exactly why it must never be cached anywhere shared.
+    const res = await request(app).get(`/admin/manifest.webmanifest?key=${K}`);
+    assert.match(res.headers["cache-control"], /no-store/);
+    assert.match(res.headers["cache-control"], /private/);
+  });
+
+  test("id is pinned, so rotating the owner key doesn't orphan the installed app", async () => {
+    // Without an explicit id a browser derives app identity from start_url — which carries the
+    // key — so changing the key would silently install a second copy alongside the first.
+    const { app } = buildApp();
+    const m = JSON.parse((await request(app).get(`/admin/manifest.webmanifest?key=${K}`)).text);
+    assert.equal(m.id, "/admin");
+    assert.equal(m.id.includes(K), false, "the app id must not embed the key");
+  });
+});
+
+// Every one of these pages used to open straight into <body> with no <head> at all: no charset and
+// no viewport meta, so on a phone they rendered at desktop width and had to be pinch-zoomed. They
+// share one shell now, and this is the guard that a new page can't go back to hand-rolling it.
+describe("routes/admin.js — every page is mobile-ready and installable", () => {
+  const K = "test-owner-key";
+  const PAGES = ["/admin", "/admin/health", "/admin/games", "/admin/game", "/admin/chat",
+    "/admin/visitors", "/admin/sessions", "/admin/leaderboards", "/admin/category-leaderboards",
+    "/admin/runs", "/admin/run"];
+
+  test("each page declares the viewport, so none of them render at desktop width on a phone", async () => {
+    const { app } = buildApp();
+    for (const path of PAGES) {
+      const res = await request(app).get(`${path}?key=${K}`);
+      assert.equal(res.status, 200, path);
+      assert.match(res.text, /<meta name="viewport" content="width=device-width/, path);
+      assert.match(res.text, /<meta charset="utf-8">/, path);
+    }
+  });
+
+  test("each page links the manifest and sets the theme colour, so any of them can be installed", async () => {
+    const { app } = buildApp();
+    for (const path of PAGES) {
+      const res = await request(app).get(`${path}?key=${K}`);
+      assert.match(res.text, /<link rel="manifest" href="\/admin\/manifest\.webmanifest\?key=/, path);
+      assert.match(res.text, /<meta name="theme-color" content="#0e1016">/, path);
+      assert.match(res.text, /apple-touch-icon" href="\/admin-apple-icon\.png"/, path);
+      assert.ok(res.text.startsWith("<!doctype html><html lang=\"en\">"), path);
+    }
+  });
+
+  test("the shared stylesheet clamps the grids, so a 320px phone gets no sideways scroll", async () => {
+    // These three grids asked for a 300-340px minimum track, which is wider than a 320px phone's
+    // content box — the track overflowed its container and the whole page scrolled sideways.
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin?key=${K}`);
+    for (const cls of ["grid", "cols", "cats"]) {
+      assert.match(res.text, new RegExp(`\\.${cls}\\{display:grid;[^}]*minmax\\(min\\(`), cls);
+    }
+  });
+
+  test("the table header sticks on every table page, not just the four that had it", async () => {
+    const { app } = buildApp();
+    const res = await request(app).get(`/admin/sessions?key=${K}`);
+    assert.match(res.text, /th\{[^}]*position:sticky/);
+    // Wide tables scroll inside their own box rather than dragging the page's headings off-screen.
+    assert.match(res.text, /\.tw\{overflow-x:auto/);
+  });
+
+  test("no page leaks an unrendered template reference", async () => {
+    const { app } = buildApp();
+    for (const path of PAGES) {
+      const res = await request(app).get(`${path}?key=${K}`);
+      assert.equal(res.text.includes("${"), false, `${path} leaked a template placeholder`);
+      assert.equal(res.text.includes("[object Object]"), false, path);
+    }
+  });
+});

@@ -11,6 +11,128 @@ const { FLY_COST, projectCost } = require("../lib/cost-guard.js");
 const { esc, easternHour, easternTime, easternFull, easternDay, fmtHour12, fmtDur, fmtMs, bar, tbl } = require("../lib/html.js");
 const { CAT_SIZES, CAT_ITEMS, CAT_GROUP } = require("../lib/category-data.js");
 
+const DASH = SITE.adminDashboard;
+
+// ── One page shell for every admin page ──────────────────────────────────────────────────────────
+// The dashboard is Express-rendered HTML rather than part of the Next app, so nothing hands it a
+// <head>. Each of the ten sub-pages used to carry its own hand-copied <style> and then open
+// straight into <body> with no <head> at all — no charset, and crucially no viewport meta, so
+// every one of them rendered at desktop width on a phone and had to be pinch-zoomed to read.
+//
+// The ten copies had also drifted: cell padding existed in three different values, `.dim` was
+// redeclared eight times, and the sticky table header had only ever reached four of the seven
+// pages that have a table. So there is one stylesheet now, and a page passes only the rules that
+// are genuinely its own.
+const ADMIN_CSS = `
+  :root{color-scheme:dark} *{box-sizing:border-box}
+  body{margin:0;background:${DASH.themeColor};color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px;
+    padding-left:max(20px,env(safe-area-inset-left));padding-right:max(20px,env(safe-area-inset-right));
+    padding-bottom:max(20px,env(safe-area-inset-bottom));-webkit-text-size-adjust:100%}
+  a{color:${DASH.accent};text-decoration:none} a:hover{text-decoration:underline}
+  h1{font-size:20px;margin:0 0 4px} h2{font-size:17px;margin:26px 0 4px}
+  h3{font-size:13px;margin:14px 0 6px;color:#c6ccda}
+  .sub{color:#8a92a6;font-size:13px;margin:0 0 16px} .dim{color:#8a92a6} b{color:#fff}
+  .nav{margin:0 0 14px;font-size:13px} .nav a{margin-right:12px;display:inline-block;padding:4px 0}
+  /* A wide table gets its own scroller rather than stretching the page: on a phone the page
+     scrolling sideways moves the headings off-screen too, which loses your place entirely. */
+  .tw{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{border-collapse:collapse;font-size:13px;width:100%}
+  th{text-align:left;color:#8a92a6;font-weight:600;border-bottom:1px solid #262b38;padding:6px 9px;
+    position:sticky;top:0;background:${DASH.themeColor};white-space:nowrap}
+  td{padding:6px 9px;border-bottom:1px solid #1c2029;vertical-align:top;color:#dfe4ee}
+  tr:hover td{background:#141823} td a{color:${DASH.accent}}
+  td.t{color:#8a92a6;white-space:nowrap;font-variant-numeric:tabular-nums;width:1%}
+  /* Semantic colour utilities. Every one of these was redeclared on most of the ten pages. */
+  .big{color:#3ecf8e;font-weight:700} .tot{font-weight:800;color:#ffd34d} .rm{color:#e5484d;font-weight:700}
+  .ok{color:#3ecf8e} .miss{color:#e5484d} .dup{color:#ffb454}
+  .sp{color:#ffb454} .mp{color:#3ecf8e} .mode{font-weight:700}
+  .rk{color:#8a92a6;width:22px} .sc{text-align:right;font-weight:800;color:#ffd34d}
+  .bar{display:inline-block;height:8px;border-radius:2px;background:#3ecf8e;vertical-align:middle}
+  .low .bar{background:#e5484d} .mid .bar{background:#ffb454}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:20px;background:#1c2230;color:#c6ccda}
+  .chips span{display:inline-block;background:#1c2029;border:1px solid #2a3040;border-radius:6px;padding:2px 7px;margin:3px;font-size:12px}
+  .meta{background:#141823;border:1px solid #262b38;border-radius:10px;padding:12px 14px;margin:0 0 18px;font-size:13px}
+  .meta b{color:#fff}
+  .card{background:#171a23;border:1px solid #262b38;border-radius:12px;padding:14px}
+  .cat{background:#171a23;border:1px solid #262b38;border-radius:12px;padding:12px 14px}
+  .cathd{font-weight:700;margin-bottom:8px} .cathd .dim{font-weight:400}
+  input{background:#141823;border:1px solid #2a3040;border-radius:8px;color:#e8ecf4;padding:8px 11px;font-size:14px;max-width:100%}
+  button{background:${DASH.accent};border:0;border-radius:8px;color:#08130d;font-weight:700;padding:9px 14px;cursor:pointer;font-size:13px}
+  /* These three grids asked for a 300-340px minimum track. On a 320px phone the content box is
+     ~296px, so the track was wider than its container and the whole page scrolled sideways.
+     min() clamps the track to the container and the overflow goes away. */
+  .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(min(340px,100%),1fr))}
+  .cols{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(min(320px,100%),1fr))}
+  .cats{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(min(300px,100%),1fr))}
+  @media (max-width:700px){
+    body{padding:12px;padding-left:max(12px,env(safe-area-inset-left));padding-right:max(12px,env(safe-area-inset-right))}
+    h1{font-size:18px} h2{font-size:16px;margin:20px 0 4px}
+    table{font-size:12px} th,td{padding:5px 6px}
+    .grid,.cols,.cats{grid-template-columns:1fr;gap:10px}
+    /* Tap targets: these are the actions, and as bare 13px links they were well under 40px. */
+    .nav a,.watch,.close,.announce a.preset{padding:8px 2px;display:inline-block}
+  }
+`;
+
+// The main dashboard's own rules — the room cards and the control panels, which no other page has.
+const DASH_CSS = `
+  .stats{color:#c6ccda;margin:0 0 18px;font-size:13px} .stats b{color:#ffd34d}
+  .card.playing{border-color:#2e7d52}
+  .hd{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex-wrap:wrap}
+  .code{font-weight:900;font-size:22px;letter-spacing:3px;color:#ffd34d}
+  .badge{font-size:12px;color:#8a92a6}
+  .watch{margin-left:auto;color:${DASH.accent};font-weight:700;font-size:13px}
+  .close{color:#e5484d;font-weight:700;font-size:13px}
+  .g{font-size:13px;color:#c6ccda;margin:3px 0} .g.players{color:#fff;font-weight:600}
+  .g.meta{color:#6b7382;font-size:12px;background:none;border:0;border-radius:0;padding:0;margin:3px 0}
+  .g.pend{color:#ffb454}
+  .pills{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px}
+  .pill{background:#171a23;border:1px solid #262b38;border-radius:20px;padding:5px 12px;font-size:12px;color:#c6ccda}
+  .announce{background:#171a23;border:1px solid #262b38;border-radius:12px;padding:12px 14px;margin:0 0 18px}
+  .announce form{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .announce input{flex:1;min-width:180px}
+  .announce a.preset{background:#3a2030;color:#ffb4b4;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;display:inline-block}
+  .announce .lbl{font-size:12px;color:#8a92a6;margin-right:4px}
+  /* The eight drill-down links. As stacked bold-blue sentences they were the largest block on the
+     phone layout and buried the room cards under it; as tiles they read as the menu they are, and
+     the description drops to secondary weight instead of competing with the title. */
+  .tools{display:grid;gap:8px;grid-template-columns:repeat(auto-fill,minmax(min(260px,100%),1fr));margin:0 0 20px}
+  .tools a{display:block;background:#171a23;border:1px solid #262b38;border-radius:10px;padding:10px 12px}
+  .tools a:hover{border-color:${DASH.accent};text-decoration:none}
+  .tools b{display:block;color:#dfe4ee;font-size:13px;font-weight:700}
+  .tools span{display:block;color:#8a92a6;font-size:12px;line-height:1.35;margin-top:1px}
+`;
+
+// `k` is the already-url-encoded owner key. It has to travel into the manifest link: every /admin
+// route is gated on that key, so an installed app whose start_url lacked it would launch straight
+// into a 404. See the note on `pwaAdmin` in lib/site-config.js.
+//
+// `refresh` turns on the self-reload the live dashboard wants. It replaces a <meta http-equiv=
+// "refresh">, which also threw the page back to the top every 60 seconds — on a phone that meant
+// anything below the fold was unreadable, because you could never stay scrolled to it.
+const adminHead = ({ k, title = "", css = "", refresh = 0 }) => `<!doctype html><html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>${title ? `${esc(title)} · ${DASH.title}` : DASH.title}</title>
+<link rel="manifest" href="/admin/manifest.webmanifest?key=${k}">
+<meta name="theme-color" content="${DASH.themeColor}">
+<link rel="apple-touch-icon" href="/admin-apple-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="${SITE.pwaAdmin.shortName}">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<style>${ADMIN_CSS}${css}</style>${refresh ? `
+<script>
+(function(){
+  try{
+    var y=sessionStorage.getItem("adminY");
+    if(y)addEventListener("load",function(){scrollTo(0,+y)});
+    addEventListener("beforeunload",function(){sessionStorage.setItem("adminY",String(scrollY))});
+  }catch(e){}
+  setTimeout(function(){location.reload()},${refresh * 1000});
+})();
+</script>` : ""}
+</head><body>`;
+
 function gamePeek(room) {
   const g = room.game;
   if (!g) return null;
@@ -303,30 +425,8 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         ${gameHtml}
       </div>`;
     };
-    res.set("content-type", "text/html").send(`<!doctype html><html><head><meta charset="utf-8">
-      <meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="refresh" content="60">
-      <title>${SITE.adminDashboard.title}</title><style>
-      body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-      h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;margin:0 0 6px;font-size:13px}
-      .stats{color:#c6ccda;margin:0 0 18px;font-size:13px} .stats b{color:#ffd34d}
-      .grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(340px,1fr))}
-      .card{background:#171a23;border:1px solid #262b38;border-radius:12px;padding:14px}
-      .card.playing{border-color:#2e7d52} .hd{display:flex;align-items:center;gap:10px;margin-bottom:8px}
-      .code{font-weight:900;font-size:22px;letter-spacing:3px;color:#ffd34d}
-      .badge{font-size:12px;color:#8a92a6} .watch{margin-left:auto;color:#5b8cff;text-decoration:none;font-weight:700;font-size:13px}
-      .close{color:#e5484d;text-decoration:none;font-weight:700;font-size:13px} .watch:hover,.close:hover{text-decoration:underline}
-      .g{font-size:13px;color:#c6ccda;margin:3px 0} .g.players{color:#fff;font-weight:600} .g.meta{color:#6b7382;font-size:12px}
-      .g.pend{color:#ffb454} b{color:#fff}
-      h2{font-size:17px;margin:26px 0 4px} h3{font-size:13px;margin:14px 0 6px;color:#c6ccda}
-      .cols{display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
-      table{width:100%;border-collapse:collapse;font-size:12px} th{text-align:left;color:#8a92a6;font-weight:600;border-bottom:1px solid #262b38;padding:4px 6px}
-      td{padding:4px 6px;border-bottom:1px solid #1c2029;color:#dfe4ee} td a{color:#5b8cff;text-decoration:none} td a:hover{text-decoration:underline}
-      .pills{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px} .pill{background:#171a23;border:1px solid #262b38;border-radius:20px;padding:5px 12px;font-size:12px;color:#c6ccda}
-      .announce{background:#171a23;border:1px solid #262b38;border-radius:12px;padding:12px 14px;margin:0 0 18px}
-      .announce form{display:flex;gap:8px;flex-wrap:wrap;align-items:center} .announce input{flex:1;min-width:180px;background:#0e1016;border:1px solid #2a3040;border-radius:8px;color:#fff;padding:8px 10px;font-size:13px}
-      .announce button,.announce a.preset{background:#2a3040;color:#fff;border:none;border-radius:8px;padding:8px 12px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none}
-      .announce a.preset{background:#3a2030;color:#ffb4b4} .announce .lbl{font-size:12px;color:#8a92a6;margin-right:4px}</style></head>
-      <body><h1>${SITE.adminDashboard.heading}</h1>
+    res.set("content-type", "text/html").send(`${adminHead({ k, css: DASH_CSS, refresh: 60 })}
+      <h1>${SITE.adminDashboard.heading}</h1>
       <p class="sub">🟢 <b style="color:#3ecf8e">${getOnline()}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 60s · ${easternFull(now)}</p>
       ${siteHealthHtml(dbPing, now, k)}
       <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
@@ -347,14 +447,16 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
           ? `<b style="color:#e5484d">● MAINTENANCE MODE — game is DOWN</b> <a class="preset" style="background:#1d3a26;color:#8ef0b4" href="/admin/lockdown?key=${k}&on=0">✅ Bring the game back ON</a>`
           : `<a class="preset" style="background:#3a2030;color:#ffb4b4" href="/admin/lockdown?key=${k}&on=1" onclick="return confirm('Take the game DOWN for maintenance? Kicks everyone, ends all games, and blocks new games (solo + multiplayer) until you toggle it back on.')">🔧 Take game down (maintenance)</a>`}
       </div>
-      <p style="margin:0 0 16px"><a href="/admin/health?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🩺 Category health → which answers never get named</a></p>
-      <p style="margin:0 0 16px"><a href="/admin/games?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🎞 Game history → drill into any past game: every guess, chat, and exact timestamp</a></p>
-      <p style="margin:0 0 16px"><a href="/admin/chat?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">💬 All chat → every message across the whole server (searchable)</a></p>
-      <p style="margin:0 0 16px"><a href="/admin/leaderboards?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🏆 Leaderboards → moderate entries: remove junk/abusive names from any board</a></p>
-      <p style="margin:0 0 16px"><a href="/admin/category-leaderboards?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🥇 Category leaderboards (admin-only) → per-category top solo scores, watching before public</a></p>
-      <p style="margin:0 0 16px"><a href="/admin/runs?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🏃 Solo & daily runs → drill into any run: every exact guess (hits, misses, repeats)</a></p>
-      <p style="margin:0 0 16px"><a href="/admin/sessions?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🕒 Recent sessions → every visit in full: arrival, stay, device, location/IP, timezone</a></p>
-      <p style="margin:0 0 16px"><a href="/admin/visitors?key=${k}" style="color:#5b8cff;text-decoration:none;font-weight:700">🧭 Visitors → repeat visitors, IP, location & timezone</a></p>
+      <div class="tools">${[
+        ["health", "🩺 Category health", "which answers never get named"],
+        ["games", "🎞 Game history", "drill into any past game — every guess, chat and exact timestamp"],
+        ["chat", "💬 All chat", "every message across the whole server, searchable"],
+        ["leaderboards", "🏆 Leaderboards", "moderate entries — remove junk or abusive names"],
+        ["category-leaderboards", "🥇 Category leaderboards", "per-category top solo scores, before they go public"],
+        ["runs", "🏃 Solo & daily runs", "drill into any run — every hit, miss and repeat"],
+        ["sessions", "🕒 Recent sessions", "every visit — arrival, stay, device, location, timezone"],
+        ["visitors", "🧭 Visitors", "repeat visitors, IP, location and timezone"],
+      ].map(([slug, name, desc]) => `<a href="/admin/${slug}?key=${k}"><b>${name}</b><span>${desc}</span></a>`).join("")}</div>
       <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
       ${(() => { const live = liveSessions(); return `<h2>🌐 Live connections (${live.length})</h2>${tbl(["Connected for", "Name", "Doing", "Device"],
         live.map((s) => `<tr><td>${fmtDur(now - s.connectedAt)}</td><td>${esc(s.name || "—")}</td><td>${s.role}${s.room ? " · " + esc(s.room) : ""}</td><td>${s.device}</td></tr>`).join(""), 4)}`; })()}
@@ -366,13 +468,9 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
   router.get("/admin/health", async (req, res) => {
     if (!ownerOk(req)) return res.status(404).send("Not found");
     const k = encodeURIComponent(req.query.key || "");
-    const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-      a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
-      table{border-collapse:collapse;font-size:12px;width:100%;max-width:760px} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:5px 8px}
-      td{padding:5px 8px;border-bottom:1px solid #1c2029} .bar{display:inline-block;height:8px;border-radius:2px;background:#3ecf8e;vertical-align:middle}
-      .low .bar{background:#e5484d} .mid .bar{background:#ffb454} .chips span{display:inline-block;background:#1c2029;border:1px solid #2a3040;border-radius:6px;padding:2px 7px;margin:3px;font-size:12px}</style>`;
+    const head = adminHead({ k, title: "Category health" });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
-    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Category health</h1><p class="sub">Persistence not configured.</p></body>`);
+    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Category health</h1><p class="sub">Persistence not configured.</p></body>`);
     const named = new Map();
     (await analytics.namedDisplays().catch(() => [])).forEach((r) => { if (!named.has(r.category)) named.set(r.category, new Set()); named.get(r.category).add(r.display); });
     const cat = String(req.query.cat || "");
@@ -381,7 +479,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       const set = named.get(cat) || new Set();
       const never = CAT_ITEMS[cat].filter((d) => !set.has(d));
       const got = CAT_ITEMS[cat].filter((d) => set.has(d));
-      return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+      return res.set("content-type", "text/html").send(`${head}${back}
         <h1>${esc(CAT_GROUP[cat] || "")} — ${esc(cat)}</h1>
         <p class="sub">${got.length}/${CAT_ITEMS[cat].length} answers named at least once (${Math.round(got.length / CAT_ITEMS[cat].length * 100)}% coverage).</p>
         <h3>🚫 Never named (${never.length})</h3><div class="chips">${never.map((d) => `<span>${esc(d)}</span>`).join("") || "— all named! —"}</div>
@@ -398,10 +496,10 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       const cls = r.pct < 0.25 ? "low" : r.pct < 0.6 ? "mid" : "";
       return `<tr class="${cls}"><td><a href="/admin/health?key=${k}&cat=${encodeURIComponent(r.c)}">${esc(r.c)}</a></td><td>${esc(r.grp)}</td><td>${r.n}/${r.total}</td><td><span class="bar" style="width:${Math.round(r.pct * 80)}px"></span> ${Math.round(r.pct * 100)}%</td></tr>`;
     }).join("");
-    res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    res.set("content-type", "text/html").send(`${head}${back}
       <h1>🩺 Category health</h1>
       <p class="sub">Coverage = share of a category's answers that have been named at least once. Low coverage may mean the category is too obscure, mis-spelled, or just under-played. Click one to see exactly which answers never get named.</p>
-      <table><tr><th>Category</th><th>Group</th><th>Named</th><th>Coverage</th></tr>${tr}</table>
+      <div class="tw"><table><tr><th>Category</th><th>Group</th><th>Named</th><th>Coverage</th></tr>${tr}</table></div>
       </body>`);
   });
 
@@ -411,12 +509,9 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     if (!ownerOk(req)) return res.status(404).send("Not found");
     const k = encodeURIComponent(req.query.key || "");
     const num = (x) => Number(x || 0);
-    const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-      a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
-      table{border-collapse:collapse;font-size:13px;width:100%;max-width:980px} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:6px 9px}
-      td{padding:6px 9px;border-bottom:1px solid #1c2029;vertical-align:top} tr:hover td{background:#141823} .mode{font-weight:700} .sp{color:#ffb454} .mp{color:#3ecf8e}</style>`;
+    const head = adminHead({ k, title: "Game history" });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
-    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Game history</h1><p class="sub">Persistence not configured.</p></body>`);
+    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Game history</h1><p class="sub">Persistence not configured.</p></body>`);
     const games = await analytics.gamesList(100).catch(() => []);
     const rows = games.map((g) => {
       const mode = g.mode === "sp" ? `<span class="mode sp">🤖 solo</span>` : `<span class="mode mp">🆚 mp</span>`;
@@ -424,10 +519,10 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       const link = g.gid ? `<a href="/admin/game?key=${k}&gid=${encodeURIComponent(g.gid)}">open →</a>` : `<span style="color:#566">— (older game)</span>`;
       return `<tr><td>${easternFull(num(g.started_at || g.ended_at))}</td><td>${mode}</td><td>${score}</td><td>${esc(g.winner_name || "tie")}</td><td>${num(g.rounds)}</td><td>${esc(g.difficulty || "")}</td><td>${fmtMs(num(g.duration_ms))}</td><td>${link}</td></tr>`;
     }).join("");
-    res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    res.set("content-type", "text/html").send(`${head}${back}
       <h1>🎞 Game history</h1>
       <p class="sub">Every finished game, newest first. Click <b>open →</b> to replay the full timeline — every guess, chat message, and exact timestamp. (Only games played after this feature shipped have a timeline.)</p>
-      <table><tr><th>When (ET)</th><th>Mode</th><th>Score</th><th>Winner</th><th>Rounds</th><th>Diff</th><th>Length</th><th></th></tr>${rows}</table>
+      <div class="tw"><table><tr><th>When (ET)</th><th>Mode</th><th>Score</th><th>Winner</th><th>Rounds</th><th>Diff</th><th>Length</th><th></th></tr>${rows}</table></div>
       </body>`);
   });
 
@@ -437,15 +532,13 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const k = encodeURIComponent(req.query.key || "");
     const num = (x) => Number(x || 0);
     const clock = (ts) => { try { return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(ts)); } catch { return ""; } };
-    const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-      a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
-      .meta{background:#141823;border:1px solid #262b38;border-radius:10px;padding:12px 14px;max-width:820px;margin:0 0 18px;font-size:13px}
-      .meta b{color:#fff} table{border-collapse:collapse;font-size:13px;width:100%;max-width:820px} td{padding:5px 9px;border-bottom:1px solid #1c2029;vertical-align:top}
-      td.t{color:#8a92a6;white-space:nowrap;font-variant-numeric:tabular-nums;width:1%} .dim{color:#8a92a6} tr.round td{background:#16203a} tr.chat td{background:#1a1726} tr.event td{color:#8a92a6}</style>`;
+    const head = adminHead({ k, title: "Game", css: `
+      tr.round td{background:#16203a} tr.chat td{background:#1a1726} tr.event td{color:#8a92a6}
+    ` });
     const back = `<a href="/admin/games?key=${k}">← back to game history</a>`;
-    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Game</h1><p class="sub">Persistence not configured.</p></body>`);
+    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Game</h1><p class="sub">Persistence not configured.</p></body>`);
     const d = await analytics.gameDetail(String(req.query.gid || "")).catch(() => null);
-    if (!d || !d.game) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Game not found</h1><p class="sub">No game with that id (only games played after this feature shipped have a timeline).</p></body>`);
+    if (!d || !d.game) return res.set("content-type", "text/html").send(`${head}${back}<h1>Game not found</h1><p class="sub">No game with that id (only games played after this feature shipped have a timeline).</p></body>`);
     const g = d.game;
     const items = [];
     d.rounds.forEach((r) => items.push({ at: num(r.at), kind: "round", html: `🎯 <b>Round</b> — ${esc(r.grp || "")}: <b>${esc(r.category || "?")}</b> · claimed ${num(r.claim)} · <b>${esc(r.winner_name || "?")}</b> won it (${num(r.proven)}/${num(r.claim)})` }));
@@ -457,7 +550,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       ? items.map((it) => `<tr class="${it.kind}"><td class="t">${clock(it.at)}</td><td>${it.html}</td></tr>`).join("")
       : `<tr><td colspan="2" class="dim">No timeline rows recorded for this game.</td></tr>`;
     const mode = g.mode === "sp" ? "🤖 single-player" : "🆚 multiplayer";
-    res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    res.set("content-type", "text/html").send(`${head}${back}
       <h1>${esc(g.p1_name || "?")} ${num(g.p1_score)}–${num(g.p2_score)} ${esc(g.p2_name || "?")}</h1>
       <p class="sub">${mode} · winner: <b>${esc(g.winner_name || "tie")}</b> (${esc(g.reason || "")})</p>
       <div class="meta">
@@ -465,7 +558,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         <div>🎚 ${num(g.rounds)} rounds · timer ${esc(String(g.timer))}s · first to ${esc(String(g.target))}${g.difficulty ? ` · bot: <b>${esc(g.difficulty)}</b>` : ""}</div>
         <div>🗂 Categories enabled: <span class="dim">${esc(g.groups || "—")}</span></div>
       </div>
-      <table>${tl}</table>
+      <div class="tw"><table>${tl}</table></div>
       </body>`);
   });
 
@@ -475,19 +568,16 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const k = encodeURIComponent(req.query.key || "");
     const num = (x) => Number(x || 0);
     const search = String(req.query.q || "").slice(0, 60);
-    const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-      a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 14px}
-      input{background:#141823;border:1px solid #2a3040;border-radius:8px;color:#e8ecf4;padding:8px 11px;font-size:14px;width:240px} button{background:#5b8cff;border:0;border-radius:8px;color:#08130d;font-weight:700;padding:8px 14px;cursor:pointer;margin-left:6px}
-      table{border-collapse:collapse;font-size:13px;width:100%;max-width:900px;margin-top:14px} td{padding:5px 9px;border-bottom:1px solid #1c2029;vertical-align:top} td.t{color:#8a92a6;white-space:nowrap;font-variant-numeric:tabular-nums} .dim{color:#8a92a6}</style>`;
+    const head = adminHead({ k, title: "All chat" });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
-    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>All chat</h1><p class="sub">Persistence not configured.</p></body>`);
+    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>All chat</h1><p class="sub">Persistence not configured.</p></body>`);
     const rows = (await analytics.allChat(300, search).catch(() => [])).map((c) =>
       `<tr><td class="t">${easternFull(num(c.at))}</td><td><b>${esc(c.name || "?")}${c.spectator ? " 👀" : ""}</b> <span class="dim">${c.gid ? `<a href="/admin/game?key=${k}&gid=${encodeURIComponent(c.gid)}">${esc(c.code || "")}</a>` : esc(c.code || "lobby")}</span></td><td>${esc(c.text || "")}</td></tr>`).join("");
-    res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    res.set("content-type", "text/html").send(`${head}${back}
       <h1>💬 All chat</h1>
       <p class="sub">Every chat message across the whole server, newest first. Click a room code to open that game's full timeline.</p>
       <form method="get"><input type="hidden" name="key" value="${k}"><input name="q" placeholder="search name or message…" value="${esc(search)}" autofocus><button>Search</button>${search ? ` <a href="/admin/chat?key=${k}">clear</a>` : ""}</form>
-      <table>${rows || `<tr><td class="dim">No messages${search ? " match that search" : " yet"}.</td></tr>`}</table>
+      <div class="tw"><table>${rows || `<tr><td class="dim">No messages${search ? " match that search" : " yet"}.</td></tr>`}</table></div>
       </body>`);
   });
 
@@ -496,12 +586,9 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     if (!ownerOk(req)) return res.status(404).send("Not found");
     const k = encodeURIComponent(req.query.key || "");
     const num = (x) => Number(x || 0);
-    const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-      a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
-      table{border-collapse:collapse;font-size:13px;width:100%;max-width:1040px} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:6px 9px} td{padding:6px 9px;border-bottom:1px solid #1c2029;vertical-align:top}
-      tr:hover td{background:#141823} .big{color:#3ecf8e;font-weight:700} .dim{color:#8a92a6}</style>`;
+    const head = adminHead({ k, title: "Visitors" });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
-    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Visitors</h1><p class="sub">Persistence not configured.</p></body>`);
+    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Visitors</h1><p class="sub">Persistence not configured.</p></body>`);
     const list = await analytics.visitors(150).catch(() => []);
     const repeat = list.filter((v) => num(v.visits) > 1).length;
     const rows = list.map((v) => `<tr>
@@ -514,10 +601,10 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         <td class="dim">${easternFull(num(v.first_seen))}</td>
         <td class="dim">${easternFull(num(v.last_seen))}</td>
       </tr>`).join("");
-    res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    res.set("content-type", "text/html").send(`${head}${back}
       <h1>🧭 Visitors</h1>
       <p class="sub">Grouped by a persistent anonymous device id (localStorage). <b>${repeat}</b> of ${list.length} have visited more than once. Names are self-entered and unverified; IP/location come from the network.</p>
-      <table><tr><th>Visits</th><th>Names used</th><th>Location</th><th>IP</th><th>Device</th><th>Played/Joined</th><th>First seen</th><th>Last seen</th></tr>${rows || `<tr><td class="dim" colspan="8">No visitors recorded yet.</td></tr>`}</table>
+      <div class="tw"><table><tr><th>Visits</th><th>Names used</th><th>Location</th><th>IP</th><th>Device</th><th>Played/Joined</th><th>First seen</th><th>Last seen</th></tr>${rows || `<tr><td class="dim" colspan="8">No visitors recorded yet.</td></tr>`}</table></div>
       </body>`);
   });
 
@@ -527,13 +614,9 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const k = encodeURIComponent(req.query.key || "");
     const num = (x) => Number(x || 0);
     const n = Math.min(2000, Math.max(50, parseInt(req.query.n, 10) || 300));
-    const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-      a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
-      table{border-collapse:collapse;font-size:13px;width:100%} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:6px 9px;position:sticky;top:0;background:#0e1016} td{padding:6px 9px;border-bottom:1px solid #1c2029;vertical-align:top}
-      tr:hover td{background:#141823} .big{color:#3ecf8e;font-weight:700} .dim{color:#8a92a6} .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:20px;background:#1c2230;color:#c6ccda}
-      .nav{margin:0 0 14px;font-size:13px} .nav a{margin-right:12px}</style>`;
+    const head = adminHead({ k, title: "Recent sessions" });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
-    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Sessions</h1><p class="sub">Persistence not configured.</p></body>`);
+    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Sessions</h1><p class="sub">Persistence not configured.</p></body>`);
     const list = await analytics.sessionsList(n).catch(() => []);
     // repeat indicator: how many times this visitor shows up within the fetched window
     const seen = {}; list.forEach((r) => { if (r.visitor_id) seen[r.visitor_id] = (seen[r.visitor_id] || 0) + 1; });
@@ -554,11 +637,11 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       </tr>`;
     }).join("");
     const repeatVisitors = Object.values(seen).filter((c) => c > 1).length;
-    res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    res.set("content-type", "text/html").send(`${head}${back}
       <h1>🕒 Recent sessions</h1>
       <p class="sub">Every visit, newest first — arrival time, how long they stayed, what they did, device, location/IP, timezone & locale. Showing <b>${list.length}</b> · <b>${repeatVisitors}</b> repeat visitors in this window.</p>
       <p class="nav">Show: <a href="/admin/sessions?key=${k}&n=100">100</a><a href="/admin/sessions?key=${k}&n=300">300</a><a href="/admin/sessions?key=${k}&n=1000">1000</a> · <a href="/admin/visitors?key=${k}">group by visitor →</a></p>
-      <table><tr><th>Arrived (ET)</th><th>Stayed</th><th>Did</th><th>Name</th><th>Device</th><th>Location / IP</th><th>TZ / Locale</th><th>Visitor</th></tr>${rows || `<tr><td class="dim" colspan="8">No sessions recorded yet.</td></tr>`}</table>
+      <div class="tw"><table><tr><th>Arrived (ET)</th><th>Stayed</th><th>Did</th><th>Name</th><th>Device</th><th>Location / IP</th><th>TZ / Locale</th><th>Visitor</th></tr>${rows || `<tr><td class="dim" colspan="8">No sessions recorded yet.</td></tr>`}</table></div>
       </body>`);
   });
 
@@ -567,12 +650,9 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     if (!ownerOk(req)) return res.status(404).send("Not found");
     const k = encodeURIComponent(req.query.key || "");
     const num = (x) => Number(x || 0);
-    const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-      a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
-      table{border-collapse:collapse;font-size:13px;width:100%} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:6px 9px;position:sticky;top:0;background:#0e1016} td{padding:6px 9px;border-bottom:1px solid #1c2029;vertical-align:top}
-      tr:hover td{background:#141823} .dim{color:#8a92a6} .tot{font-weight:800;color:#ffd34d} .rm{color:#e5484d;font-weight:700} .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;background:#1c2230;color:#c6ccda}</style>`;
+    const head = adminHead({ k, title: "Leaderboards" });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
-    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Leaderboards</h1><p class="sub">Persistence not configured.</p></body>`);
+    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Leaderboards</h1><p class="sub">Persistence not configured.</p></body>`);
     const list = await analytics.recentResults(300).catch(() => []);
     const label = (r) => String(r.challenge_id || "").startsWith("d-")
       ? `<span class="tag">daily</span> ${esc(String(r.challenge_id).replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3"))}`
@@ -584,10 +664,10 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         <td class="tot">${num(r.total)}</td>
         <td><a class="rm" href="/admin/result-delete?key=${k}&id=${num(r.id)}" onclick="return confirm('Remove ${esc((r.name || '?').replace(/'/g, ''))} (${num(r.total)}) from this leaderboard?')">✕ remove</a></td>
       </tr>`).join("");
-    res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    res.set("content-type", "text/html").send(`${head}${back}
       <h1>🏆 Leaderboard entries</h1>
       <p class="sub">Newest ${list.length} entries across daily + link challenges. Remove junk or abusive self-entered names. This deletes one entry permanently.</p>
-      <table><tr><th>When (ET)</th><th>Board</th><th>Name</th><th>Score</th><th></th></tr>${rows || `<tr><td class="dim" colspan="5">No entries yet.</td></tr>`}</table>
+      <div class="tw"><table><tr><th>When (ET)</th><th>Board</th><th>Name</th><th>Score</th><th></th></tr>${rows || `<tr><td class="dim" colspan="5">No entries yet.</td></tr>`}</table></div>
       </body>`);
   });
   router.get("/admin/result-delete", async (req, res) => {
@@ -601,22 +681,16 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
   router.get("/admin/category-leaderboards", async (req, res) => {
     if (!ownerOk(req)) return res.status(404).send("Not found");
     const k = encodeURIComponent(req.query.key || "");
-    const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-      a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
-      .cats{display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
-      .cat{background:#171a23;border:1px solid #262b38;border-radius:12px;padding:12px 14px}
-      .cathd{font-weight:700;margin-bottom:8px} .cathd .dim{font-weight:400}
-      .dim{color:#8a92a6} table{width:100%;border-collapse:collapse;font-size:13px} td{padding:3px 6px;border-bottom:1px solid #1c2029}
-      .rk{color:#8a92a6;width:22px} .sc{text-align:right;font-weight:800;color:#ffd34d}</style>`;
+    const head = adminHead({ k, title: "Category leaderboards" });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
-    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Category leaderboards</h1><p class="sub">Persistence not configured.</p></body>`);
+    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Category leaderboards</h1><p class="sub">Persistence not configured.</p></body>`);
     const cats = await analytics.categoryLeaderboards(10).catch(() => []);
     const totalRuns = cats.reduce((a, c) => a + c.runs, 0);
     const blocks = cats.map((c) => `<div class="cat">
         <div class="cathd">${esc(c.category)} <span class="dim">· ${c.runs} run${c.runs !== 1 ? "s" : ""} · ${c.players} player${c.players !== 1 ? "s" : ""}</span></div>
-        <table>${c.top.map((p, i) => `<tr><td class="rk">${i + 1}</td><td>${esc(p.name || "?")}</td><td class="sc">${p.score}</td></tr>`).join("")}</table>
+        <div class="tw"><table>${c.top.map((p, i) => `<tr><td class="rk">${i + 1}</td><td>${esc(p.name || "?")}</td><td class="sc">${p.score}</td></tr>`).join("")}</table></div>
       </div>`).join("");
-    res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    res.set("content-type", "text/html").send(`${head}${back}
       <h1>🥇 Category leaderboards <span class="dim" style="font-size:13px">(admin-only)</span></h1>
       <p class="sub">Each player's best score per category across all solo / daily / link runs — <b>${cats.length}</b> categories played, <b>${totalRuns}</b> total category-runs. Busiest first. Not public yet; this is to see how it unfolds.</p>
       <div class="cats">${blocks || `<p class="dim">No solo runs recorded yet.</p>`}</div>
@@ -628,12 +702,9 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     if (!ownerOk(req)) return res.status(404).send("Not found");
     const k = encodeURIComponent(req.query.key || "");
     const num = (x) => Number(x || 0);
-    const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-      a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
-      table{border-collapse:collapse;font-size:13px;width:100%} th{text-align:left;color:#8a92a6;border-bottom:1px solid #262b38;padding:6px 9px;position:sticky;top:0;background:#0e1016} td{padding:6px 9px;border-bottom:1px solid #1c2029;vertical-align:top}
-      tr:hover td{background:#141823} .dim{color:#8a92a6} .tot{font-weight:800;color:#ffd34d} .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:20px;background:#1c2230;color:#c6ccda}</style>`;
+    const head = adminHead({ k, title: "Solo & daily runs" });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
-    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Solo & daily runs</h1><p class="sub">Persistence not configured.</p></body>`);
+    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Solo & daily runs</h1><p class="sub">Persistence not configured.</p></body>`);
     const list = await analytics.soloRunsList(150).catch(() => []);
     const rows = list.map((r) => {
       const isDaily = String(r.challenge_id || "").startsWith("d-");
@@ -645,10 +716,10 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         <td>${r.gid ? `<a href="/admin/run?key=${k}&gid=${encodeURIComponent(r.gid)}">see guesses →</a>` : `<span class="dim">—</span>`}</td>
       </tr>`;
     }).join("");
-    res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    res.set("content-type", "text/html").send(`${head}${back}
       <h1>🏃 Solo & daily runs</h1>
       <p class="sub">Each individual run, newest first. Click "see guesses" to replay every word someone typed (runs played after this shipped have a guess log).</p>
-      <table><tr><th>When (ET)</th><th>Puzzle</th><th>Player</th><th>Score</th><th></th></tr>${rows || `<tr><td class="dim" colspan="5">No runs recorded yet.</td></tr>`}</table>
+      <div class="tw"><table><tr><th>When (ET)</th><th>Puzzle</th><th>Player</th><th>Score</th><th></th></tr>${rows || `<tr><td class="dim" colspan="5">No runs recorded yet.</td></tr>`}</table></div>
       </body>`);
   });
   router.get("/admin/run", async (req, res) => {
@@ -656,15 +727,13 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const k = encodeURIComponent(req.query.key || "");
     const num = (x) => Number(x || 0);
     const clock = (ts) => { try { return new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "numeric", minute: "2-digit", second: "2-digit" }).format(new Date(ts)); } catch (e) { return ""; } };
-    const style = `<style>body{margin:0;background:#0e1016;color:#e8ecf4;font:14px/1.5 system-ui,sans-serif;padding:20px}
-      a{color:#5b8cff;text-decoration:none} a:hover{text-decoration:underline} h1{font-size:20px;margin:0 0 4px} .sub{color:#8a92a6;font-size:13px;margin:0 0 16px}
-      .meta{background:#141823;border:1px solid #262b38;border-radius:10px;padding:12px 14px;max-width:760px;margin:0 0 18px;font-size:13px} .meta b{color:#fff}
-      table{border-collapse:collapse;font-size:13px;width:100%;max-width:760px} td{padding:5px 9px;border-bottom:1px solid #1c2029;vertical-align:top}
-      td.t{color:#8a92a6;white-space:nowrap;font-variant-numeric:tabular-nums;width:1%} .dim{color:#8a92a6} tr.cat td{background:#16203a;font-weight:700} .ok{color:#3ecf8e} .miss{color:#e5484d} .dup{color:#ffb454}</style>`;
+    const head = adminHead({ k, title: "Run", css: `
+      tr.cat td{background:#16203a;font-weight:700}
+    ` });
     const back = `<a href="/admin/runs?key=${k}">← back to runs</a>`;
-    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Run</h1><p class="sub">Persistence not configured.</p></body>`);
+    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Run</h1><p class="sub">Persistence not configured.</p></body>`);
     const d = await analytics.soloRunDetail(String(req.query.gid || "")).catch(() => null);
-    if (!d || !d.result) return res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}<h1>Run not found</h1><p class="sub">No run with that id (only runs played after this feature shipped have a guess log).</p></body>`);
+    if (!d || !d.result) return res.set("content-type", "text/html").send(`${head}${back}<h1>Run not found</h1><p class="sub">No run with that id (only runs played after this feature shipped have a guess log).</p></body>`);
     const r = d.result;
     let scores = []; try { scores = JSON.parse(r.scores || "[]"); } catch (e) {}
     const isDaily = String(r.challenge_id || "").startsWith("d-");
@@ -681,7 +750,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const okN = d.answers.filter((a) => a.verdict === "ok").length;
     const missN = d.answers.filter((a) => a.verdict === "miss").length;
     const dupN = d.answers.filter((a) => a.verdict === "dup").length;
-    res.set("content-type", "text/html").send(`<!doctype html>${style}<body>${back}
+    res.set("content-type", "text/html").send(`${head}${back}
       <h1>${esc(r.name || "?")} — ${num(r.total)} named</h1>
       <p class="sub">${isDaily ? "daily" : (r.type || "solo")} · ${easternFull(num(r.at))}</p>
       <div class="meta">
@@ -689,7 +758,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         <div>⌨️ Guesses logged: <b>${d.answers.length}</b> · <span class="ok">${okN} hit</span> · <span class="miss">${missN} missed</span> · <span class="dup">${dupN} repeat</span></div>
         <div class="dim">visitor ${esc(String(r.visitor_id || "—").slice(0, 16))} · gid ${esc(String(req.query.gid || ""))}</div>
       </div>
-      <table>${tl}</table>
+      <div class="tw"><table>${tl}</table></div>
       </body>`);
   });
 
@@ -716,6 +785,39 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     else { io.emit("announce", { text: "✅ Back online — the game is up!" }); console.log("🔓 lockdown OFF — game back up"); }
     res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));
   });
+  // The dashboard's own web app manifest, so it installs to a home screen as its own app rather
+  // than sharing the game's. Different name, and a different icon — scripts/make-icons.js draws
+  // the same target with a blue stripe beside it so the two tiles can't be confused.
+  //
+  // An explicit `id` matters here: without one a browser derives the app's identity from
+  // start_url, which carries the owner key — so rotating that key would orphan the installed app
+  // and silently install a second copy. Pinning id to "/admin" keeps it one app across a rotation.
+  router.get("/admin/manifest.webmanifest", (req, res) => {
+    if (!ownerOk(req)) return res.status(404).send("Not found");
+    const k = encodeURIComponent(req.query.key || "");
+    res.set("content-type", "application/manifest+json")
+      // The start_url below embeds the owner key, so this must never land in a shared cache.
+      .set("cache-control", "private, no-store")
+      .send(JSON.stringify({
+        id: "/admin",
+        name: SITE.pwaAdmin.name,
+        short_name: SITE.pwaAdmin.shortName,
+        description: SITE.pwaAdmin.description,
+        start_url: `/admin?key=${k}`,
+        scope: "/admin",
+        display: "standalone",
+        background_color: SITE.pwaAdmin.backgroundColor,
+        theme_color: DASH.themeColor,
+        orientation: "any",
+        icons: [
+          { src: "/admin-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+          { src: "/admin-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+          { src: "/admin-icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: "/admin-icon-monochrome-512.png", sizes: "512x512", type: "image/png", purpose: "monochrome" },
+        ],
+      }, null, 2));
+  });
+
   // Owner broadcasts a banner message to EVERY connected client (e.g. a pre-deploy heads-up).
   router.get("/admin/announce", (req, res) => {
     if (!ownerOk(req)) return res.status(404).send("Not found");

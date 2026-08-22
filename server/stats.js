@@ -413,8 +413,14 @@ async function getCreatorName() {
   const r = await one(`SELECT name FROM challenge_results WHERE crown=1 ORDER BY id DESC LIMIT 1`);
   return r ? r.name : null;
 }
+// The name half of a board grouping key. Trimmed and lowercased so "jayden" and "Jayden " from one
+// device are still one entry — this is a grouping key, NOT an identity check: a shared name confers
+// nothing on its own (see isCreator below), it only has to stop trivial spacing/case differences
+// from splitting a real player in two.
+const nameKey = (s) => String(s == null ? "" : s).trim().toLowerCase();
+
 // Collapse rows [{name, visitor_id, score, at, crown, ...}] into a ranked board: one entry per
-// visitor, with every crowned row merged into a single crowned entry.
+// visitor+name, with every crowned row merged into a single crowned entry.
 function collapseBoard(rows, limit = 50, forcedName) {
   const crownRow = rows.find((r) => r.crown);
   const creatorDisplay = crownRow ? crownRow.name : (forcedName || null);
@@ -430,7 +436,23 @@ function collapseBoard(rows, limit = 50, forcedName) {
     // by anyone. lib/leaderboard.js does the same on the client — these two must not drift, or a
     // board disagrees with itself about who someone is.
     const isCreator = !!r.crown;
-    const key = isCreator ? "__creator__" : (r.visitor_id || ("name:" + r.name));
+    // visitor_id AND name, not visitor_id alone. Grouping on the id by itself made an injected row
+    // REPLACE a real player rather than sit beside them: POST /challenge/:id/result takes visitorId
+    // straight from the body and cannot verify it, and this loop keeps the best row per group along
+    // with THAT row's name — so one submission under someone else's id, scoring higher, became their
+    // public entry, under the submitter's chosen text. Their own score vanished from the board.
+    //
+    // Every board published visitor_id for every row until it was removed, so those ids are already
+    // copied and cannot be rotated (they live in each player's localStorage). Not trusting the id on
+    // write is the real answer and needs a per-device secret this game has nowhere to keep; until
+    // then, this bounds the damage to "a stranger can add a row", which an endpoint with no accounts
+    // can't prevent anyway.
+    //
+    // A legitimate player's rows always agree on name: renameResults rewrites every row a visitor
+    // owns in one statement, so a rename keeps them grouped. The cost is that someone who typed a
+    // different name on a later run without renaming shows as two entries instead of one — visible,
+    // honest, and fixable from /admin/merge either way round.
+    const key = isCreator ? "__creator__" : `${r.visitor_id || ""} ${nameKey(r.name)}`;
     const cand = { name: isCreator ? (creatorDisplay || r.name) : r.name, visitor_id: r.visitor_id, score: Number(r.score), time: (r.time != null && r.time > 0) ? Number(r.time) : null, at: Number(r.at), crown: isCreator ? 1 : 0, challenge_id: r.challenge_id };
     if (!best[key] || beats(cand, best[key])) best[key] = cand;
   }
@@ -559,7 +581,10 @@ async function geoGoat(limit = 50) {
     const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
     let scores = [], times = []; try { scores = JSON.parse(r.scores || "[]"); } catch (e) {} try { times = JSON.parse(r.times || "[]"); } catch (e) {}
     const isCreator = !!r.crown; // crown=1 only — see the note in collapseBoard()
-    const key = isCreator ? "__creator__" : (r.visitor_id || ("name:" + r.name));
+    // visitor_id + name, matching collapseBoard — an injected row must not be able to replace a real
+    // player's entry here either. GOAT is the board where it would matter most: it aggregates a
+    // visitor's best per category across their whole history, so a takeover inherits all of it.
+    const key = isCreator ? "__creator__" : `${r.visitor_id || ""} ${nameKey(r.name)}`;
     let p = players.get(key);
     if (!p) { p = { name: isCreator ? (creator || r.name) : r.name, visitor_id: isCreator ? null : r.visitor_id, crown: isCreator ? 1 : 0, best: new Map() }; players.set(key, p); }
     rounds.forEach((cat, i) => {

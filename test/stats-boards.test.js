@@ -213,3 +213,101 @@ describe("server/stats.js — geoGoat decides identity by crown too", () => {
     assert.equal(board.length, 2);
   });
 });
+
+// Grouping. A board groups by visitor_id AND name, not by visitor_id alone.
+//
+// POST /challenge/:id/result takes `visitorId` straight from the body and cannot verify it — there
+// are no accounts, and every board published visitor_id for every row until it was removed, so those
+// ids are already copied and cannot be rotated (they live in each player's localStorage). Grouping on
+// the id alone meant one submission under someone else's id did not sit BESIDE them: this loop keeps
+// the best row per group along with that row's name, so a higher score REPLACED their public entry,
+// wearing the submitter's chosen text, and their own score vanished.
+//
+// This does not stop a stranger adding a row — an endpoint with no accounts can't. It stops them
+// taking over an existing player.
+describe("server/stats.js — an injected row can't replace a real player's entry", () => {
+  test("a row under someone else's visitor_id appears alongside them, not instead of them", async () => {
+    crownName(null);
+    dailyRows([
+      row({ name: "jayden", visitor_id: "v-jayden", score: 45 }),
+      row({ name: "THE INEVITABLE", visitor_id: "v-jayden", score: 162 }),
+      row({ name: "someone else", visitor_id: "v-other", score: 30 }),
+    ]);
+    const board = await analytics.dailyAllTime(50);
+    assert.equal(board.length, 3, "the impostor must not have absorbed jayden's entry");
+    const mine = board.find((e) => e.name === "jayden");
+    assert.ok(mine, "jayden's own row must still be on the board");
+    assert.equal(mine.score, 45);
+  });
+
+  test("one player's own repeat runs still collapse to their best", async () => {
+    // The feature the grouping exists for. Same id, same name → one entry.
+    crownName(null);
+    dailyRows([
+      row({ name: "jayden", visitor_id: "v-jayden", score: 30, challenge_id: "d-20260819" }),
+      row({ name: "jayden", visitor_id: "v-jayden", score: 45, challenge_id: "d-20260820" }),
+      row({ name: "jayden", visitor_id: "v-jayden", score: 22, challenge_id: "d-20260818" }),
+    ]);
+    const board = await analytics.dailyAllTime(50);
+    assert.equal(board.length, 1);
+    assert.equal(board[0].score, 45);
+  });
+
+  test("case and padding differences in a name don't split a real player in two", async () => {
+    // The name half is a grouping key, not an identity check — it only has to survive the client
+    // storing "jayden " once and "Jayden" another time.
+    crownName(null);
+    dailyRows([
+      row({ name: "jayden", visitor_id: "v-jayden", score: 30 }),
+      row({ name: "Jayden ", visitor_id: "v-jayden", score: 45 }),
+      row({ name: " JAYDEN", visitor_id: "v-jayden", score: 20 }),
+    ]);
+    const board = await analytics.dailyAllTime(50);
+    assert.equal(board.length, 1);
+    assert.equal(board[0].score, 45);
+  });
+
+  test("a rename keeps a player grouped, because renameResults rewrites all their rows", async () => {
+    // renameResults is a single UPDATE over every row a visitor owns, so after a rename their rows
+    // agree on name again. This is what makes name part of the key safe.
+    crownName(null);
+    dailyRows([
+      row({ name: "new name", visitor_id: "v-jayden", score: 30, challenge_id: "d-20260819" }),
+      row({ name: "new name", visitor_id: "v-jayden", score: 45, challenge_id: "d-20260820" }),
+    ]);
+    const board = await analytics.dailyAllTime(50);
+    assert.equal(board.length, 1);
+    assert.equal(board[0].score, 45);
+  });
+
+  test("two different people who picked the same name are still two entries", async () => {
+    crownName(null);
+    dailyRows([
+      row({ name: "jayden", visitor_id: "v-a", score: 40 }),
+      row({ name: "jayden", visitor_id: "v-b", score: 30 }),
+    ]);
+    const board = await analytics.dailyAllTime(50);
+    assert.equal(board.length, 2);
+  });
+
+  test("geoGoat groups the same way — it is the board a takeover would inherit most from", async () => {
+    // GOAT aggregates a visitor's best per category across their whole history.
+    crownName(null);
+    tables.push({ match: "SELECT id, rounds, timer FROM challenges", rows: [{ id: "c1", rounds: JSON.stringify(["Countries of the World"]), timer: 0 }] });
+    tables.push({ match: "WHERE mode='solo' OR mode='link'", rows: [
+      { challenge_id: "c1", name: "jayden", visitor_id: "v-jayden", scores: "[30]", times: null, crown: 0, mode: "solo" },
+      { challenge_id: "c1", name: "THE INEVITABLE", visitor_id: "v-jayden", scores: "[190]", times: null, crown: 0, mode: "solo" },
+    ] });
+    const board = await analytics.geoGoat(50);
+    assert.equal(board.length, 2, "jayden's own GOAT standing must survive");
+    assert.ok(board.some((e) => e.name === "jayden"));
+  });
+
+  test("the client's copy of the collapse uses the same key shape", () => {
+    // Three implementations of one rule (collapseBoard, geoGoat, lib/leaderboard.js). If they drift,
+    // a board disagrees with itself about who someone is — which is how the crown bug survived.
+    const src = require("node:fs").readFileSync(require("node:path").join(__dirname, "..", "lib", "leaderboard.js"), "utf8");
+    assert.match(src, /r\.vkey \|\| ""/, "keyed on the visitor token…");
+    assert.match(src, /trim\(\)\.toLowerCase\(\)/, "…paired with the normalised name");
+  });
+});

@@ -296,9 +296,10 @@ describe("POST /challenge/:id/result — what an unauthenticated write may do", 
     // The old cap was a flat 999 for every category, so this is exactly the payload that put
     // 999/999/999 on the board. "Countries of the World" has 197 answers; "US States" has 50.
     await withChallenge(["Countries of the World", "US States"], async (written) => {
-      const res = await post(buildApp(() => false), "1.1.1.1", { name: "THE ONE ABOVE ALL", scores: [999, 999] });
+      const res = await post(buildApp(() => false), "1.1.1.1", { name: "THE ONE ABOVE ALL", scores: [999, 999], wpms: [300, 300] });
       assert.equal(res.body.ok, true);
-      // Two ceilings apply, and the tighter one wins per round. These are 30-second rounds, so
+      // Three ceilings apply, and the tightest wins per round. 300 wpm is reported here so the
+      // typing ceiling is not the binding one — it has its own tests below. These are 30-second rounds, so
       // "Countries of the World" (197 answers) is bounded by the clock at 90, while "US States"
       // (50 answers) is bounded by its own size because 50 is already under 90.
       assert.deepEqual(written[0].scores, [90, 50], "each round capped by its own category and its own clock");
@@ -308,7 +309,7 @@ describe("POST /challenge/:id/result — what an unauthenticated write may do", 
 
   test("a legitimate score passes through untouched", async () => {
     await withChallenge(["Countries of the World", "US States"], async (written) => {
-      await post(buildApp(() => false), "1.1.1.2", { name: "mark", scores: [8, 14] });
+      await post(buildApp(() => false), "1.1.1.2", { name: "mark", scores: [8, 14], wpms: [40, 45] });
       assert.deepEqual(written[0].scores, [8, 14]);
     });
   });
@@ -317,7 +318,7 @@ describe("POST /challenge/:id/result — what an unauthenticated write may do", 
     // Mapping before slicing capped score[i] against the wrong category once the payload ran
     // longer than the challenge — a way to smuggle a big number into a small board.
     await withChallenge(["US States"], async (written) => {
-      await post(buildApp(() => false), "1.1.1.3", { name: "x", scores: [999, 999, 999] });
+      await post(buildApp(() => false), "1.1.1.3", { name: "x", scores: [999, 999, 999], wpms: [300, 300, 300] });
       assert.deepEqual(written[0].scores, [50], "only the real round survives, capped to its own size");
     });
   });
@@ -326,7 +327,7 @@ describe("POST /challenge/:id/result — what an unauthenticated write may do", 
     // A category retired since the challenge was created has no size to check against — but the
     // round still had a clock, so the pace ceiling covers it. 30 seconds allows 90.
     await withChallenge(["A Category That No Longer Exists"], async (written) => {
-      await post(buildApp(() => false), "1.1.1.4", { name: "x", scores: [999999] });
+      await post(buildApp(() => false), "1.1.1.4", { name: "x", scores: [999999], wpms: [300] });
       assert.equal(written[0].scores[0], 90);
     });
   });
@@ -476,7 +477,7 @@ describe("POST /challenge/:id/result — the pace ceiling", () => {
     // "Countries of the World" has 197 answers, but 197 of them in 30 seconds is 6.5 per second.
     // 3/s is the generous ceiling, so 90.
     await withChallenge({ id: "d-1", rounds: ["Countries of the World"], timer: 30 }, async (written) => {
-      await post(buildApp(() => false), "3.3.3.1", { name: "x", scores: [999] });
+      await post(buildApp(() => false), "3.3.3.1", { name: "x", scores: [999], wpms: [300] });
       assert.equal(written[0].scores[0], 90);
     });
   });
@@ -485,16 +486,16 @@ describe("POST /challenge/:id/result — the pace ceiling", () => {
     // US States has 50 answers and a 30s round allows 90 — so the size is the tighter ceiling and
     // must win. Whichever is smaller applies.
     await withChallenge({ id: "d-1", rounds: ["US States"], timer: 30 }, async (written) => {
-      await post(buildApp(() => false), "3.3.3.2", { name: "x", scores: [999] });
+      await post(buildApp(() => false), "3.3.3.2", { name: "x", scores: [999], wpms: [300] });
       assert.equal(written[0].scores[0], 50);
     });
   });
 
   test("a full-length run can still reach every answer in the category", async () => {
-    // The point of two ceilings is that neither punishes a real player: given the category's own
-    // recommended 15 minutes, a perfect 197 must go through untouched.
+    // The point of the ceilings is that none of them punishes a real player: given the category's
+    // own recommended 15 minutes and a real 90 wpm, a perfect 197 must go through untouched.
     await withChallenge({ id: "d-1", rounds: ["Countries of the World"], timer: 900 }, async (written) => {
-      await post(buildApp(() => false), "3.3.3.3", { name: "x", scores: [197] });
+      await post(buildApp(() => false), "3.3.3.3", { name: "x", scores: [197], wpms: [90] });
       assert.equal(written[0].scores[0], 197);
     });
   });
@@ -503,7 +504,7 @@ describe("POST /challenge/:id/result — the pace ceiling", () => {
     // A challenge created with timer:0 has no single length on the row; the category's own
     // recommended time is the honest figure, and it comes from the server's table either way.
     await withChallenge({ id: "d-1", rounds: ["Countries of the World"], timer: 0 }, async (written) => {
-      await post(buildApp(() => false), "3.3.3.4", { name: "x", scores: [999] });
+      await post(buildApp(() => false), "3.3.3.4", { name: "x", scores: [999], wpms: [300] });
       assert.equal(written[0].scores[0], 197, "recommended 900s allows the whole category");
     });
   });
@@ -511,7 +512,7 @@ describe("POST /challenge/:id/result — the pace ceiling", () => {
   test("a genuine daily score is nowhere near either ceiling", async () => {
     // The best real daily score on this leaderboard is 45. Nothing here may touch that.
     await withChallenge({ id: "d-1", rounds: ["Countries of the World", "US States"], timer: 30 }, async (written) => {
-      await post(buildApp(() => false), "3.3.3.5", { name: "mark", scores: [8, 14] });
+      await post(buildApp(() => false), "3.3.3.5", { name: "mark", scores: [8, 14], wpms: [40, 45] });
       assert.deepEqual(written[0].scores, [8, 14]);
       assert.equal(written[0].total, 22);
     });
@@ -629,6 +630,123 @@ describe("the boards don't publish anyone's identity", () => {
       const res = await request(buildApp(() => false)).get("/geo-goat");
       assert.equal(res.status, 200);
       assert.equal(res.body.results.some((r) => r.mine), false);
+    });
+  });
+});
+
+// The third ceiling, added after a friend of the owner demonstrated the previous two being
+// insufficient with one shell command:
+//
+//   http POST …/challenge/d-20260820/result scores:='[999,999,999]' wpms:='[0,0,0]' times:='[]'
+//
+// The size and pace caps clamped that to 49/62/51 — a PERFECT clear of all three of that day's
+// categories, total 162, against a real best-ever daily of 45. Both ceilings did exactly what they
+// were written to do; the problem is that "answers per second" is not something a payload can be
+// checked against. Characters are: the same payload reported typing nothing at all.
+describe("POST /challenge/:id/result — the typing ceiling", () => {
+  const analytics = require("../server/stats.js");
+  const post = (app, ip, body) => request(app).post("/challenge/d-1/result").set("fly-client-ip", ip).send(body);
+
+  function withChallenge(challenge, run) {
+    const saved = { enabled: analytics.enabled, getChallenge: analytics.getChallenge, addChallengeResult: analytics.addChallengeResult };
+    const written = [];
+    analytics.enabled = () => true;
+    analytics.getChallenge = async () => challenge;
+    analytics.addChallengeResult = async (row) => { written.push(row); return true; };
+    return Promise.resolve(run(written)).finally(() => Object.assign(analytics, saved));
+  }
+  // The real d-20260820 rounds, which is what the reported command targeted.
+  const THE_DAILY = { id: "d-1", rounds: ["European Soccer Clubs", "Musical Instruments", "Greek Gods"], timer: 30 };
+
+  test("the reported attack no longer buys a perfect clear", async () => {
+    await withChallenge(THE_DAILY, async (written) => {
+      await post(buildApp(() => false), "4.4.4.1", { name: "THE INEVITABLE", scores: [999, 999, 999], wpms: [0, 0, 0], times: [] });
+      // Was 49/62/51 = 162. Zero reported typing accounts for no answers, so all that survives is
+      // the allowance that exists to protect real under-reported rounds.
+      assert.deepEqual(written[0].scores, [6, 6, 6]);
+      assert.ok(written[0].total < 45, `total ${written[0].total} must fall below the real best-ever daily of 45`);
+    });
+  });
+
+  test("omitting wpms entirely is treated as claiming no typing, not as claiming exemption", async () => {
+    // Otherwise the fix is one deleted field away from being bypassed. Both real submission paths
+    // (hooks/useSolo.js and lib/browser/daily.js) always send a wpm per completed round.
+    await withChallenge(THE_DAILY, async (written) => {
+      await post(buildApp(() => false), "4.4.4.2", { name: "x", scores: [999, 999, 999] });
+      assert.deepEqual(written[0].scores, [6, 6, 6]);
+    });
+  });
+
+  test("a wpm past what anyone sustains is clamped before it can raise anything", async () => {
+    // wpms used to be capped at 9999, so "I typed at 9999 wpm" was a free pass through this check.
+    await withChallenge(THE_DAILY, async (written) => {
+      await post(buildApp(() => false), "4.4.4.3", { name: "x", scores: [999, 999, 999], wpms: [99999, 99999, 99999] });
+      assert.deepEqual(written[0].wpms, [300, 300, 300], "stored at the human ceiling, not as claimed");
+      // 300 wpm for 30s is 750 characters, which genuinely could type a whole small category —
+      // this check bounds the arithmetic, it does not pretend to detect a consistent lie.
+      assert.deepEqual(written[0].scores, [49, 62, 51]);
+    });
+  });
+
+  test("a claimed-plausible speed still can't clear a category it couldn't have typed", async () => {
+    // 60 wpm is 150 characters in 30 seconds. European Soccer Clubs answers are 6+ characters at
+    // the 10th percentile, so 49 of them was never typeable at that speed.
+    await withChallenge(THE_DAILY, async (written) => {
+      await post(buildApp(() => false), "4.4.4.4", { name: "x", scores: [999, 999, 999], wpms: [60, 60, 60] });
+      assert.ok(written[0].scores[0] < 49, `${written[0].scores[0]} must be under the category's 49`);
+      assert.ok(written[0].total < 162, `total ${written[0].total} must be under the old 162`);
+    });
+  });
+
+  test("a real good run is untouched", async () => {
+    // The property that matters most: a false rejection costs a real player their run.
+    await withChallenge(THE_DAILY, async (written) => {
+      await post(buildApp(() => false), "4.4.4.5", { name: "mark", scores: [15, 15, 15], wpms: [45, 45, 45] });
+      assert.deepEqual(written[0].scores, [15, 15, 15]);
+      assert.equal(written[0].total, 45, "exactly the real best-ever daily, and it survives intact");
+    });
+  });
+
+  test("an elite run is untouched too", async () => {
+    await withChallenge(THE_DAILY, async (written) => {
+      await post(buildApp(() => false), "4.4.4.6", { name: "fast", scores: [25, 30, 28], wpms: [95, 95, 95] });
+      assert.deepEqual(written[0].scores, [25, 30, 28]);
+    });
+  });
+
+  test("a small real round whose typing was never sampled still counts", async () => {
+    // liveWpm() returns 0 for a round it never saw a keystroke in, and the answer box is cleared
+    // programmatically so it loses roughly the first character of every answer. A player who named
+    // two things must not be zeroed for that.
+    await withChallenge(THE_DAILY, async (written) => {
+      await post(buildApp(() => false), "4.4.4.7", { name: "quiet", scores: [2, 1, 3], wpms: [0, 0, 0] });
+      assert.deepEqual(written[0].scores, [2, 1, 3]);
+    });
+  });
+
+  test("a genuine full clear of a long board is still reachable", async () => {
+    // 197 countries over the recommended 15 minutes at 90 wpm: 6750 characters against a 5-character
+    // 10th percentile. No ceiling may touch it.
+    await withChallenge({ id: "d-1", rounds: ["Countries of the World"], timer: 900 }, async (written) => {
+      await post(buildApp(() => false), "4.4.4.8", { name: "x", scores: [197], wpms: [90] });
+      assert.equal(written[0].scores[0], 197);
+    });
+  });
+
+  test("the ceiling is derived per category, not from one global number", async () => {
+    // Greek Gods answers are shorter than European Soccer Clubs answers, so the same reported speed
+    // has to allow more of them. A flat divisor would make one category unfair or the other useless.
+    await withChallenge({ id: "d-1", rounds: ["European Soccer Clubs", "Greek Gods"], timer: 30 }, async (written) => {
+      await post(buildApp(() => false), "4.4.4.9", { name: "x", scores: [999, 999], wpms: [60, 60] });
+      assert.ok(written[0].scores[1] > written[0].scores[0],
+        `shorter answers should permit more of them: got ${JSON.stringify(written[0].scores)}`);
+    });
+  });
+
+  test("a category with no item list of its own keeps a ceiling rather than becoming unbounded", async () => {
+    await withChallenge({ id: "d-1", rounds: ["A Category That No Longer Exists"], timer: 30 }, async (written) => {
+      await post(buildApp(() => false), "4.4.4.10", { name: "x", scores: [999999], wpms: [0] });
+      assert.equal(written[0].scores[0], 6);
     });
   });
 });

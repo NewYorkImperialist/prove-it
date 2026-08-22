@@ -8,7 +8,7 @@ const analytics = require("../server/stats"); // persistent game history (Turso)
 const SITE = require("../lib/site-config");
 const { render, siteVars } = require("../lib/render.js");
 const { easternDay } = require("../lib/html.js");
-const { CATEGORY_GROUPS, CAT_SIZES, ALL_ROUND_NAMES } = require("../lib/category-data.js");
+const { CATEGORY_GROUPS, CAT_SIZES, CAT_ITEMS, ALL_ROUND_NAMES } = require("../lib/category-data.js");
 const { cleanName, isBlocked } = require("../lib/name-filter.js");
 const { MODES, allBoards } = require("../lib/geo-boards.js");
 const { recommendedTime } = require("../lib/solo-catalog.js"); // per-category round length, for the pace cap
@@ -68,6 +68,48 @@ function submitAllowed(req, purpose = "result") {
 // the round: on a 30-second daily round the pace cap is the tighter of the two, while on a
 // 15-minute geography board the category's own answer count is.
 const PACE_PER_SECOND = 3;
+
+// The third ceiling, and the one that actually bites: a round's score has to be consistent with the
+// typing speed the SAME payload reports for it.
+//
+// The pace and size caps together still let a fabricated run claim a perfect clear of every
+// category. `http POST … scores:='[999,999,999]' wpms:='[0,0,0]'` on a 30-second daily stored
+// 49/62/51 — every answer in all three categories, from a run that reports typing nothing at all.
+// A cap is only as good as its units, and "answers per second" is not a thing a payload can be
+// checked against; characters are.
+//
+// wpm × 5 = characters per minute (the standard definition of a word for typing speed), so a round
+// of `seconds` at the claimed wpm accounts for a computable number of keystrokes. Divided by the
+// shortest plausible answer this yields the most answers that typing could have produced.
+//
+// The divisor is measured from each category's OWN answers rather than being a magic number, because
+// a flat one is either useless or unfair: at 2 chars ("generously short") a claimed 60 wpm still
+// buys a perfect clear of every category, and at the mean it would reject a real player who happened
+// to name only the short answers.
+//
+// The 10th percentile of the category's answer lengths is the honest middle. It cannot reject a real
+// run — 90% of that category's answers are longer, so any real set of N answers types at least this
+// much — while a claimed full clear has to come with a plausible wpm to survive. Greek Gods is the
+// worked example: p10 is 4 chars, so clearing all 51 needs ≳72 claimed wpm, whereas actually typing
+// all 51 (mean 6.0 chars) needs ~122 wpm sustained. The ceiling therefore sits below every genuine
+// clear and above every fabricated one that doesn't also fake its typing speed.
+//
+// FREE_ANSWERS absorbs the client's own under-reporting: hooks/useSolo.js clears the answer box
+// programmatically, so it loses roughly the first character of every answer, and liveWpm() returns 0
+// outright for a round whose typing was never sampled. Without the allowance a real one- or
+// two-answer round would be rejected.
+const FREE_ANSWERS = 6;
+const FALLBACK_CHARS = 4; // categories with no item list of their own (flags/borders quizzes)
+const MAX_HUMAN_WPM = 300; // matches MAX_WPM in hooks/useSolo.js — past this it was pasted, not typed
+const CAT_MIN_CHARS = {};
+for (const [cat, items] of Object.entries(CAT_ITEMS)) {
+  const lens = (items || []).map((it) => String(Array.isArray(it) ? it[0] : it).length).sort((a, b) => a - b);
+  if (lens.length) CAT_MIN_CHARS[cat] = Math.max(3, lens[Math.floor(lens.length * 0.1)]);
+}
+const typedCeiling = (wpm, seconds, category) => {
+  const chars = Math.max(0, Math.min(MAX_HUMAN_WPM, wpm)) * 5 * Math.max(1, seconds) / 60;
+  return Math.floor(chars / (CAT_MIN_CHARS[category] || FALLBACK_CHARS)) + FREE_ANSWERS;
+};
 
 // Every board used to hand each row's real `visitor_id` to every client. That turned a private
 // handle into a public one, and /challenge/rename trusted it as proof of ownership — so reading a
@@ -224,23 +266,30 @@ function createChallengeRouter({ isLockdown }) {
     //    daily pool is built from, so this is the real answer count rather than a guess.
     // 2. It cannot exceed what a human could physically type in the time the round allowed. Without
     //    this, 197 answers in a 30-second round still passes — absurd, but within the size cap.
+    // 3. It cannot exceed what the payload's OWN reported typing speed accounts for. 1 and 2 together
+    //    still allowed a perfect clear of every category from a run reporting zero keystrokes, which
+    //    is what a fabricated submission actually looks like — see typedCeiling above.
     //
     // A round's length is the challenge's own `timer`, or the category's recommended time when the
     // challenge was created with timer:0 ("recommended per round"). Both come from the server's own
-    // tables, never from the payload, so neither can be inflated by the caller.
+    // tables, never from the payload, so neither can be inflated by the caller. Only the wpm in 3 is
+    // caller-supplied, which is why it is clamped to a human maximum before it is trusted to raise
+    // anything — claiming 9999 wpm used to be free.
+    const wpms = (Array.isArray(b.wpms) ? b.wpms : []).slice(0, c.rounds.length)
+      .map((n) => Math.max(0, Math.min(MAX_HUMAN_WPM, parseInt(n, 10) || 0)));
     const roundCap = (i) => {
       const name = (c.rounds || [])[i];
       const size = CAT_SIZES[name];
       const seconds = c.timer > 0 ? c.timer : recommendedTime(name);
       const byPace = Math.ceil(Math.max(1, seconds) * PACE_PER_SECOND);
       const bySize = Number.isFinite(size) && size > 0 ? size : 999;
-      return Math.min(bySize, byPace);
+      const byTyping = typedCeiling(wpms[i] || 0, seconds, name);
+      return Math.min(bySize, byPace, byTyping);
     };
     // Slice before mapping so each score still lines up with its own round — mapping first and
     // slicing after would cap score[i] against the wrong category on an over-long payload.
     const scores = (Array.isArray(b.scores) ? b.scores : []).slice(0, c.rounds.length)
       .map((n, i) => Math.max(0, Math.min(roundCap(i), parseInt(n, 10) || 0)));
-    const wpms = (Array.isArray(b.wpms) ? b.wpms : []).map((n) => Math.max(0, Math.min(9999, parseInt(n, 10) || 0))).slice(0, c.rounds.length);
     // seconds-to-complete per round (null when not fully completed) — for speed ranking on maxed boards
     const times = (Array.isArray(b.times) ? b.times : []).map((n) => { const t = parseInt(n, 10); return t > 0 ? Math.min(3600, t) : null; }).slice(0, c.rounds.length);
     const total = scores.reduce((a, n) => a + n, 0);

@@ -914,10 +914,7 @@ export function useSolo({ onExitToMenu }) {
       // Read the answer rather than discarding it: this returned { ok: true } unconditionally, so
       // "Update" reported success even when the rename never landed, and the caller's own failure
       // branch could never fire for a non-daily run.
-      // gid comes along because the server won't rename on a bare visitorId any more — that value is
-      // published on every leaderboard, so it identifies the rows without proving they're yours.
-      // The finished run already saved itself under this gid, so it's on record.
-      const res = await postJSON("/challenge/rename", { name: n, visitorId, gid: runGid.current, ownerKey: ownerKeyIfCrowned() });
+      const res = await postJSON("/challenge/rename", { name: n, visitorId, ownerKey: ownerKeyIfCrowned() });
       if (!res.ok) return { ok: false, error: "Couldn't update your name — check your connection and try again." };
       return { ok: true, name: n };
     },

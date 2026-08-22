@@ -1,19 +1,20 @@
 "use client";
 import { cx } from "@/lib/browser/cx";
 
-// The brand mark: a dark two-circle glyph (◎) on a filled amber plate — the original mark, and the
-// same way round as the favicon.
+// The brand mark: an amber two-circle glyph (◎) on a near-black plate, matching the home-screen
+// icons in public/ and the favicon.
 //
-// Not the same way round as the home-screen icons in public/, which stay amber-on-black. That is
-// intentional: an installed icon sits on the user's own wallpaper, where a solid amber square is a
-// bright blob among their other apps, while this badge and the favicon sit on this app's near-black
-// panels and in a browser tab strip, where the filled plate is what makes the mark findable. Being
-// filled is also why it needs no border, unlike Crown below — the plate is its own edge.
+// The amber edge is load-bearing, not decoration. Every surface this badge sits on is already
+// near-black (--bg on the home card, --panel in the multiplayer top bar), so a dark plate with no
+// border is a dark square on a dark background: the plate disappears and the glyph is left
+// floating. The border is what keeps it reading as a tile. Same trick, and same rgba amber, as
+// Crown below.
 export function LogoBadge({ className }) {
   return (
     <span
       className={cx(
-        "inline-grid shrink-0 place-items-center rounded-lg bg-[linear-gradient(140deg,#f5a623,#e0801a)] text-markfg leading-none [-webkit-text-stroke:.9px_#241500]",
+        "inline-grid shrink-0 place-items-center rounded-lg bg-[linear-gradient(140deg,#1c1710,#0e0b07)] text-accent leading-none [-webkit-text-stroke:.9px_#f5a623]",
+        "border border-[rgba(245,166,35,.55)]",
         "h-[30px] w-[30px] text-base",
         className,
       )}

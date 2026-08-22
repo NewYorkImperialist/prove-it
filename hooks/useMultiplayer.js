@@ -187,10 +187,6 @@ export function useMultiplayer({ router }) {
     (res, { name } = {}) => {
       myIdRef.current = res.you;
       rememberRoom(res.code);
-      // The seat token from the ack. It is what proves this seat is ours when we reconnect: a
-      // playerId used to be enough, and roomState broadcasts every playerId to the whole room, so
-      // anyone watching could claim someone else's seat. Spectators get no token, which is right.
-      if (res.seat) store.setSeatToken(res.code, res.seat);
       // The server decides the role, not our request: "spectateRoom" on a code you still hold a
       // seat in resumes you as a PLAYER (rooms.js doResume), and so does joinRoom on your own
       // code. Trusting our own intent here would leave a seated player in the read-only
@@ -223,7 +219,7 @@ export function useMultiplayer({ router }) {
       // "4-letter" was wrong: makeCode() draws from ABCDEFGHJKMNPQRSTUVWXYZ23456789, so a real code
       // can be 7K2Q. Someone reading "letter" literally has no reason to believe their own code.
       if (c.length < 4) return setErr(key, "Enter the 4-character room code.");
-      socket.emit("joinRoom", { code: c, name, playerId, seat: store.getSeatToken(c) }, (res) => {
+      socket.emit("joinRoom", { code: c, name, playerId }, (res) => {
         if (!res?.ok) {
           const hint = roomMode === "race" ? " (not sure of the code?)" : " (tap Spectate to watch)";
           return setErr(key, (res?.error || "Could not join room.") + hint);
@@ -242,7 +238,7 @@ export function useMultiplayer({ router }) {
       setErr("home", "");
       const c = String(code || "").trim().toUpperCase();
       if (c.length < 4) return setErr("home", "Enter the room code to spectate.");
-      socket.emit("spectateRoom", { code: c, name, playerId, seat: store.getSeatToken(c) }, (res) => {
+      socket.emit("spectateRoom", { code: c, name, playerId }, (res) => {
         if (!res?.ok) return setErr("home", res?.error || "Could not spectate.");
         enterRoom(res, { name });
       });
@@ -688,11 +684,10 @@ export function useMultiplayer({ router }) {
           : q,
       );
 
-    const onQuickMatchFound = ({ code, you, seat }) => {
+    const onQuickMatchFound = ({ code, you }) => {
       setQuickMatch({ inQueue: false, status: "" });
       myIdRef.current = you || myIdRef.current;
       rememberRoom(code);
-      if (seat) store.setSeatToken(code, seat);
       router.go("room");
       applyCrown();
     };
@@ -717,7 +712,7 @@ export function useMultiplayer({ router }) {
       }
       const code = myRoomRef.current;
       if (code && isSpectatorRef.current) {
-        socket.emit("spectateRoom", { code, name: store.getMpName(), playerId, seat: store.getSeatToken(code) }, (res) => {
+        socket.emit("spectateRoom", { code, name: store.getMpName(), playerId }, (res) => {
           if (!res?.ok) {
             rememberRoom(null);
             router.go("home");
@@ -732,7 +727,7 @@ export function useMultiplayer({ router }) {
           }
         });
       } else if (code) {
-        socket.emit("resume", { code, playerId, seat: store.getSeatToken(code) }, (res) => {
+        socket.emit("resume", { code, playerId }, (res) => {
           if (!res?.ok) { // room gone → back to the start
             rememberRoom(null);
             router.go("home");
@@ -749,7 +744,7 @@ export function useMultiplayer({ router }) {
           }
         });
       } else if (url.spectate) {
-        socket.emit("spectateRoom", { code: url.spectate, name: store.getMpName(), playerId, seat: store.getSeatToken(url.spectate) }, (res) => {
+        socket.emit("spectateRoom", { code: url.spectate, name: store.getMpName(), playerId }, (res) => {
           if (!res?.ok) {
             router.go("mpsetup");
             return setErr("home", res?.error || "Could not spectate.");
@@ -775,7 +770,7 @@ export function useMultiplayer({ router }) {
         return setErr("home", "Enter your name to join this room.");
       }
       triedInvite.current = true;
-      socket.emit("joinRoom", { code: url.invite, name: inviteName, playerId, seat: store.getSeatToken(url.invite) }, (res) => {
+      socket.emit("joinRoom", { code: url.invite, name: inviteName, playerId }, (res) => {
         // A full, closed or already-started room used to fail here in total silence — the invite
         // dropped you on the setup card with no hint that the link itself was the problem.
         if (!res?.ok) return setErr("home", res?.error || "Could not join that room.");

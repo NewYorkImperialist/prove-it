@@ -5,9 +5,7 @@
 // Identity is the stable playerId (the client keeps it in sessionStorage), NOT the
 // socket id — so a reconnect with a new socket re-claims the same player slot.
 
-const crypto = require("node:crypto");
 const { createMatchmaking } = require("./matchmaking.js");
-const { newSeatToken, seatTokenOk } = require("../lib/seat-token.js");
 const { isBlocked } = require("../lib/name-filter.js");
 const { sourceOf, safeReferrer } = require("../lib/referral.js");
 
@@ -20,26 +18,6 @@ const FORMATS = [3, 5, null];
 const isValidIncrement = (n) => Number.isInteger(n) && n >= 0 && n <= 30; // bonus seconds per correct answer
 const MAX_PLAYERS = 2; // the 1v1 duel is always exactly 2
 const MAX_RACE_PLAYERS = 8; // race rooms allow a small group
-// Every spectator is listed in every roomState, and roomState goes to everyone in the room — so
-// the bytes on the wire grow with players × spectators, and an unbounded spectator list is an
-// amplifier: one socket joining makes every other socket's next update bigger, forever. None of
-// that egress is counted by the cost guard either, which only tallies HTTP.
-//
-// 20 is far above any real audience for a two-player word game and far below the point where the
-// broadcast matters.
-const MAX_SPECTATORS = 20;
-// Concurrent sockets from one address. Deliberately high: a household, an office or a school all
-// share one address, and a player legitimately keeps two or three tabs open — a cap tight enough to
-// be interesting to an attacker would lock out a classroom playing together, which is a worse
-// outcome than the abuse it prevents. What it actually protects is broadcastPresence, an io.emit to
-// every client on every connect, so N connects cost O(N²) emits; at 100 that is nothing and at
-// 10,000 it is a problem.
-//
-// Spoofable, like every IP-keyed limit here (the headers it reads are the caller's own), so it is a
-// speed bump against a naive loop rather than a boundary. The boundaries are the per-room caps and
-// the frame size above. Overridable for the same reason quickMatchGraceMs is: the socket tests hold
-// well over a hundred connections from 127.0.0.1 across one run.
-const MAX_SOCKETS_PER_IP = 100;
 const MIN_RACE_PLAYERS = 2;
 const { GRACE_MS } = require("../lib/match-rules.js"); // shared with the view builders, which say the number out loud
 const CHAT_MIN_GAP_MS = 400; // anti-spam gap between one player's chat messages
@@ -58,11 +36,7 @@ const NAME_REJECTED = "That name isn't allowed — pick a different one.";
 // via `resume` — nobody forfeits until GRACE_MS is fully spent. The extra heartbeat traffic is a
 // few bytes per client every 5s. The client inherits both values from the handshake, so its own
 // "reconnecting…" indicator speeds up by the same amount.
-// maxHttpBufferSize was Socket.IO's 1MB default. Nothing here has any use for a frame remotely
-// that size: the largest legitimate payload is a chat line (200 chars), a duel answer (160), a
-// name (20) or the clientMeta blob. 16KB is many times the real ceiling and takes a whole class of
-// memory-pressure games off the table on a 256MB machine.
-const PING_OPTIONS = { pingInterval: 5000, pingTimeout: 5000, maxHttpBufferSize: 16 * 1024 };
+const PING_OPTIONS = { pingInterval: 5000, pingTimeout: 5000 };
 
 // ---- client IP + rough geolocation (owner-only analytics) ----
 function clientIp(headers, fallback) {
@@ -91,7 +65,7 @@ const deviceOf = (socket) => (/Mobile|Android|iPhone|iPad|iPod/i.test(socket.han
 // io: the Socket.IO server. engine: game-engine.js (the 1v1 duel). raceEngine: race-engine.js
 // (the live "Challenge Race" mode — room.mode distinguishes which engine owns room.game).
 // analytics: stats.js (persistent history). CATEGORY_GROUPS/DEFAULT_GROUPS: lib/category-data.js.
-function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS, quickMatchGraceMs, maxSocketsPerIp = MAX_SOCKETS_PER_IP }) {
+function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS, quickMatchGraceMs }) {
   const rooms = new Map();
   const engineFor = (room) => (room.mode === "race" ? raceEngine : engine);
   const capFor = (room) => (room.mode === "race" ? (room.settings?.maxPlayers || MAX_RACE_PLAYERS) : MAX_PLAYERS);
@@ -112,9 +86,8 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     return code;
   }
   function genId() {
-    return crypto.randomBytes(9).toString("base64url");
+    return Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6);
   }
-
   // Trim + cap; a blank name gets the house joke name.
   function cleanName(name) {
     return String(name || "").trim().slice(0, 20) || "Jayden Lin fanboy";
@@ -148,8 +121,6 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     return {
       code: room.code, hostId: room.hostId, status: room.status, mode: room.mode, settings: room.settings,
       players: [...room.players.values()].map((p) => ({
-        // Deliberately no `token`: it is the seat credential, and this object goes to everyone
-        // in the room including spectators.
         id: p.id, name: p.name, isHost: p.id === room.hostId, connected: p.connected, crown: !!p.crown,
       })),
       spectators: room.spectators ? [...room.spectators.values()].map((s) => ({ id: s.id, name: s.name })) : [],
@@ -168,7 +139,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
         ? { groups: [...DEFAULT_GROUPS], timer: 45, format: 5, suddenDeath: false, maxPlayers: MAX_RACE_PLAYERS, increment: 0 }
         : { groups: [...DEFAULT_GROUPS], timer: 30, target: 5, autoAdvance: true, increment: 0 }),
       players: new Map(), spectators: new Map(), graceTimeouts: new Map(), createdAt: now, lastActivityAt: now };
-    room.players.set(hostId, { id: hostId, name: cleanName(hostName), socketId, connected: true, token: newSeatToken() });
+    room.players.set(hostId, { id: hostId, name: cleanName(hostName), socketId, connected: true });
     rooms.set(code, room);
     stats.roomsCreated++; stats.peakRooms = Math.max(stats.peakRooms, rooms.size);
     return room;
@@ -238,30 +209,12 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     else if (room.spectators?.has(pid)) { room.spectators.delete(pid); broadcast(room); }
   }
 
-  // Concurrent sockets per address. Counted from the live socket set rather than kept in a Map, so
-  // there is no bookkeeping to leak and nothing to prune — and a spoofed header buys a fresh bucket
-  // rather than growing an unbounded one.
-  function socketsFromSameIp(ip) {
-    if (!ip) return 0;
-    let n = 0;
-    for (const s of io.sockets.sockets.values()) if (s.data?.ip === ip) n++;
-    return n;
-  }
-
   io.on("connection", (socket) => {
-    const ip = clientIp(socket.handshake?.headers, socket.handshake?.address);
-    socket.data.ip = ip;
-    if (socketsFromSameIp(ip) > maxSocketsPerIp) {
-      console.log(`🚫 refused ${socket.id}: too many connections from one address`);
-      socket.emit("announce", { text: "Too many connections from your network — close a tab and try again." });
-      socket.disconnect(true);
-      return;
-    }
     console.log(`✅ connected: ${socket.id}`);
     online++; broadcastPresence();
     socket.on("latencyPing", (ack) => { if (typeof ack === "function") ack(); }); // RTT probe for the client's "X ms" indicator
     socket.on("enterSingleplayer", () => { if (socket.data.session) socket.data.session.singleplayer = true; }); // they left the lobby for Solo/Daily
-    // ip was resolved above, for the connection cap, and is already on socket.data.
+    const ip = clientIp(socket.handshake.headers, socket.handshake.address);
     socket.data.session = { connectedAt: Date.now(), device: deviceOf(socket), joined: false, spectated: false, played: false, name: null, ip, visitor_id: null, tz: null, locale: null, geo: null, ref_source: null, referrer: null };
     geoLookup(ip).then((g) => { if (socket.data.session) socket.data.session.geo = g; }); // async; resolved well before disconnect
     // Client reports its persistent visitor id + timezone/locale + where the visit came from, right
@@ -284,13 +237,12 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     });
 
     function doResume(room, pid, ack) {
-      if (socket.data.roomCode && socket.data.roomCode !== room.code) leaveCurrentRoom(socket);
       attach(room, socket, pid);
       // They're back — cancel their own forfeit countdown, not another player's.
       clearTimeout(room.graceTimeouts?.get(pid));
       room.graceTimeouts?.delete(pid);
       io.to(room.code).emit("opponentStatus", { connected: true, name: room.players.get(pid).name });
-      ack?.({ ok: true, code: room.code, you: pid, seat: room.players.get(pid).token, inGame: !!room.game, mode: room.mode });
+      ack?.({ ok: true, code: room.code, you: pid, inGame: !!room.game, mode: room.mode });
       broadcast(room);
       // Unpause only once EVERYONE is back: with a per-player grace timer two players can be
       // away at the same time, and the first one to return must not restart the other's clock.
@@ -319,23 +271,17 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       const room = newRoom({ mode, hostId: pid, hostName: name, socketId: socket.id, settings });
       attach(room, socket, pid);
       console.log(`🏠 room ${room.code} created (${room.mode})`);
-      ack?.({ ok: true, code: room.code, you: pid, seat: room.players.get(pid).token, mode: room.mode });
+      ack?.({ ok: true, code: room.code, you: pid, mode: room.mode });
       broadcast(room);
     });
 
-    socket.on("joinRoom", ({ code, name, playerId, seat } = {}, ack) => {
+    socket.on("joinRoom", ({ code, name, playerId } = {}, ack) => {
       if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
       code = String(code || "").toUpperCase().trim();
       const room = rooms.get(code);
       if (!room) return ack?.({ ok: false, error: "No room with that code." });
-      let pid = playerId || genId();
-      // Rejoining your own slot — but only with the seat token for it. Without the token we do NOT
-      // refuse: fall through and seat them fresh, since the honest case (a client that lost its
-      // token) should still get into the room rather than being locked out of a code it can see.
-      if (room.players.has(pid)) {
-        if (seatTokenOk(room.players.get(pid), seat)) return doResume(room, pid, ack);
-        pid = genId(); // someone else's seat, or ours without proof — take a new one
-      }
+      const pid = playerId || genId();
+      if (room.players.has(pid)) return doResume(room, pid, ack); // rejoining your own slot
       if (room.players.size >= capFor(room)) return ack?.({ ok: false, error: "That room is full." });
       if (room.status !== "waiting") return ack?.({ ok: false, error: "That game already started." });
       // Only a NEW seat is name-checked: a resume (handled above) must never be blocked by a
@@ -343,10 +289,10 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       const badJoin = nameRejected(name);
       if (badJoin) return ack?.({ ok: false, error: badJoin });
       leaveCurrentRoom(socket);
-      room.players.set(pid, { id: pid, name: uniqueName(room, name, pid), socketId: socket.id, connected: true, token: newSeatToken() });
+      room.players.set(pid, { id: pid, name: uniqueName(room, name, pid), socketId: socket.id, connected: true });
       attach(room, socket, pid);
       console.log(`➕ joined room ${code}`);
-      ack?.({ ok: true, code, you: pid, seat: room.players.get(pid).token, mode: room.mode });
+      ack?.({ ok: true, code, you: pid, mode: room.mode });
       broadcast(room);
     });
 
@@ -359,26 +305,17 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     socket.on("quickMatchLeave", (_p, ack) => { matchmaking.leave(socket); ack?.({ ok: true }); });
 
     // Join a room as a read-only spectator (watch the game; can chat but can't play).
-    socket.on("spectateRoom", ({ code, name, playerId, seat } = {}, ack) => {
+    socket.on("spectateRoom", ({ code, name, playerId } = {}, ack) => {
       if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
       code = String(code || "").toUpperCase().trim();
       const room = rooms.get(code);
       if (!room) return ack?.({ ok: false, error: "No room with that code." });
-      let pid = playerId || genId();
-      // A spectator claiming a seated id gets that seat only with its token; otherwise they watch.
-      if (room.players.has(pid)) {
-        if (seatTokenOk(room.players.get(pid), seat)) return doResume(room, pid, ack);
-        pid = genId();
-      }
+      const pid = playerId || genId();
+      if (room.players.has(pid)) return doResume(room, pid, ack); // they're actually a player → resume their slot
       const badSpec = nameRejected(name);
       if (badSpec) return ack?.({ ok: false, error: badSpec }); // a spectator's name shows in the roster and in chat too
-      if (!room.spectators) room.spectators = new Map();
-      // Checked BEFORE leaving the room they're in, so a refusal costs them nothing — same reason
-      // the name check sits where it does.
-      if (room.spectators.size >= MAX_SPECTATORS && !room.spectators.has(pid)) {
-        return ack?.({ ok: false, error: "That room already has the maximum number of watchers." });
-      }
       leaveCurrentRoom(socket);
+      if (!room.spectators) room.spectators = new Map();
       const specName = uniqueName(room, name, pid);
       room.spectators.set(pid, { id: pid, name: specName, socketId: socket.id });
       socket.join(code);
@@ -410,13 +347,10 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     });
 
     // Reconnect to an existing slot (after refresh / network drop).
-    socket.on("resume", ({ code, playerId, seat } = {}, ack) => {
+    socket.on("resume", ({ code, playerId } = {}, ack) => {
       code = String(code || "").toUpperCase().trim();
       const room = rooms.get(code);
       if (!room || !playerId || !room.players.has(playerId)) return ack?.({ ok: false });
-      // An explicit resume is a claim to be an existing player, so here the token is required
-      // outright — there is no honest fallback to offer, and this is the path a seat hijack used.
-      if (!seatTokenOk(room.players.get(playerId), seat)) return ack?.({ ok: false });
       console.log(`🔄 resumed room ${code}`);
       doResume(room, playerId, ack);
     });
@@ -598,27 +532,9 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       if (!p) return;
       socket.to(room.code).emit("typing", { id: p.id, name: p.name, typing: !!typing });
     });
-    // A rematch restarts a match that is OVER. It used to check only host + player count, so it
-    // cleared every guard startMatch has: a host losing 0-4 could emit it and wipe the scoreboard,
-    // it left room.status desynced from a running game (which then let an outsider joinRoom into a
-    // live race), it never counted the game, and it could start against a disconnected player the
-    // startMatch guard exists to protect.
     socket.on("rematch", (_p, ack) => {
       const room = rooms.get(socket.data.roomCode);
-      if (!room) return ack?.({ ok: false, error: "You're not in a room." });
-      if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
-      if (room.hostId !== socket.data.playerId) return ack?.({ ok: false, error: "Only the host can restart." });
-      if (room.players.size < minFor(room)) return ack?.({ ok: false, error: room.mode === "race" ? "Need at least 2 players to start." : "Need 2 players to start." });
-      // Mid-match this would throw away everyone's scores and leave the old game's timers firing
-      // against the new one. Both engines settle on "matchover".
-      if (room.game && room.game.phase !== "matchover") return ack?.({ ok: false, error: "Finish this match first." });
-      for (const pl of room.players.values()) {
-        if (!pl.connected) return ack?.({ ok: false, error: `Waiting for ${pl.name} to reconnect…` });
-      }
-      room.status = "started";
-      stats.gamesStarted++;
-      for (const pl of room.players.values()) { const sk = io.sockets.sockets.get(pl.socketId); if (sk?.data?.session) sk.data.session.played = true; }
-      engineFor(room).handleRematch(io, room, socket, ack);
+      if (room) engineFor(room).handleRematch(io, room, socket, ack);
     });
 
     socket.on("leaveRoom", () => leaveCurrentRoom(socket));

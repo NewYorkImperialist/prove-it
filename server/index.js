@@ -18,32 +18,12 @@ const { createAdminRouter } = require("../routes/admin.js");
 const { createRooms, PING_OPTIONS } = require("./rooms.js");
 
 const app = express();
-// Nothing gains from advertising the framework to a scanner.
-app.disable("x-powered-by");
 const server = http.createServer(app);
 const io = new Server(server, PING_OPTIONS); // heartbeat tuned so a silent drop is seen in seconds — see rooms.js
 app.use(express.json({ limit: "16kb" })); // for /challenge and cost-override JSON bodies
 
 const costGuard = createCostGuard({ analytics, SITE, ownerOk });
 app.use(costGuard.egressMiddleware); // tally bytes sent per response, for the admin cost projection
-
-// Two response headers worth having everywhere, and one that matters specifically for /admin.
-//
-// The owner key travels in the query string of every dashboard URL, so document.referrer on any
-// same-origin navigation OUT of the dashboard carries it. That is not hypothetical here: the
-// dashboard's own "ghost watch" link opens /?ghost=CODE&key=SECRET in a new tab, where
-// lib/browser/referrer.js snapshots the referrer and SocketProvider sends it to be persisted in
-// sessions.referrer — so the admin key was being written into the analytics table in plaintext.
-// no-referrer on /admin* stops the key leaving the page at all.
-app.use((req, res, next) => {
-  res.set("x-content-type-options", "nosniff");
-  if (req.path.startsWith("/admin")) {
-    res.set("referrer-policy", "no-referrer");
-    // And it must not sit in a shared cache either, for the same reason.
-    res.set("cache-control", "private, no-store");
-  }
-  next();
-});
 
 const { rooms, stats, serverStartedAt, getOnline, isLockdown, setLockdown, closeRoom, closeAllRooms } =
   createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS });

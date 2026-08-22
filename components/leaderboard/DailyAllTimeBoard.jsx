@@ -10,7 +10,7 @@ export default function DailyAllTimeBoard({ visitorId }) {
 
   useEffect(() => {
     let live = true;
-    getJSON("/daily/alltime?me=" + encodeURIComponent(visitorId || "")).then((d) => {
+    getJSON("/daily/alltime").then((d) => {
       if (!live) return;
       if (!d || !d.ok) return setState({ error: true });
       setState({ rows: d.results || [] });
@@ -28,7 +28,7 @@ export default function DailyAllTimeBoard({ visitorId }) {
     <>
       <LbTable head={[{ label: "#" }, { label: "Player" }, { label: "Best day" }, { label: "Score" }]}>
         {state.rows.map((r, i) => {
-          const mine = !!r.mine;
+          const mine = !!r.visitor_id && r.visitor_id === visitorId;
           return (
             <LbRow key={i} mine={mine}>
               <LbCell className="text-left">{i + 1}</LbCell>

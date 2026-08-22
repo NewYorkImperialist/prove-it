@@ -26,7 +26,7 @@ before(() => {
     const app = express();
     httpServer = http.createServer(app);
     const io = new Server(httpServer);
-    roomsApi = createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS, quickMatchGraceMs: 60, maxSocketsPerIp: 1e6 });
+    roomsApi = createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS, quickMatchGraceMs: 60 });
     httpServer.listen(0, () => { port = httpServer.address().port; resolve(); });
   });
 });

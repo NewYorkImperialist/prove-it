@@ -18,7 +18,7 @@ export default function CategoryBoard({ name, visitorId, reloadKey }) {
   useEffect(() => {
     let live = true;
     setState({ loading: true });
-    getJSON("/category-leaderboard?name=" + encodeURIComponent(name) + "&me=" + encodeURIComponent(visitorId || "")).then((d) => {
+    getJSON("/category-leaderboard?name=" + encodeURIComponent(name)).then((d) => {
       if (!live) return;
       if (!d || !d.ok) return setState({ error: true });
       setState({ rows: d.results || [] });
@@ -37,9 +37,7 @@ export default function CategoryBoard({ name, visitorId, reloadKey }) {
     <>
       <LbTable head={[{ label: "#" }, { label: "Player" }, { label: "Best" }, { label: "Time" }]}>
         {state.rows.map((r, i) => {
-          // The server decides this now: it no longer publishes anyone's visitor id, because that value
-          // was also being accepted as proof of ownership by the rename endpoint.
-          const mine = !!r.mine;
+          const mine = !!r.visitor_id && r.visitor_id === visitorId;
           return (
             <LbRow key={i} mine={mine}>
               <LbCell className="text-left">{i + 1}</LbCell>

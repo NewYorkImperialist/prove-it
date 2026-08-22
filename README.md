@@ -54,13 +54,15 @@ Want to add your own? Edit **`data/categories.js`** — each entry is `"Name"` o
 
 One process serves both: `server/index.js` keeps Express for the JSON API, the owner dashboard and the crawler-facing share stub, runs the Socket.IO layer, and hands every other request to Next.
 
-Every share link gets the same hand-made card, `public/og-card.png`. A generated card drawn per link (`next/og`, quoting the challenger's name and score) was built and then switched off — it never looked good enough to keep — and its code has been removed rather than left sitting unreachable. `routes/challenge.js` still writes a per-link `<title>` and description, which is the part crawlers show as text.
+Share cards are drawn at request time by `app/og.png/route.js` using `next/og` — Next already ships the renderer (satori + resvg/yoga wasm + a Geist face) compiled in, so there's no image library in `package.json` and no system fonts to install into the container. Only the 400 weight is bundled, which is why nothing on the card is bold and the ◎ mark is drawn as nested divs rather than set as a character. `lib/og-card.js` owns the param contract and is the validation boundary: the params come from whoever pasted the link, so it clamps every field and collapses anything unrecognised to a generic card.
 
 ```
 app/, components/, hooks/       the client (React + Tailwind)
 lib/                            shared logic, plain CommonJS, covered by node:test
 lib/browser/                    browser-only client modules (sound, storage, share sheet, the D3 geo board)
+lib/og-card.js                  what a share card says + the param contract it's drawn from
 lib/referral.js                 turns a referrer/campaign tag into a channel label
+app/og.png/route.js             draws the share card PNG (next/og)
 data/                           game content + generated data
 server/index.js                 the Express + Socket.IO entrypoint
 server/game-engine.js           the multiplayer duel

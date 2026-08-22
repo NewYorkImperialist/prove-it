@@ -8,36 +8,31 @@ const analytics = require("../server/stats"); // persistent game history (Turso)
 const SITE = require("../lib/site-config");
 const { render, siteVars } = require("../lib/render.js");
 const { easternDay } = require("../lib/html.js");
-const { CATEGORY_GROUPS, CAT_SIZES, CAT_ITEMS, ALL_ROUND_NAMES } = require("../lib/category-data.js");
+const { CATEGORY_GROUPS, CAT_SIZES, ALL_ROUND_NAMES } = require("../lib/category-data.js");
 const { cleanName, isBlocked } = require("../lib/name-filter.js");
 const { MODES, allBoards } = require("../lib/geo-boards.js");
-const { recommendedTime } = require("../lib/solo-catalog.js"); // per-category round length, for the pace cap
+const { bragLine } = require("../lib/og-card.js");
 
 const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char url-safe id
 
-// ── Rate limits for the unauthenticated writes ───────────────────────────────────────────────
-// Every write in this file is unauthenticated, and has to be: the whole game is playable with no
-// sign-up. That also makes each one replayable from the network tab, which is exactly what
-// happened — a run of 999/999/999 with no keystrokes behind it, posted straight to the API.
+// ── Rate limit for result submission ─────────────────────────────────────────────────────────
+// POST /challenge/:id/result is the only unauthenticated write in the app — it has to be, because
+// the whole game is playable with no sign-up. That also makes it the one endpoint a stranger can
+// replay from the network tab, which is exactly what happened: a run of 999/999/999 with no
+// keystrokes behind it, submitted straight to the API.
 //
-// A fixed window per IP per endpoint, in memory. Deliberately not a dependency and deliberately
-// not shared across machines: one process is all this app runs (see fly.toml), and a limiter that
-// forgets everything on restart is still the difference between a script writing thousands of rows
-// and one writing a few dozen. Finishing a genuine run takes at least the round timer, so a real
-// player never comes close.
-//
-// This bounds volume, not honesty. The checks that decide whether a *single* score is believable
-// are the two ceilings in the result route below.
+// A fixed window per IP, in memory. Deliberately not a dependency and deliberately not shared
+// across machines: one process is all this app runs (see fly.toml), and a limiter that forgets
+// everything on restart is still the difference between a script writing thousands of rows and a
+// script writing a handful. Finishing a genuine run takes at least the round timer, so a real
+// player never comes close to this.
 const SUBMIT_WINDOW_MS = 60_000;
-// Per-endpoint budgets, generous enough that a real player never meets one. A finished run posts
-// one result, one rename at most, and one guess batch per round — so the numbers below are several
-// runs a minute, while still turning "thousands of junk rows a minute" into a few dozen.
-//
-// Separate buckets per endpoint rather than one shared counter: a shared one lets a flood against
-// the cheapest endpoint lock a real player out of saving their run, which would turn a nuisance
-// into an outage.
-const LIMITS = { result: 20, rename: 20, create: 20, guesses: 60 };
-const buckets = new Map(); // "purpose|ip" → { count, resetAt }
+// Generous on purpose. A real player submits once per finished run, plus a retry or two if the
+// write fails, so this is nowhere near them — while still turning "thousands of junk rows a
+// minute" into twenty. The cap on the scores themselves is the fix that actually matters; this
+// only limits the volume.
+const SUBMIT_MAX = 20;
+const submits = new Map(); // ip → { count, resetAt }
 
 // Fly terminates TLS and forwards the caller in fly-client-ip; x-forwarded-for is the generic
 // fallback. Both are attacker-controlled, so this is a speed bump against a script rather than a
@@ -46,95 +41,19 @@ function callerIp(req) {
   return req.get("fly-client-ip") || String(req.get("x-forwarded-for") || "").split(",")[0].trim() || req.ip || "unknown";
 }
 
-function submitAllowed(req, purpose = "result") {
-  const key = `${purpose}|${callerIp(req)}`;
+function submitAllowed(req) {
+  const ip = callerIp(req);
   const now = Date.now();
-  const e = buckets.get(key);
+  const e = submits.get(ip);
   if (!e || now > e.resetAt) {
-    buckets.set(key, { count: 1, resetAt: now + SUBMIT_WINDOW_MS });
+    submits.set(ip, { count: 1, resetAt: now + SUBMIT_WINDOW_MS });
     // Opportunistic sweep so a long-running process doesn't hold every IP it has ever seen.
-    if (buckets.size > 5000) for (const [k, v] of buckets) if (now > v.resetAt) buckets.delete(k);
+    if (submits.size > 5000) for (const [k, v] of submits) if (now > v.resetAt) submits.delete(k);
     return true;
   }
   e.count += 1;
-  return e.count <= (LIMITS[purpose] || 20);
+  return e.count <= SUBMIT_MAX;
 }
-
-// The most a human could type in `seconds`, generously. A four-letter answer plus Enter is about
-// five keystrokes, so even a 100-wpm typist naming the shortest possible answers tops out near
-// 1.6 per second; 3/s is roughly double that, so no real player will ever meet it.
-//
-// This complements the category-size cap rather than replacing it, and which one binds depends on
-// the round: on a 30-second daily round the pace cap is the tighter of the two, while on a
-// 15-minute geography board the category's own answer count is.
-const PACE_PER_SECOND = 3;
-
-// The third ceiling, and the one that actually bites: a round's score has to be consistent with the
-// typing speed the SAME payload reports for it.
-//
-// The pace and size caps together still let a fabricated run claim a perfect clear of every
-// category. `http POST … scores:='[999,999,999]' wpms:='[0,0,0]'` on a 30-second daily stored
-// 49/62/51 — every answer in all three categories, from a run that reports typing nothing at all.
-// A cap is only as good as its units, and "answers per second" is not a thing a payload can be
-// checked against; characters are.
-//
-// wpm × 5 = characters per minute (the standard definition of a word for typing speed), so a round
-// of `seconds` at the claimed wpm accounts for a computable number of keystrokes. Divided by the
-// shortest plausible answer this yields the most answers that typing could have produced.
-//
-// The divisor is measured from each category's OWN answers rather than being a magic number, because
-// a flat one is either useless or unfair: at 2 chars ("generously short") a claimed 60 wpm still
-// buys a perfect clear of every category, and at the mean it would reject a real player who happened
-// to name only the short answers.
-//
-// The 10th percentile of the category's answer lengths is the honest middle. It cannot reject a real
-// run — 90% of that category's answers are longer, so any real set of N answers types at least this
-// much — while a claimed full clear has to come with a plausible wpm to survive. Greek Gods is the
-// worked example: p10 is 4 chars, so clearing all 51 needs ≳72 claimed wpm, whereas actually typing
-// all 51 (mean 6.0 chars) needs ~122 wpm sustained. The ceiling therefore sits below every genuine
-// clear and above every fabricated one that doesn't also fake its typing speed.
-//
-// FREE_ANSWERS absorbs the client's own under-reporting: hooks/useSolo.js clears the answer box
-// programmatically, so it loses roughly the first character of every answer, and liveWpm() returns 0
-// outright for a round whose typing was never sampled. Without the allowance a real one- or
-// two-answer round would be rejected.
-const FREE_ANSWERS = 6;
-const FALLBACK_CHARS = 4; // categories with no item list of their own (flags/borders quizzes)
-const MAX_HUMAN_WPM = 300; // matches MAX_WPM in hooks/useSolo.js — past this it was pasted, not typed
-const CAT_MIN_CHARS = {};
-for (const [cat, items] of Object.entries(CAT_ITEMS)) {
-  const lens = (items || []).map((it) => String(Array.isArray(it) ? it[0] : it).length).sort((a, b) => a - b);
-  if (lens.length) CAT_MIN_CHARS[cat] = Math.max(3, lens[Math.floor(lens.length * 0.1)]);
-}
-const typedCeiling = (wpm, seconds, category) => {
-  const chars = Math.max(0, Math.min(MAX_HUMAN_WPM, wpm)) * 5 * Math.max(1, seconds) / 60;
-  return Math.floor(chars / (CAT_MIN_CHARS[category] || FALLBACK_CHARS)) + FREE_ANSWERS;
-};
-
-// Every board used to hand each row's real `visitor_id` to every client. That turned a private
-// handle into a public one, and /challenge/rename trusted it as proof of ownership — so reading a
-// board was enough to learn the identifier needed to rewrite a stranger's entries.
-//
-// The client only ever needed two things from it: "is this row mine" (for the (you) marker and the
-// amber tint) and a stable key to collapse one player's several runs into their best. So it gets
-// exactly those: a boolean, and a token that is only an ordinal within THIS response. The token is
-// useless anywhere else, which is the whole point — nothing a caller reads here can be replayed to
-// a write endpoint.
-function publicRows(rows, me) {
-  const keys = new Map();
-  return (rows || []).map((r) => {
-    const vid = r.visitor_id || null;
-    if (vid && !keys.has(vid)) keys.set(vid, "v" + keys.size);
-    const out = { ...r, mine: !!vid && !!me && vid === me, vkey: vid ? keys.get(vid) : null };
-    delete out.visitor_id;
-    return out;
-  });
-}
-
-// The caller names itself so the server can mark its own rows. Worth being clear about what this
-// is and isn't: it's a hint for display, never authorisation. Claiming someone else's id here buys
-// nothing but a misplaced "(you)" on your own screen.
-const callerId = (req) => String(req.query.me || "").slice(0, 40);
 
 // ---------- Daily challenge ----------
 const DAILY_TROLL = new Set(["Things the Nyan Cat Says", "Counting Numbers", "Nobel Peace Prize Loser", "People in the Epstein Files", "Italian Brainrot", "Cities Mistaken for Australia's Capital", "Seasons of the Year", "Months of the Year"]);
@@ -166,6 +85,8 @@ const dailyId = (date) => "d-" + date.replace(/-/g, ""); // e.g. d-20260624 (10 
 // both reachable from the button most players press first.
 // The challenger's best single-round score and which round it came from ("17 Countries in Europe").
 // Prefer the creator's own runs; fall back to everyone's if their name isn't on the board yet.
+// Split out of challengePreview because the share CARD (lib/og-card.js) needs the same two numbers
+// as pixels, and re-deriving them beside the copy is how the picture and the title drift apart.
 function bestRound(by, results) {
   const all = results || [];
   const mine = all.filter((r) => (r.name || "").trim().toLowerCase() === String(by).trim().toLowerCase());
@@ -175,20 +96,6 @@ function bestRound(by, results) {
   return best;
 }
 
-// The one sentence a share link exists for. Category names are plural ("US States"), so a score of
-// 1 can't be dropped straight in front of one — it needs a counted noun of its own.
-//
-// This lived in lib/og-card.js, alongside a generated share-card PNG drawn per link. That feature
-// was switched off (the cards weren't good enough to keep) and the module is gone; bragLine was the
-// only part of it still reachable.
-function bragLine({ by, score, category }) {
-  const who = by || "A friend";
-  if (!category || !(score > 0)) return `${who} challenged you on Prove It!`;
-  return score === 1
-    ? `${who} says you can't name more than 1 answer in ${category}`
-    : `${who} says you can't name more than ${score} ${category}`;
-}
-
 function challengePreview({ by, type, genre, rounds, results }) {
   rounds = rounds || [];
   const n = rounds.length;
@@ -196,8 +103,8 @@ function challengePreview({ by, type, genre, rounds, results }) {
   const what = type === "genre" && genre ? `${roundWord} of ${genre}` : roundWord;
   const best = bestRound(by, results);
   return {
-    // The ⚡ belongs to the title, not to bragLine(): a crawler renders it as text beside the
-    // picture, and the picture is the one static card now.
+    // The ⚡ is the title's own, not the card's: a crawler renders it as text next to the picture,
+    // and satori has no emoji font (see app/og.png/route.js), so bragLine() stays plain.
     title: `⚡ ${bragLine({ by, score: best ? best.score : null, category: best ? rounds[best.idx] : "" })}`,
     desc: `${what}. Name as many as you can before the clock runs out, then try to beat the leaderboard. No sign-up, just click and play.`,
   };
@@ -227,7 +134,6 @@ function createChallengeRouter({ isLockdown }) {
   router.post("/challenge", async (req, res) => {
     const b = req.body || {};
     if (isLockdown()) return res.json({ ok: false, error: "The game is down for maintenance — check back soon." });
-    if (!submitAllowed(req, "create")) return res.json({ ok: false, error: "Too many challenges — try again in a minute." });
     if (!analytics.enabled()) return res.json({ ok: false, error: "Challenges need persistence (not configured)." });
     const type = b.type === "custom" ? "custom" : "genre";
     const rounds = (Array.isArray(b.rounds) ? b.rounds : []).filter((n) => ALL_ROUND_NAMES.has(n)).slice(0, 10);
@@ -248,7 +154,7 @@ function createChallengeRouter({ isLockdown }) {
     // on POST /challenge alone, so flipping the switch during an incident closed every room, said
     // "the game is down", and left this endpoint — the one actually being abused — wide open.
     if (isLockdown()) return res.status(503).json({ ok: false, error: "The game is down for maintenance — your run wasn't saved." });
-    if (!submitAllowed(req, "result")) return res.status(429).json({ ok: false, error: "Too many submissions — slow down and try again in a minute." });
+    if (!submitAllowed(req)) return res.status(429).json({ ok: false, error: "Too many submissions — slow down and try again in a minute." });
     // No database configured is not a failed write, and the client now retries + warns on ok:false
     // — which turned a deployment (or a local dev run) with no persistence into 15s of retrying
     // followed by "check your connection" after every single run. `stored: false` says the run was
@@ -258,38 +164,20 @@ function createChallengeRouter({ isLockdown }) {
     const c = await analytics.getChallenge(id).catch(() => null);
     if (!c) return res.json({ ok: false });
     const b = req.body || {};
-    // Two independent ceilings, and a round's score has to clear both.
-    //
-    // 1. It cannot exceed the number of answers the category actually has. The old cap was a flat
-    //    999 for every category, so a 47-flag board would happily accept 999 — which is how a
-    //    fabricated 999/999/999 reached the top of the daily board. CAT_SIZES is the same table the
-    //    daily pool is built from, so this is the real answer count rather than a guess.
-    // 2. It cannot exceed what a human could physically type in the time the round allowed. Without
-    //    this, 197 answers in a 30-second round still passes — absurd, but within the size cap.
-    // 3. It cannot exceed what the payload's OWN reported typing speed accounts for. 1 and 2 together
-    //    still allowed a perfect clear of every category from a run reporting zero keystrokes, which
-    //    is what a fabricated submission actually looks like — see typedCeiling above.
-    //
-    // A round's length is the challenge's own `timer`, or the category's recommended time when the
-    // challenge was created with timer:0 ("recommended per round"). Both come from the server's own
-    // tables, never from the payload, so neither can be inflated by the caller. Only the wpm in 3 is
-    // caller-supplied, which is why it is clamped to a human maximum before it is trusted to raise
-    // anything — claiming 9999 wpm used to be free.
-    const wpms = (Array.isArray(b.wpms) ? b.wpms : []).slice(0, c.rounds.length)
-      .map((n) => Math.max(0, Math.min(MAX_HUMAN_WPM, parseInt(n, 10) || 0)));
+    // A round's score cannot exceed the number of answers that round actually has. The old cap was
+    // a flat 999 for every category, so a 47-flag board would happily accept 999 — which is how a
+    // fabricated 999/999/999 got to the top of the daily board. CAT_SIZES is the same table the
+    // daily pool is built from, so this is the real answer count, not a guess. Unknown round names
+    // (a category retired since the challenge was created) keep the old ceiling.
     const roundCap = (i) => {
-      const name = (c.rounds || [])[i];
-      const size = CAT_SIZES[name];
-      const seconds = c.timer > 0 ? c.timer : recommendedTime(name);
-      const byPace = Math.ceil(Math.max(1, seconds) * PACE_PER_SECOND);
-      const bySize = Number.isFinite(size) && size > 0 ? size : 999;
-      const byTyping = typedCeiling(wpms[i] || 0, seconds, name);
-      return Math.min(bySize, byPace, byTyping);
+      const n = CAT_SIZES[(c.rounds || [])[i]];
+      return Number.isFinite(n) && n > 0 ? n : 999;
     };
     // Slice before mapping so each score still lines up with its own round — mapping first and
     // slicing after would cap score[i] against the wrong category on an over-long payload.
     const scores = (Array.isArray(b.scores) ? b.scores : []).slice(0, c.rounds.length)
       .map((n, i) => Math.max(0, Math.min(roundCap(i), parseInt(n, 10) || 0)));
+    const wpms = (Array.isArray(b.wpms) ? b.wpms : []).map((n) => Math.max(0, Math.min(9999, parseInt(n, 10) || 0))).slice(0, c.rounds.length);
     // seconds-to-complete per round (null when not fully completed) — for speed ranking on maxed boards
     const times = (Array.isArray(b.times) ? b.times : []).map((n) => { const t = parseInt(n, 10); return t > 0 ? Math.min(3600, t) : null; }).slice(0, c.rounds.length);
     const total = scores.reduce((a, n) => a + n, 0);
@@ -307,40 +195,21 @@ function createChallengeRouter({ isLockdown }) {
   });
   // Rename a player's leaderboard entries everywhere (all challenges/days). Owner key → also renames
   // every crowned row so the creator's name stays consistent across devices.
-  //
-  // This used to take a `visitorId` and nothing else. That was a hole, and a bad one: every public
-  // leaderboard response publishes `visitor_id` for every row, so anyone could read a board, take a
-  // stranger's id, and rewrite every entry that person had ever made — including the owner's. The
-  // id names *whose* rows these are; it was never evidence of *being* them.
-  //
-  // A caller must now also present a `gid` — a run id that appears in no player-facing response —
-  // belonging to that same visitor. Possessing one means having actually played a run on that
-  // device. Note the gid only authorises; the rename still covers all of that visitor's rows, so a
-  // player whose older rows predate gids just needs one recent run to fix everything.
   router.post("/challenge/rename", async (req, res) => {
     if (!analytics.enabled()) return res.json({ ok: false });
-    if (isLockdown()) return res.status(503).json({ ok: false, error: "The game is down for maintenance." });
-    if (!submitAllowed(req, "rename")) return res.status(429).json({ ok: false, error: "Too many requests — try again in a minute." });
     const b = req.body || {};
     const rawName = String(b.name || "").slice(0, 24).trim();
     if (!rawName) return res.json({ ok: false });
     const name = cleanName(rawName);
     const visitorId = String(b.visitorId || "").slice(0, 40) || null;
-    const gid = String(b.gid || "").slice(0, 40) || null;
     const crownAll = !!(process.env.OWNER_KEY && b.ownerKey === process.env.OWNER_KEY);
     if (!visitorId && !crownAll) return res.json({ ok: false });
-    // The owner key stands on its own; everyone else has to prove the rows are theirs.
-    if (visitorId && !crownAll && !(await analytics.gidOwnedBy(gid, visitorId).catch(() => false))) {
-      return res.status(403).json({ ok: false, error: "Couldn't verify that run — play a round on this device first." });
-    }
     const updated = await analytics.renameResults({ name, visitorId, crownAll }).catch(() => 0);
     res.json({ ok: true, updated });
   });
   // Exact guesses for one round of a solo/daily run (every Enter press: ok / miss / dup).
   router.post("/challenge/:id/guesses", async (req, res) => {
     if (!analytics.enabled()) return res.json({ ok: false });
-    if (isLockdown()) return res.json({ ok: false });
-    if (!submitAllowed(req, "guesses")) return res.json({ ok: false });
     const id = String(req.params.id).slice(0, 12);
     const c = await analytics.getChallenge(id).catch(() => null);
     if (!c) return res.json({ ok: false });
@@ -360,8 +229,7 @@ function createChallengeRouter({ isLockdown }) {
     const id = String(req.params.id).slice(0, 12);
     const c = await analytics.getChallenge(id).catch(() => null);
     if (!c) return res.json({ ok: false });
-    const rows = await analytics.getChallengeResults(id).catch(() => []);
-    res.json({ ok: true, rounds: c.rounds, by: c.by_name, creator: await analytics.getCreatorName().catch(() => null), results: publicRows(rows, callerId(req)) });
+    res.json({ ok: true, rounds: c.rounds, by: c.by_name, creator: await analytics.getCreatorName().catch(() => null), results: await analytics.getChallengeResults(id).catch(() => []) });
   });
 
   router.get("/daily", async (req, res) => {
@@ -383,19 +251,19 @@ function createChallengeRouter({ isLockdown }) {
     const name = String(req.query.name || "").slice(0, 60);
     if (!ALL_ROUND_NAMES.has(name)) return res.json({ ok: false });
     const results = await analytics.categoryLeaderboard(name, 50).catch(() => []);
-    res.json({ ok: true, name, results: publicRows(results, callerId(req)) });
+    res.json({ ok: true, name, results });
   });
   // All-time daily high scores (across every day's puzzle).
   router.get("/daily/alltime", async (req, res) => {
     if (!analytics.enabled()) return res.json({ ok: false });
     const rows = await analytics.dailyAllTime(50).catch(() => []);
-    res.json({ ok: true, results: publicRows(rows, callerId(req)) });
+    res.json({ ok: true, results: rows });
   });
   // GOAT board — one overall geography ranking (points blend volume + speed across every category).
   router.get("/geo-goat", async (req, res) => {
     if (!analytics.enabled()) return res.json({ ok: false });
     const rows = await analytics.geoGoat(50).catch(() => []);
-    res.json({ ok: true, results: publicRows(rows, callerId(req)) });
+    res.json({ ok: true, results: rows });
   });
 
   // Share-link stub, templated from site-config.js's `challenge` defaults. Crawlers

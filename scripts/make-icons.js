@@ -1,13 +1,7 @@
 "use strict";
-// Generates the PWA / home-screen icons in public/ — the amber target on a near-black plate, once
-// for the game and once more with a blue stripe beside the target for the admin dashboard, which
-// installs as its own app.
-//
-// INVERSE of lib/favicon.js and components/ui/Logo.jsx, which are a dark target on a filled amber
-// plate. Not drift — an installed icon sits on the user's wallpaper among their other apps, where a
-// solid amber square is a bright blob, while the favicon and the in-app badge sit in a tab strip and
-// on this app's own dark panels, where the filled plate is what makes the mark findable. Changing
-// one of the two does not imply changing the other.
+// Generates the PWA / home-screen icons in public/ from the same mark as the favicon:
+// the amber target on a near-black plate — once for the game, and once more with a blue stripe
+// beside the target for the admin dashboard, which installs as its own app.
 //
 // Why a script and not a checked-in binary someone hand-drew: lib/favicon.js is an inline SVG
 // data URI, so there was no raster icon anywhere in the repo, and a manifest needs real PNGs at

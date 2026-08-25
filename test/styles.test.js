@@ -110,19 +110,54 @@ describe("the brand mark is filled amber in the browser and dark-plated once ins
   const FAV = fs.readFileSync(path.join(ROOT, "lib/favicon.js"), "utf8");
   const LOGO = fs.readFileSync(path.join(ROOT, "components/ui/Logo.jsx"), "utf8");
   const ICONS = fs.readFileSync(path.join(ROOT, "scripts/make-icons.js"), "utf8");
+  // The rendered data URI, not the source text: the source has the words "<text" in a comment
+  // explaining why there isn't one, which a source-level check happily matched.
+  const { FAVICON } = require("../lib/favicon.js");
 
-  test("the favicon plate is amber and its glyph is dark", () => {
-    const rect = FAV.match(/<rect[^>]*fill='%23([0-9a-f]{6})'/i);
-    const text = FAV.match(/<text[^>]*fill='%23([0-9a-f]{6})'/i);
-    assert.equal(rect && rect[1].toLowerCase(), "f5a623", "plate should be --accent");
-    assert.equal(text && text[1].toLowerCase(), "241500", "glyph should be --markfg");
+  test("the favicon plate is amber and its mark is dark", () => {
+    assert.match(FAVICON, /<rect[^>]*fill='%23f5a623'/, "plate should be --accent");
+    assert.match(FAVICON, /fill='%23241500'/, "the dot should be --markfg");
+    assert.match(FAVICON, /stroke='%23241500'/, "and so should the ring");
+  });
+
+  test("the favicon draws the mark as circles, not as the ◎ character", () => {
+    // U+25CE lives in Noto Sans Symbols, which this app bundles nowhere, so a <text> mark rendered
+    // with whatever font the device had — or as a tofu box. scripts/make-icons.js has always drawn
+    // geometry for exactly this reason; the favicon relying on the glyph meant the two could
+    // disagree about what the logo looks like on a machine nobody tested on.
+    assert.equal(/<text/.test(FAVICON), false, "no text element — the glyph is not guaranteed to exist");
+    assert.equal(/◎/.test(FAVICON), false);
+    assert.match(FAVICON, /<circle[^>]*stroke='%23241500'[^>]*stroke-width='7\.5'/, "the ring, as a stroked circle");
+    assert.match(FAVICON, /<circle[^>]*r='11\.5'[^>]*fill='%23241500'/, "and the dot");
+  });
+
+  test("the favicon's geometry is the same numbers as the generated icons", () => {
+    // One mark at one set of proportions, rather than three things that happen to look alike.
+    // ring outer 31 / inner 23.5 becomes a stroke on the midline 27.25 of width 7.5.
+    assert.match(ICONS, /ring: \{ cx: 50, cy: 50, outer: 31, inner: 23\.5 \}/);
+    assert.match(ICONS, /dot: \{ cx: 50, cy: 50, r: 11\.5 \}/);
+    assert.match(FAVICON, /r='27\.25'/, "ring midline = (31 + 23.5) / 2");
+    assert.match(FAVICON, /stroke-width='7\.5'/, "ring width = 31 - 23.5");
+    assert.match(FAVICON, /x='8' y='8' width='84' height='84' rx='20'/, "and the same plate");
   });
 
   test("the in-app badge matches the favicon, and needs no border because it is filled", () => {
-    const badge = LOGO.slice(LOGO.indexOf("export function LogoBadge"), LOGO.indexOf("export function Wordmark"));
+    const badge = LOGO.slice(LOGO.indexOf("export function LogoBadge"), LOGO.indexOf("// select-none for the same reason"));
     assert.match(badge, /bg-\[linear-gradient\(140deg,#f5a623,#e0801a\)\]/);
-    assert.match(badge, /text-markfg/);
+    assert.match(badge, /stroke="#241500"/);
     assert.equal(/\bborder\b/.test(badge), false, "a filled plate is its own edge");
+  });
+
+  test("the logo is not text, so it cannot be selected, copied or dragged out", () => {
+    const badge = LOGO.slice(LOGO.indexOf("export function LogoBadge"), LOGO.indexOf("// select-none for the same reason"));
+    assert.match(badge, /<svg/, "an inline svg has nothing to select and no image to save");
+    assert.equal(/>\s*◎\s*</.test(badge), false, "the glyph must not be back in the markup");
+    assert.match(badge, /select-none/);
+    assert.match(badge, /aria-hidden/, "the Wordmark beside it already says the name");
+    // The wordmark too: selecting the header on the way somewhere else used to sweep the brand
+    // name into the selection.
+    const word = LOGO.slice(LOGO.indexOf("export function Wordmark"));
+    assert.match(word.slice(0, 400), /select-none/);
   });
 
   test("the generated icons are the inverse: amber mark, near-black plate", () => {

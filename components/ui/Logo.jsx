@@ -1,30 +1,51 @@
 "use client";
 import { cx } from "@/lib/browser/cx";
 
-// The brand mark: a dark two-circle glyph (◎) on a filled amber plate — the original mark, and the
-// same way round as the favicon.
+// The brand mark: dark rings on a filled amber plate — the original mark, and the same way round as
+// the favicon.
 //
 // Not the same way round as the home-screen icons in public/, which stay amber-on-black. That is
 // intentional: an installed icon sits on the user's own wallpaper, where a solid amber square is a
 // bright blob among their other apps, while this badge and the favicon sit on this app's near-black
 // panels and in a browser tab strip, where the filled plate is what makes the mark findable. Being
 // filled is also why it needs no border, unlike Crown below — the plate is its own edge.
+//
+// Drawn as an inline SVG rather than the "◎" character it used to be, for two reasons.
+//
+// It renders. U+25CE lives in Noto Sans Symbols, which this app bundles nowhere, so the glyph was at
+// the mercy of whatever font the device had — the same trap scripts/make-icons.js has always avoided
+// by drawing circles ("a missing glyph rasterises to a tofu box"). The geometry below is that file's
+// SHAPE, unchanged, so the badge, the favicon and the installed icons are one mark at one set of
+// proportions instead of three things that happen to look alike.
+//
+// And it isn't text, so it cannot be selected, copied or dragged out. A glyph in a <span> was part of
+// the document: dragging across the header, or triple-clicking it, picked up "◎ prove it!" and put
+// the logo on the clipboard as a character anyone could paste. aria-hidden because the Wordmark
+// beside it already says the name — a screen reader announcing "bullseye prove it!" was never useful.
 export function LogoBadge({ className }) {
   return (
     <span
       className={cx(
-        "inline-grid shrink-0 place-items-center rounded-lg bg-[linear-gradient(140deg,#f5a623,#e0801a)] text-markfg leading-none [-webkit-text-stroke:.9px_#241500]",
-        "h-[30px] w-[30px] text-base",
+        "inline-grid shrink-0 place-items-center rounded-lg bg-[linear-gradient(140deg,#f5a623,#e0801a)] leading-none",
+        "h-[30px] w-[30px] text-base select-none",
         className,
       )}
+      aria-hidden="true"
     >
-      ◎
+      <svg viewBox="0 0 100 100" className="h-[62%] w-[62%] overflow-visible" focusable="false" aria-hidden="true">
+        {/* Same numbers as the favicon and the PNG icons: ring outer 31 / inner 23.5 drawn as a
+            stroke on the midline, dot r 11.5. The plate is the parent span's background. */}
+        <circle cx="50" cy="50" r="27.25" fill="none" stroke="#241500" strokeWidth="7.5" />
+        <circle cx="50" cy="50" r="11.5" fill="#241500" />
+      </svg>
     </span>
   );
 }
 
+// select-none for the same reason as the badge: this is a logo, not prose. Selecting the header on
+// the way to selecting something else used to sweep the brand name into the selection.
 export function Wordmark({ children = "prove it!", className }) {
-  return <span className={cx("font-display font-bold tracking-[-.3px]", className)}>{children}</span>;
+  return <span className={cx("font-display font-bold tracking-[-.3px] select-none", className)}>{children}</span>;
 }
 
 // The flair tile around the creator's 👑, with a hover tooltip so a stray emoji reads as a badge.

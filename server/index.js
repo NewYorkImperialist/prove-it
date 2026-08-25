@@ -16,6 +16,7 @@ const { createCostGuard } = require("../lib/cost-guard.js");
 const { createChallengeRouter } = require("../routes/challenge.js");
 const { createAdminRouter } = require("../routes/admin.js");
 const { createRooms, PING_OPTIONS } = require("./rooms.js");
+const { publishLiveState } = require("./live-state.js");
 
 const app = express();
 // Nothing gains from advertising the framework to a scanner.
@@ -47,6 +48,11 @@ app.use((req, res, next) => {
 
 const { rooms, stats, serverStartedAt, getOnline, isLockdown, setLockdown, closeRoom, closeAllRooms } =
   createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAULT_GROUPS });
+
+// Hand the live handles to the Next-rendered admin pages. They cannot require their way to this
+// state — a second createRooms() would give them an empty Map and a dashboard that quietly reports
+// an idle server. See server/live-state.js.
+publishLiveState({ io, costGuard, rooms, stats, serverStartedAt, getOnline, isLockdown, setLockdown, closeRoom, closeAllRooms });
 
 // When the cost cap is tripped, serve a tiny "paused for the month" page instead of the heavy
 // HTML/JS bundle — see lib/cost-guard.js. Small API responses and /admin keep working.

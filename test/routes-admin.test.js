@@ -44,7 +44,7 @@ describe("routes/admin.js — owner-key auth gate", () => {
   // instead of an unauthenticated analytics POST), so this list is still the complete surface.
   test("every /admin* route 404s with no key", async () => {
     const { app } = buildApp();
-    for (const path of ["/admin", "/admin/ping", "/admin/health", "/admin/games", "/admin/chat", "/admin/visitors",
+    for (const path of ["/admin", "/admin/health", "/admin/games", "/admin/chat", "/admin/visitors",
       "/admin/sessions", "/admin/leaderboards", "/admin/category-leaderboards", "/admin/runs", "/admin/merge",
       // The two that MUTATE a leaderboard entry. They take their arguments in the query string
       // (server/index.js mounts only express.json()), so they are reachable by a plain link —
@@ -74,14 +74,6 @@ describe("routes/admin.js — owner-key auth gate", () => {
     assert.equal(res.status, 200);
     assert.equal(res.body.online, 0);
     assert.equal(res.body.roomCount, 0);
-  });
-
-  test("GET /admin/ping is a cheap, owner-gated round-trip target for the client-side connection check", async () => {
-    const { app } = buildApp();
-    const res = await request(app).get("/admin/ping?key=test-owner-key");
-    assert.equal(res.status, 200);
-    assert.equal(res.body.ok, true);
-    assert.equal(typeof res.body.now, "number");
   });
 
   test("?json=1 reports DB and cost-guard health even with persistence off", async () => {
@@ -240,56 +232,40 @@ describe("routes/admin.js — category health", () => {
   });
 });
 
-// The dashboard installs as its own app, separate from the game. Its manifest can't come from
-// app/manifest.js the way the game's does — /admin is Express-rendered, outside the Next app — so
-// it's a route, and being a route it needs the same owner gate as everything else here.
-describe("routes/admin.js — the installable dashboard", () => {
-  const K = "test-owner-key";
+// The manifest and /admin/ping moved into the Next app (app/admin/manifest.webmanifest/route.js and
+// app/admin/ping/route.js) and were removed from Express, so supertest against the router can no
+// longer reach them. What they assert is unchanged and still required — it moved to
+// test-browser/admin.spec.js, which drives the real server where Next actually handles these paths.
+//
+// What is worth pinning HERE is the thing a future edit could get wrong: that Express does not serve
+// them again. Express is mounted before Next in server/index.js, so an accidental re-add would
+// silently shadow the Next version and the two would drift.
+describe("routes/admin.js — the routes that moved into Next are not served twice", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const src = fs.readFileSync(path.join(__dirname, "..", "routes", "admin.js"), "utf8");
 
-  test("the manifest is owner-gated like every other /admin route", async () => {
-    const { app } = buildApp();
-    assert.equal((await request(app).get("/admin/manifest.webmanifest")).status, 404);
-    assert.equal((await request(app).get("/admin/manifest.webmanifest?key=nope")).status, 404);
+  test("Express no longer declares them", () => {
+    for (const p of ["/admin/ping", "/admin/manifest.webmanifest"]) {
+      assert.equal(src.includes(`router.get("${p}"`), false, `${p} is back in Express`);
+    }
   });
 
-  test("it describes a separate app from the game, with its own name and icons", async () => {
-    const { app } = buildApp();
-    const res = await request(app).get(`/admin/manifest.webmanifest?key=${K}`);
-    assert.equal(res.status, 200);
-    assert.match(res.headers["content-type"], /application\/manifest\+json/);
-    const m = JSON.parse(res.text);
-    assert.equal(m.name, "Prove It! Admin");
-    assert.equal(m.short_name, "PI Admin");
-    assert.equal(m.display, "standalone");
-    assert.equal(m.scope, "/admin");
-    // Every icon is an admin-* variant: pointing at the game's icons would put two identical
-    // tiles on the home screen, which is the whole reason the dev stripe exists.
-    assert.ok(m.icons.length >= 4);
-    for (const i of m.icons) assert.match(i.src, /^\/admin-icon-/, i.src);
-    // Android won't offer to install without a 512 maskable; a themed home screen needs the
-    // monochrome layer or the tile ignores the user's wallpaper setting.
-    const purposes = m.icons.map((i) => i.purpose);
-    assert.ok(purposes.includes("maskable"), "needs a maskable icon");
-    assert.ok(purposes.includes("monochrome"), "needs a monochrome icon");
+  test("and the Next versions exist, so nothing serves them by accident", () => {
+    for (const f of ["app/admin/ping/route.js", "app/admin/manifest.webmanifest/route.js"]) {
+      assert.ok(fs.existsSync(path.join(__dirname, "..", f)), `missing ${f}`);
+    }
   });
 
-  test("start_url carries the owner key, or the installed app would launch into a 404", async () => {
-    const { app } = buildApp();
-    const m = JSON.parse((await request(app).get(`/admin/manifest.webmanifest?key=${K}`)).text);
-    assert.equal(m.start_url, `/admin?key=${K}`);
-    // …which is exactly why it must never be cached anywhere shared.
-    const res = await request(app).get(`/admin/manifest.webmanifest?key=${K}`);
-    assert.match(res.headers["cache-control"], /no-store/);
-    assert.match(res.headers["cache-control"], /private/);
-  });
-
-  test("id is pinned, so rotating the owner key doesn't orphan the installed app", async () => {
-    // Without an explicit id a browser derives app identity from start_url — which carries the
-    // key — so changing the key would silently install a second copy alongside the first.
-    const { app } = buildApp();
-    const m = JSON.parse((await request(app).get(`/admin/manifest.webmanifest?key=${K}`)).text);
-    assert.equal(m.id, "/admin");
-    assert.equal(m.id.includes(K), false, "the app id must not embed the key");
+  test("both Next routes are owner-gated and dynamic", () => {
+    // force-dynamic matters: a prerendered admin route would bake a build-time snapshot (and the
+    // manifest would bake in whatever key the build saw, which is none).
+    for (const f of ["app/admin/ping/route.js", "app/admin/manifest.webmanifest/route.js"]) {
+      const body = fs.readFileSync(path.join(__dirname, "..", f), "utf8");
+      assert.match(body, /ownerKeyFrom/, `${f} must check the key`);
+      assert.match(body, /force-dynamic/, `${f} must not be prerendered`);
+      assert.match(body, /status: 404/, `${f} must 404 rather than 401`);
+    }
   });
 });
 

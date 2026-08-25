@@ -417,11 +417,6 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
 
   // Trivial round-trip target for the dashboard's "Your connection" client-side check — no DB, no
   // room data, as cheap as a request can be so it's a clean measure of the browser↔server hop alone.
-  router.get("/admin/ping", (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
-    res.json({ ok: true, now: Date.now() });
-  });
-
   router.get("/admin", async (req, res) => {
     if (!ownerOk(req)) return res.status(404).send("Not found");
     const now = Date.now();
@@ -1187,31 +1182,6 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
   // An explicit `id` matters here: without one a browser derives the app's identity from
   // start_url, which carries the owner key — so rotating that key would orphan the installed app
   // and silently install a second copy. Pinning id to "/admin" keeps it one app across a rotation.
-  router.get("/admin/manifest.webmanifest", (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
-    const k = encodeURIComponent(req.query.key || "");
-    res.set("content-type", "application/manifest+json")
-      // The start_url below embeds the owner key, so this must never land in a shared cache.
-      .set("cache-control", "private, no-store")
-      .send(JSON.stringify({
-        id: "/admin",
-        name: SITE.pwaAdmin.name,
-        short_name: SITE.pwaAdmin.shortName,
-        description: SITE.pwaAdmin.description,
-        start_url: `/admin?key=${k}`,
-        scope: "/admin",
-        display: "standalone",
-        background_color: SITE.pwaAdmin.backgroundColor,
-        theme_color: DASH.themeColor,
-        orientation: "any",
-        icons: [
-          { src: "/admin-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
-          { src: "/admin-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
-          { src: "/admin-icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
-          { src: "/admin-icon-monochrome-512.png", sizes: "512x512", type: "image/png", purpose: "monochrome" },
-        ],
-      }, null, 2));
-  });
 
   // Owner broadcasts a banner message to EVERY connected client (e.g. a pre-deploy heads-up).
   router.get("/admin/announce", (req, res) => {

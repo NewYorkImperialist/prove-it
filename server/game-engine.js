@@ -303,9 +303,20 @@ function presentNextJudgment(io, room) {
   emit(io, room);
 }
 
+// The longest real answer in the whole catalogue is 136 characters (one of the Nyan Cat troll
+// entries); the median is 10 and the 99th percentile is 29. 160 clears every legitimate answer
+// with room to spare, which matters because an off-list guess is stored whole, echoed in the
+// round log, re-sent inside EVERY later gameState snapshot, and written to the database verbatim.
+// Unbounded, one 400KB guess became a 400KB snapshot delivered to every player and every
+// spectator, on every subsequent answer — none of it counted by the egress cost guard.
+const MAX_ANSWER_LEN = 160;
+
 function handleAnswer(io, room, socket, text, ack) {
   const g = room.game;
   if (!g || g.phase !== "proving" || socket.data.playerId !== g.turnId) return;
+  // Bounded here rather than at each use: norm(), the log line, g.pending, the snapshot and the
+  // DB row all read this, and one of them would eventually be missed.
+  text = String(text == null ? "" : text).slice(0, MAX_ANSWER_LEN);
   const now = Date.now();
   if (g.lastAnswerAt && now - g.lastAnswerAt < ANSWER_COOLDOWN_MS) return ack?.({ ok: false, reason: "cooldown" });
   g.lastAnswerAt = now;
@@ -495,6 +506,9 @@ function matchOver(io, room, winnerId, reason) {
   emit(io, room);
 }
 
+// Called only after rooms.js has checked lockdown, the host, the player count, that the previous
+// match is actually OVER, and that everyone is connected — the same bar startMatch clears. Without
+// those, a losing host could emit rematch mid-match and wipe the scoreboard.
 function handleRematch(io, room, socket, ack) {
   if (room.hostId !== socket.data.playerId) return ack?.({ ok: false, error: "Only the host can restart." });
   if (room.players.size < 2) return ack?.({ ok: false, error: "Need 2 players." });
@@ -511,10 +525,14 @@ function applyLiveSettings(io, room, { timer, target, autoAdvance, increment } =
   if (typeof autoAdvance === "boolean") g.autoAdvance = autoAdvance;
   if (typeof increment === "number") g.increment = Math.max(0, Math.min(30, increment));
   log(io, room, "system", null, "Host updated the game settings.");
-  // lowering the win target may already decide the match
+  // Lowering the win target can legitimately end a long match early — "let's play to 3 instead of
+  // 10" is the point of the control. What was wrong is WHO won: this used to take the first id in
+  // g.order that met the target, and g.order[0] is the room creator. So a host on 3 beat a guest on
+  // 4 by lowering the target to 3, and the trailing player won by changing a setting. The highest
+  // score wins it now, whoever asked for the change.
   if (g.phase !== "matchover" && g.target !== Infinity) {
-    const leader = g.order.find((id) => (g.scores[id] || 0) >= g.target);
-    if (leader) return matchOver(io, room, leader, "target-changed");
+    const leader = g.order.reduce((a, b) => ((g.scores[b] || 0) > (g.scores[a] || 0) ? b : a), g.order[0]);
+    if (leader && (g.scores[leader] || 0) >= g.target) return matchOver(io, room, leader, "target-changed");
   }
   emit(io, room);
 }

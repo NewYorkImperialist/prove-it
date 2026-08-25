@@ -1,4 +1,25 @@
+# What must never reach the image. The Dockerfile does `COPY . .` in both stages, so anything not
+# listed here ships to production.
 node_modules
 .git
 .DS_Store
 .next
+
+# Secrets, first and above all. Nothing uses a .env today, but a local one would otherwise be baked
+# into the image alongside the code.
+.env
+.env.*
+
+# Not needed at runtime, and each one is surface area in a container that serves the internet.
+# tools/ deliberately stays: eslint.config.js requires ./tools/eslint-jsx.js, and a missing require
+# in the image is not worth the handful of bytes it would save.
+test/
+test-browser/
+test-results/
+playwright-report/
+archive/
+docs/
+scripts/
+.github/
+mockup-*.html
+*.md

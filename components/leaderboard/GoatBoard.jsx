@@ -11,7 +11,7 @@ export default function GoatBoard({ visitorId }) {
 
   useEffect(() => {
     let live = true;
-    getJSON("/geo-goat").then((d) => {
+    getJSON("/geo-goat?me=" + encodeURIComponent(visitorId || "")).then((d) => {
       if (!live) return;
       if (!d || !d.ok) return setState({ error: true });
       setState({ rows: d.results || [] });
@@ -29,7 +29,7 @@ export default function GoatBoard({ visitorId }) {
     <>
       <LbTable head={[{ label: "#" }, { label: "Player" }, { label: "Cats", title: "Geography categories played" }, { label: "GOAT pts" }]}>
         {state.rows.map((r, i) => {
-          const mine = !!r.visitor_id && r.visitor_id === visitorId;
+          const mine = !!r.mine;
           return (
             <LbRow key={i} mine={mine}>
               <LbCell className="text-left">{i === 0 ? "🐐" : i + 1}</LbCell>

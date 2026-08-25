@@ -750,3 +750,81 @@ describe("startMatch (integration)", () => {
     assert.equal(started.payload.players, 2);
   });
 });
+
+// Lowering the win target to end a long match early is a real feature. What was broken was who it
+// declared the winner: `g.order.find(id => scores[id] >= target)` took the FIRST id in order, and
+// order[0] is the room creator — so a host could lower the target to their own score and beat a
+// player who was ahead of them.
+describe("applyLiveSettings — a target change can't hand the match to the wrong player", () => {
+  test("a trailing host lowering the target loses to the actual leader", () => {
+    const io = makeIO();
+    // p1 is the room creator (order[0]) and the host, and is BEHIND.
+    const room = makeRoom({ phase: "roundover", scores: { p1: 3, p2: 4 }, target: 10 });
+    engine.applyLiveSettings(io, room, { target: 3 });
+    assert.equal(room.game.phase, "matchover");
+    assert.equal(room.game.matchWinnerId, "p2", "the leader wins, not whoever changed the setting");
+  });
+
+  test("ending early still works when the leader is the creator", () => {
+    const io = makeIO();
+    const room = makeRoom({ phase: "roundover", scores: { p1: 6, p2: 2 }, target: 10 });
+    engine.applyLiveSettings(io, room, { target: 5 });
+    assert.equal(room.game.phase, "matchover");
+    assert.equal(room.game.matchWinnerId, "p1");
+  });
+
+  test("a target nobody has reached yet leaves the match running", () => {
+    const io = makeIO();
+    const room = makeRoom({ phase: "roundover", scores: { p1: 3, p2: 4 }, target: 10 });
+    engine.applyLiveSettings(io, room, { target: 6 });
+    assert.equal(room.game.phase, "roundover");
+    assert.equal(room.game.target, 6);
+  });
+});
+
+// An off-list guess is stored whole, echoed in the round log, re-sent inside EVERY later gameState
+// snapshot, and written to the database verbatim. Unbounded, one 400KB guess became a 400KB
+// snapshot delivered to every player and every spectator on every subsequent answer — and none of
+// that egress is counted by the cost guard.
+describe("handleAnswer — the guess text is bounded", () => {
+  function provingRoom(overrides = {}) {
+    return makeRoom({
+      phase: "proving", claim: 2, holderId: "p1", turnId: "p1", challengerId: "p2",
+      proven: [], granted: [], pending: new Map(), answerSeq: 0, lastAnswerAt: 0,
+      offListCount: 0, judgeQueue: [], judgeActive: null, bonus: 0,
+      ...overrides,
+    });
+  }
+
+  test("a huge off-list guess is truncated before it is stored", () => {
+    const io = makeIO(); const room = provingRoom();
+    engine.handleAnswer(io, room, sock("p1"), "x".repeat(400000), () => {});
+    const stored = [...room.game.pending.values()][0];
+    assert.ok(stored, "it is still accepted as a pending off-list guess");
+    assert.equal(stored.text.length, 160);
+  });
+
+  test("the snapshot every player and spectator receives is small", () => {
+    const io = makeIO(); const room = provingRoom();
+    engine.handleAnswer(io, room, sock("p1"), "y".repeat(400000), () => {});
+    // MAX_PENDING is 6, so the worst case is a handful of these rather than megabytes.
+    const size = JSON.stringify(engine.viewFor ? engine.viewFor(room) : [...room.game.pending.values()]).length;
+    assert.ok(size < 4000, `snapshot payload was ${size} bytes`);
+  });
+
+  test("the longest real answer in the catalogue still fits", () => {
+    // 136 characters, one of the Nyan Cat troll entries. The cap has to clear it or a legitimate
+    // answer would be silently mangled into a miss.
+    const io = makeIO(); const room = provingRoom();
+    const long = "nyan".repeat(34); // 136
+    engine.handleAnswer(io, room, sock("p1"), long, () => {});
+    const stored = [...room.game.pending.values()][0];
+    assert.equal(stored.text, long, "a 136-char answer must survive intact");
+  });
+
+  test("a null or missing guess doesn't throw", () => {
+    const io = makeIO(); const room = provingRoom();
+    let ack; engine.handleAnswer(io, room, sock("p1"), null, (r) => (ack = r));
+    assert.ok(ack === undefined || typeof ack === "object");
+  });
+});

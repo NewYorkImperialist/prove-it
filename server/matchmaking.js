@@ -7,6 +7,10 @@
 // v1 scope: no category filter (always DEFAULT_GROUPS) — quick-match only has to solve
 // "how many people are waiting", not a bucketed matching problem.
 
+// Required rather than injected: a caller who forgot to pass it would mint seats with no token,
+// which is a seat nobody can ever reclaim after a dropped connection.
+const { newSeatToken } = require("../lib/seat-token.js");
+
 const MIN_TO_START = 2;
 const MAX_TO_START = 6;
 const DEFAULT_GRACE_MS = 8000;
@@ -57,11 +61,11 @@ function createMatchmaking({ newRoom, attach, broadcast, cleanName, uniqueName, 
     // uniqueName, not e.name: a batch is exactly where two people who never typed a name meet,
     // and "Jayden Lin fanboy" twice on one scoreboard is unreadable for both of them.
     for (const e of batch.slice(1)) {
-      room.players.set(e.playerId, { id: e.playerId, name: uniqueName(room, e.name, e.playerId), socketId: e.socket.id, connected: true });
+      room.players.set(e.playerId, { id: e.playerId, name: uniqueName(room, e.name, e.playerId), socketId: e.socket.id, connected: true, token: newSeatToken() });
       attach(room, e.socket, e.playerId);
     }
     broadcast(room);
-    for (const e of batch) e.socket.emit("quickMatchFound", { code: room.code, you: e.playerId });
+    for (const e of batch) e.socket.emit("quickMatchFound", { code: room.code, you: e.playerId, seat: room.players.get(e.playerId)?.token });
     if (queue.length >= MIN_TO_START) arm(); // leftover players beyond MAX_TO_START start their own batch
     else if (queue.length) broadcastStatus(); // …or find out they're back to waiting for one more
   }

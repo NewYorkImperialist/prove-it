@@ -10,6 +10,7 @@ const { ownerOk } = require("../lib/owner-auth.js");
 const { FLY_COST, projectCost } = require("../lib/cost-guard.js");
 const { esc, easternHour, easternTime, easternFull, easternDay, fmtHour12, fmtDur, fmtMs, bar, tbl } = require("../lib/html.js");
 const { CAT_SIZES, CAT_ITEMS, CAT_GROUP } = require("../lib/category-data.js");
+const { cleanName } = require("../lib/name-filter.js");
 
 const DASH = SITE.adminDashboard;
 
@@ -494,7 +495,8 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         ["health", "🩺 Category health", "which answers never get named"],
         ["games", "🎞 Game history", "drill into any past game — every guess, chat and exact timestamp"],
         ["chat", "💬 All chat", "every message across the whole server, searchable"],
-        ["leaderboards", "🏆 Leaderboards", "moderate entries — remove junk or abusive names"],
+        ["leaderboards", "🏆 Leaderboards", "moderate entries — rename or remove junk and abusive names"],
+        ["merge", "🔗 Merge players", "one person showing up twice? fold their entries into one"],
         ["category-leaderboards", "🥇 Category leaderboards", "per-category top solo scores, before they go public"],
         ["runs", "🏃 Solo & daily runs", "drill into any run — every hit, miss and repeat"],
         ["sessions", "🕒 Recent sessions", "every visit — arrival, stay, device, location, timezone"],
@@ -688,29 +690,90 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       </body>`);
   });
 
-  // Leaderboard moderation: list recent entries with a one-click remove (for junk/abusive names).
+  // Leaderboard moderation: list recent entries, each with a one-click remove and a rename
+  // (for junk/abusive self-entered names). Rename exists because removal is the blunt instrument —
+  // a real score under an unusable name shouldn't have to be thrown away to clean up the board.
+  //
+  // Both actions are plain GET links with a confirm(), which is the convention here for a reason:
+  // server/index.js mounts only express.json(), so a <form method="post"> body would arrive
+  // unparsed. The key travels in the query string like every other /admin link.
+  const LB_CSS = `
+  .rn{color:#7aa2ff;font-weight:700} td.act{white-space:nowrap} td.act a{margin-right:10px}
+  .aud{font-size:12px} .aud .was{color:#8a92a6;text-decoration:line-through}
+`;
   router.get("/admin/leaderboards", async (req, res) => {
     if (!ownerOk(req)) return res.status(404).send("Not found");
     const k = encodeURIComponent(req.query.key || "");
     const num = (x) => Number(x || 0);
-    const head = adminHead({ k, title: "Leaderboards" });
+    const head = adminHead({ k, title: "Leaderboards", css: LB_CSS });
     const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
     if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Leaderboards</h1><p class="sub">Persistence not configured.</p></body>`);
-    const list = await analytics.recentResults(300).catch(() => []);
+    const [list, audit] = await Promise.all([
+      analytics.recentResults(300).catch(() => []),
+      analytics.nameAuditList(25).catch(() => []),
+    ]);
     const label = (r) => String(r.challenge_id || "").startsWith("d-")
       ? `<span class="tag">daily</span> ${esc(String(r.challenge_id).replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3"))}`
       : `<span class="tag">${esc(r.type || "challenge")}</span> ${esc(r.genre || r.challenge_id || "")}`;
+    // The name and visitor id go into data-* attributes rather than into an inline onclick: a name
+    // is player-supplied text, and hand-escaping it for a JS string literal nested inside an HTML
+    // attribute is how an apostrophe (or a quote) breaks the handler for every row on the page.
+    // esc() covers the attribute; the script reads the value back as data, never as code.
     const rows = list.map((r) => `<tr>
         <td class="dim">${easternTime(num(r.at))}</td>
         <td>${label(r)}</td>
         <td><b>${esc(r.name || "?")}</b><br><span class="dim" style="font-size:11px">${esc(String(r.visitor_id || "").slice(0, 12))}</span></td>
         <td class="tot">${num(r.total)}</td>
-        <td><a class="rm" href="/admin/result-delete?key=${k}&id=${num(r.id)}" onclick="return confirm('Remove ${esc((r.name || '?').replace(/'/g, ''))} (${num(r.total)}) from this leaderboard?')">✕ remove</a></td>
+        <td class="act">
+          <a class="rn" href="#" data-id="${num(r.id)}" data-name="${esc(r.name || "")}" data-v="${esc(String(r.visitor_id || "").slice(0, 12))}" data-has-v="${r.visitor_id ? 1 : 0}">✎ rename</a>
+          <a class="rm" href="/admin/result-delete?key=${k}&id=${num(r.id)}" data-del="${esc(r.name || "?")}" data-tot="${num(r.total)}">✕ remove</a>
+        </td>
+      </tr>`).join("");
+    const auditRows = audit.map((a) => `<tr>
+        <td class="dim">${easternTime(num(a.at))}</td>
+        <td><span class="was">${esc(a.old_name || "(blank)")}</span> → <b>${esc(a.new_name || "")}</b></td>
+        <td class="dim">${a.scope === "visitor" ? `all of ${esc(String(a.visitor_id || "").slice(0, 12))}` : `row ${num(a.row_id)}`}</td>
+        <td class="dim">${num(a.rows)} ${num(a.rows) === 1 ? "entry" : "entries"}</td>
       </tr>`).join("");
     res.set("content-type", "text/html").send(`${head}${back}
       <h1>🏆 Leaderboard entries</h1>
-      <p class="sub">Newest ${list.length} entries across daily + link challenges. Remove junk or abusive self-entered names. This deletes one entry permanently.</p>
+      <p class="sub">Newest ${list.length} entries across daily + link challenges. <b>Rename</b> keeps the score and changes only the
+        displayed name; <b>remove</b> deletes the entry permanently. A rename offers to cover every entry that visitor ever
+        submitted, on every board — and is logged below with the name it replaced, so it can be put back.</p>
       <div class="tw"><table><tr><th>When (ET)</th><th>Board</th><th>Name</th><th>Score</th><th></th></tr>${rows || `<tr><td class="dim" colspan="5">No entries yet.</td></tr>`}</table></div>
+      <h2>Rename history</h2>
+      <p class="sub">The last ${audit.length} renames made from here. Renaming overwrites the name in place, so this is the only
+        record of what it used to be. Note that separate entries renamed to the same name stay separate rows on the public
+        boards — only the 👑 crown merges them.</p>
+      <div class="tw"><table class="aud"><tr><th>When (ET)</th><th>Change</th><th>Scope</th><th>Affected</th></tr>${auditRows || `<tr><td class="dim" colspan="4">No renames yet.</td></tr>`}</table></div>
+      <script>
+      (function(){
+        var K = ${JSON.stringify(String(req.query.key || ""))};
+        document.addEventListener("click", function(e){
+          var rn = e.target.closest && e.target.closest("a.rn");
+          if (rn) {
+            e.preventDefault();
+            var was = rn.dataset.name || "";
+            var to = prompt("Rename \\u201c" + (was || "(blank)") + "\\u201d to:", was);
+            if (to === null) return;
+            to = to.trim();
+            if (!to || to === was) return;
+            // Cancel is the narrow option on purpose: dismissing a scope prompt should do the
+            // smaller thing, never the bulk one.
+            var wide = rn.dataset.hasV === "1" && confirm(
+              "Rename EVERY entry by visitor " + rn.dataset.v + " to \\u201c" + to + "\\u201d?\\n\\n" +
+              "OK = all of their entries, on every board.\\nCancel = only this one entry.");
+            location.href = "/admin/result-rename?key=" + encodeURIComponent(K)
+              + "&id=" + encodeURIComponent(rn.dataset.id)
+              + "&to=" + encodeURIComponent(to)
+              + "&scope=" + (wide ? "visitor" : "row");
+            return;
+          }
+          var rm = e.target.closest && e.target.closest("a.rm");
+          if (rm && !confirm("Remove " + rm.dataset.del + " (" + rm.dataset.tot + ") from this leaderboard?")) e.preventDefault();
+        });
+      })();
+      </script>
       </body>`);
   });
   router.get("/admin/result-delete", async (req, res) => {
@@ -718,6 +781,294 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const rowId = parseInt(req.query.id, 10);
     if (rowId && analytics.enabled()) await analytics.deleteResult(rowId).catch(() => {});
     res.redirect(`/admin/leaderboards?key=${encodeURIComponent(req.query.key || "")}`);
+  });
+  // Rename an entry (or every entry by the same visitor). Owner-gated, so unlike the player's own
+  // rename in routes/challenge.js this needs no proof of identity — which is exactly why
+  // analytics.adminRename writes an audit row carrying the previous name.
+  router.get("/admin/result-rename", async (req, res) => {
+    if (!ownerOk(req)) return res.status(404).send("Not found");
+    const k = encodeURIComponent(req.query.key || "");
+    const rowId = parseInt(req.query.id, 10);
+    // Same trim/cap/profanity gate a player's own name goes through, so a name typed here can't
+    // land in a column a normal submission could never produce. cleanName() substitutes "Anon"
+    // for a blocked name rather than refusing — for a moderation tool that is the right direction.
+    const to = cleanName(String(req.query.to || "").slice(0, 24));
+    const scope = req.query.scope === "visitor" ? "visitor" : "row";
+    if (rowId && analytics.enabled()) {
+      await analytics.adminRename({ rowId, scope, name: to, by: "admin" }).catch(() => {});
+    }
+    res.redirect(`/admin/leaderboards?key=${k}`);
+  });
+
+  // ── Merge two players into one ────────────────────────────────────────────────────────────────
+  // There are no accounts: a player on the boards IS a visitor_id, minted per browser. So one
+  // person is two entries as soon as they play on their phone and their laptop, and a third after
+  // clearing site data. Merging reassigns one visitor's entries to another, which is the key the
+  // boards group by — renaming can't do it, because since the crown fix a shared display name
+  // confers nothing.
+  //
+  // A real <form method="get"> here rather than the prompt()/confirm() pattern the rename uses: this
+  // takes two identities plus an optional name, and picking two things out of a list of visitors is
+  // not something a sequence of prompts can do well. GET because only express.json() is mounted
+  // (server/index.js), so a POST body would arrive unparsed.
+  const MERGE_CSS = `
+  .mf{background:#151822;border:1px solid #262b38;border-radius:12px;padding:14px;margin:0 0 18px}
+  .mf label{display:block;font-size:12px;color:#8a92a6;margin:10px 0 4px;font-weight:600}
+  .mf select,.mf input{width:100%;background:#0e1016;color:#e8ecf4;border:1px solid #2e3444;
+    border-radius:8px;padding:9px 10px;font:14px/1.3 system-ui,sans-serif;min-height:40px}
+  .mf button{margin-top:14px;width:100%;min-height:44px;background:${DASH.accent};color:#0b0d12;
+    border:0;border-radius:8px;font:700 15px system-ui,sans-serif;cursor:pointer}
+  .mf button:disabled{opacity:.45;cursor:not-allowed}
+  .mf .hint{color:#8a92a6;font-size:12px;margin:6px 0 0}
+  /* Side by side once there is room; stacked on a phone, where two selects in a row would each be
+     too narrow to read a visitor label in. */
+  .mpair{display:grid;gap:10px}
+  @media (min-width:641px){.mpair{grid-template-columns:1fr 1fr;gap:14px}}
+  .undone{color:#8a92a6}
+  .rn{color:#7aa2ff;font-weight:700} .aud{font-size:12px}
+`;
+  // One <option> label has to carry everything needed to tell two visitors apart: what they have
+  // called themselves, how many entries they have, their best score and when they last played.
+  const visitorLabel = (v) => {
+    const names = String(v.names || "").split(",").filter(Boolean);
+    const shown = names.slice(0, 3).join(", ") + (names.length > 3 ? ` +${names.length - 3}` : "");
+    const n = Number(v.entries || 0);
+    return `${v.crown ? "👑 " : ""}${shown || "(no name)"} — ${n} ${n === 1 ? "entry" : "entries"}, best ${Number(v.best || 0)}, last ${easternDay(Number(v.last_at || 0))} · ${String(v.visitor_id || "").slice(0, 12)}`;
+  };
+  // A name's option has to answer the one question that decides whether merging it is safe: how many
+  // separate browsers are using it. One means it is a person; several means either their own devices
+  // or two different people, and only the owner can tell which.
+  const nameLabel = (n) => {
+    const e = Number(n.entries || 0), v = Number(n.visitors || 0);
+    return `${n.crown ? "👑 " : ""}${n.name} — ${e} ${e === 1 ? "entry" : "entries"} from ${v} ${v === 1 ? "browser" : "browsers"}, best ${Number(n.best || 0)}, last ${easternDay(Number(n.last_at || 0))}`;
+  };
+  router.get("/admin/merge", async (req, res) => {
+    if (!ownerOk(req)) return res.status(404).send("Not found");
+    const k = encodeURIComponent(req.query.key || "");
+    const head = adminHead({ k, title: "Merge players", css: MERGE_CSS });
+    const back = `<a href="/admin?key=${k}">← back to dashboard</a>`;
+    if (!analytics.enabled()) return res.set("content-type", "text/html").send(`${head}${back}<h1>Merge players</h1><p class="sub">Persistence not configured.</p></body>`);
+    const [people, history, names, crownHistory] = await Promise.all([
+      analytics.resultVisitors(200).catch(() => []),
+      analytics.mergeAuditList(25).catch(() => []),
+      analytics.resultNames(300).catch(() => []),
+      analytics.crownAuditList(25).catch(() => []),
+    ]);
+    // `done` reports the outcome of the merge that redirected back here. Without it the page looks
+    // identical whether the merge moved forty entries or was refused, which for an operation this
+    // destructive is not good enough.
+    const done = (() => {
+      const r = String(req.query.done || "");
+      if (!r) return "";
+      const n = parseInt(req.query.n, 10) || 0;
+      const msg = {
+        merged: `✅ Merged — ${n} ${n === 1 ? "entry" : "entries"} moved. The boards now show them as one player.`,
+        "merged-names": `✅ Merged — ${n} ${n === 1 ? "entry" : "entries"} now belong to one player under one name.`,
+        undone: `↩️ Put back — ${n} ${n === 1 ? "entry" : "entries"} returned to the player they came from.`,
+        crowned: `✅ Crowned — ${n} ${n === 1 ? "entry" : "entries"} now show with 👑, same as the rest of that player's history.`,
+        same: "⚠️ Nothing done: those are the same player. Pick two different ones.",
+        "same-name": "⚠️ Nothing done: those are the same name. Pick two different ones.",
+        missing: "⚠️ Nothing done: pick a player on both sides.",
+        "missing-name": "⚠️ Nothing done: pick a name on both sides.",
+        "nothing-to-merge": "⚠️ Nothing done: that player has no entries to move.",
+        "nothing-to-crown": "⚠️ Nothing done: that player is already crowned everywhere.",
+        "too-many": "⚠️ Nothing done: that player has more entries than one merge will move at once.",
+        "already-undone": "⚠️ Nothing done: that merge has already been put back.",
+        "not-found": "⚠️ Nothing done: no record of that merge.",
+        "no-snapshot": "⚠️ Can't put that one back — it has no record of which entries moved.",
+        "write-failed": "⚠️ The database refused the write. Nothing changed; try again.",
+      }[r] || "⚠️ Nothing done.";
+      const bad = !["merged", "merged-names", "undone", "crowned"].includes(r);
+      return `<p class="sub" style="color:${bad ? "#ffb4b4" : "#8ef0b4"};font-weight:600">${esc(msg)}</p>`;
+    })();
+    const options = people.map((v) => `<option value="${esc(v.visitor_id)}">${esc(visitorLabel(v))}</option>`).join("");
+    // `data-visitors` is read by the form script to warn when a name covers more than one player.
+    const nameOptions = names.map((n) => `<option value="${esc(n.name)}" data-visitors="${Number(n.visitors || 0)}">${esc(nameLabel(n))}</option>`).join("");
+    const histRows = history.map((h) => {
+      const byName = h.kind === "name";
+      // Older rows predate `kind`/the labels and only ever recorded visitor ids, so fall back to
+      // those rather than rendering a blank cell for every merge made before this feature existed.
+      const from = byName ? (h.from_label || "?") : String(h.from_label || h.from_visitor || "").slice(0, 12);
+      const keep = byName ? (h.keep_label || "?") : String(h.keep_label || h.keep_visitor || "").slice(0, 12);
+      return `<tr${h.undone_at ? ' class="undone"' : ""}>
+        <td class="dim">${easternTime(Number(h.at || 0))}</td>
+        <td><span class="tag">${byName ? "name" : "player"}</span> ${esc(from)} → <b>${esc(keep)}</b>${!byName && h.renamed ? `<br><span class="dim" style="font-size:11px">renamed to ${esc(h.renamed)}</span>` : ""}</td>
+        <td class="dim">${Number(h.rows || 0)}</td>
+        <td>${h.undone_at
+          ? `<span class="dim">put back ${easternTime(Number(h.undone_at))}</span>`
+          : `<a class="rn" href="/admin/merge-undo?key=${k}&id=${Number(h.id)}" onclick="return confirm('Put this merge back? Every entry it moved returns to the player and name it came from.')">↩️ put back</a>`}</td>
+      </tr>`;
+    }).join("");
+    res.set("content-type", "text/html").send(`${head}${back}
+      <h1>🔗 Merge duplicates into one</h1>
+      <p class="sub">This game has no accounts — a player on the leaderboards is a browser. The same person on their
+        phone and their laptop is two entries, and a third after they clear site data. Merging puts their entries on one
+        player, so the boards count them once and show their best.</p>
+      ${done}
+
+      <h2>By name</h2>
+      <p class="sub">For the duplicate you actually see: two names on a board that are obviously one person
+        (<b>jayden</b> and <b>Jayden</b>). Every entry under both names ends up on one player under the name you keep —
+        including when a name spans several browsers, which by player would be one merge each.</p>
+      <form class="mf" action="/admin/merge-names" method="get" id="nf">
+        <input type="hidden" name="key" value="${k}">
+        <div class="mpair">
+          <div>
+            <label for="keepName">Keep this name</label>
+            <select id="keepName" name="keepName" required><option value="">— pick one —</option>${nameOptions}</select>
+          </div>
+          <div>
+            <label for="fromName">…and fold this name into it</label>
+            <select id="fromName" name="fromName" required><option value="">— pick one —</option>${nameOptions}</select>
+          </div>
+        </div>
+        <button type="submit">Merge these two names</button>
+        <p class="hint" id="nwarn" style="display:none;color:#ffb454"></p>
+        <p class="hint">Case matters here, deliberately — <b>jayden</b> and <b>Jayden</b> being separate options is what
+          lets you merge them. Each option says how many browsers use that name; if it is more than one, all of them are
+          being treated as the same person.</p>
+      </form>
+
+      <h2>By player</h2>
+      <p class="sub">When the duplicates share a name already, or have none, and you need to say exactly which two
+        browsers are one person.</p>
+      <form class="mf" action="/admin/merge-do" method="get" id="mf">
+        <input type="hidden" name="key" value="${k}">
+        <div class="mpair">
+          <div>
+            <label for="keep">Keep this player</label>
+            <select id="keep" name="keep" required><option value="">— pick one —</option>${options}</select>
+          </div>
+          <div>
+            <label for="from">…and fold this one into them</label>
+            <select id="from" name="from" required><option value="">— pick one —</option>${options}</select>
+          </div>
+        </div>
+        <label for="name">Name for the merged entries <span class="dim">(optional)</span></label>
+        <input id="name" name="name" maxlength="24" placeholder="leave blank to keep the names they already have" autocomplete="off">
+        <button type="submit">Merge these two</button>
+        <p class="hint">Only leaderboard entries move. The visit log under Sessions and Visitors is left exactly as it
+          was — it is the record of who actually came from where, and rewriting it would make it useless as one.</p>
+        <p class="hint">The person whose entries were folded in loses their own <b>(you)</b> marker on the boards: their
+          browser still holds the id you merged away from. Playing again re-creates it as a new player.</p>
+      </form>
+
+      <h2>Fix a split crown</h2>
+      <p class="sub">Crown is set per-run — whether OWNER_KEY was live in the browser the moment that run finished —
+        not per-browser, so the owner's own device can end up with some runs crowned and some not (the toggle was off
+        for a session). That isn't two players — it's one visitor_id already, so merging above refuses it — this just
+        corrects the flag across everything that player has ever played.</p>
+      <form class="mf" action="/admin/crown-visitor" method="get" id="cf">
+        <input type="hidden" name="key" value="${k}">
+        <label for="cvisitor">This player</label>
+        <select id="cvisitor" name="visitorId" required><option value="">— pick one —</option>${options}</select>
+        <button type="submit">Crown every run of theirs</button>
+        <p class="hint">Only rows that aren't already crowned change. Their whole history collapses into the one
+          crowned entry on every board, same as it would if every run had been crowned from the start.</p>
+      </form>
+      ${crownHistory.length ? `<div class="tw"><table class="aud"><tr><th>When (ET)</th><th>Player</th><th>Entries</th></tr>${crownHistory.map((h) => `<tr>
+        <td class="dim">${easternTime(Number(h.at || 0))}</td>
+        <td>${h.crowned ? "👑 crowned" : "un-crowned"} ${esc(String(h.visitor_id || "").slice(0, 12))}</td>
+        <td class="dim">${Number(h.rows || 0)}</td>
+      </tr>`).join("")}</table></div>` : ""}
+
+      <h2>Merge history</h2>
+      <p class="sub">Each merge records every entry it moved, so it can be put back under the name and player it had.
+        ${history.length ? "" : "Nothing merged yet."}</p>
+      <div class="tw"><table class="aud"><tr><th>When (ET)</th><th>Merge</th><th>Entries</th><th></th></tr>${histRows || `<tr><td class="dim" colspan="4">No merges yet.</td></tr>`}</table></div>
+      <script>
+      (function(){
+        var nf = document.getElementById("nf"), nk = document.getElementById("keepName"), nfrom = document.getElementById("fromName");
+        var nbtn = nf.querySelector("button"), nwarn = document.getElementById("nwarn");
+        function opt(sel){ return sel.selectedIndex > 0 ? sel.options[sel.selectedIndex] : null; }
+        function browsers(sel){ var o = opt(sel); return o ? (parseInt(o.dataset.visitors, 10) || 0) : 0; }
+        function nsync(){
+          // Exact comparison, matching the server: "jayden" and "Jayden" are DIFFERENT options here,
+          // and that is the whole point — refusing them as "the same" would block the common case.
+          var same = nk.value && nk.value === nfrom.value;
+          nbtn.disabled = !nk.value || !nfrom.value || same;
+          nbtn.textContent = same ? "Pick two different names" : "Merge these two names";
+          // The unfixable risk, surfaced rather than designed away: nothing in the data can tell one
+          // person on three browsers apart from three people who picked the same name.
+          var n = browsers(nk) + browsers(nfrom);
+          if (!nbtn.disabled && n > 2) {
+            nwarn.textContent = "⚠ These two names cover " + n + " browsers between them. All of them will become one player — if any of them is somebody else, their scores merge into this one too.";
+            nwarn.style.display = "";
+          } else { nwarn.style.display = "none"; }
+        }
+        nk.addEventListener("change", nsync); nfrom.addEventListener("change", nsync); nsync();
+        nf.addEventListener("submit", function(e){
+          if (nbtn.disabled) { e.preventDefault(); return; }
+          var n = browsers(nk) + browsers(nfrom);
+          var msg = "Put every entry named\\n\\n  " + nfrom.value + "\\n\\nunder\\n\\n  " + nk.value + "\\n\\nas one player?"
+            + (n > 2 ? "\\n\\nThis covers " + n + " different browsers. If they are not all the same person, their scores merge too." : "")
+            + "\\n\\nYou can put this back afterwards.";
+          if (!confirm(msg)) e.preventDefault();
+        });
+
+        var f = document.getElementById("mf"), keep = document.getElementById("keep"), from = document.getElementById("from");
+        var btn = f.querySelector("button");
+        function label(sel){ return sel.selectedIndex > 0 ? sel.options[sel.selectedIndex].text : ""; }
+        // Merging a player into themselves would silently become a bulk rename — a different
+        // operation with a different history entry. Refuse it in the form as well as on the server.
+        function sync(){
+          var same = keep.value && keep.value === from.value;
+          btn.disabled = !keep.value || !from.value || same;
+          btn.textContent = same ? "Pick two different players" : "Merge these two";
+        }
+        keep.addEventListener("change", sync); from.addEventListener("change", sync); sync();
+        f.addEventListener("submit", function(e){
+          if (btn.disabled) { e.preventDefault(); return; }
+          if (!confirm("Fold\\n\\n  " + label(from) + "\\n\\ninto\\n\\n  " + label(keep) + "\\n\\n?\\n\\nEvery leaderboard entry of the first becomes the second's. You can put this back afterwards.")) e.preventDefault();
+        });
+
+        var cf = document.getElementById("cf"), cvisitor = document.getElementById("cvisitor");
+        cf.addEventListener("submit", function(e){
+          if (!cvisitor.value) { e.preventDefault(); return; }
+          if (!confirm("Crown every run " + label(cvisitor) + " has played?\\n\\nAnything of theirs not already crowned joins the rest of their history in the single crowned entry on every board.")) e.preventDefault();
+        });
+      })();
+      </script>
+      </body>`);
+  });
+  router.get("/admin/merge-do", async (req, res) => {
+    if (!ownerOk(req)) return res.status(404).send("Not found");
+    const k = encodeURIComponent(req.query.key || "");
+    // A blank name means "leave the names alone", so it must not become cleanName()'s "Anon".
+    const raw = String(req.query.name || "").slice(0, 24).trim();
+    const name = raw ? cleanName(raw) : null;
+    const out = await analytics.mergeVisitors({ keep: req.query.keep, from: req.query.from, name, by: "admin" })
+      .catch(() => ({ ok: false, reason: "write-failed", rows: 0 }));
+    const q2 = out.ok ? `done=merged&n=${out.rows}` : `done=${encodeURIComponent(out.reason || "")}`;
+    res.redirect(`/admin/merge?key=${k}&${q2}`);
+  });
+  // Merge by display name. Distinct reasons from merge-do's so the page can say which picker was
+  // refused — "pick two different players" under the name form would just be confusing.
+  router.get("/admin/merge-names", async (req, res) => {
+    if (!ownerOk(req)) return res.status(404).send("Not found");
+    const k = encodeURIComponent(req.query.key || "");
+    const out = await analytics.mergeNames({ keepName: req.query.keepName, fromName: req.query.fromName, by: "admin" })
+      .catch(() => ({ ok: false, reason: "write-failed", rows: 0 }));
+    const reason = { same: "same-name", missing: "missing-name" }[out.reason] || out.reason || "";
+    const q2 = out.ok ? `done=merged-names&n=${out.rows}` : `done=${encodeURIComponent(reason)}`;
+    res.redirect(`/admin/merge?key=${k}&${q2}`);
+  });
+  router.get("/admin/merge-undo", async (req, res) => {
+    if (!ownerOk(req)) return res.status(404).send("Not found");
+    const k = encodeURIComponent(req.query.key || "");
+    const out = await analytics.undoMerge(req.query.id, "admin").catch(() => ({ ok: false, reason: "write-failed", rows: 0 }));
+    const q2 = out.ok ? `done=undone&n=${out.rows}` : `done=${encodeURIComponent(out.reason || "")}`;
+    res.redirect(`/admin/merge?key=${k}&${q2}`);
+  });
+  // Crowns every un-crowned run a visitor has ever played — see crownVisitorRows()'s comment for
+  // why this is a different problem than the merges above (same visitor_id both "sides").
+  router.get("/admin/crown-visitor", async (req, res) => {
+    if (!ownerOk(req)) return res.status(404).send("Not found");
+    const k = encodeURIComponent(req.query.key || "");
+    const out = await analytics.crownVisitorRows({ visitorId: req.query.visitorId, on: true, by: "admin" })
+      .catch(() => ({ ok: false, reason: "write-failed", rows: 0 }));
+    const q2 = out.ok ? `done=crowned&n=${out.rows}` : `done=${encodeURIComponent(out.reason || "")}`;
+    res.redirect(`/admin/merge?key=${k}&${q2}`);
   });
 
   // Private per-category leaderboards (not public yet — watching how solo play unfolds).

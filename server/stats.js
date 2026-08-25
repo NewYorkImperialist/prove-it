@@ -47,6 +47,30 @@ async function init() {
       `CREATE TABLE IF NOT EXISTS bandwidth (day TEXT PRIMARY KEY, bytes INTEGER DEFAULT 0, reqs INTEGER DEFAULT 0)`,
       // tiny key/value store (used by the cost guard to remember a per-cycle budget override across restarts)
       `CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)`,
+      // Every rename of a leaderboard entry, with the name it had before. renameResults overwrites
+      // `name` in place, so without this the previous name is gone from the database entirely — the
+      // one destructive edit here that isn't a DELETE, and the only one with nothing to restore from.
+      // `rows` is how many entries that one rename rewrote, so a visitor-wide rename is legible as
+      // one action rather than as an unexplained batch.
+      `CREATE TABLE IF NOT EXISTS name_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, scope TEXT, row_id INTEGER,
+        visitor_id TEXT, old_name TEXT, new_name TEXT, rows INTEGER, by_who TEXT)`,
+      // Every merge of two visitors' leaderboard entries. `snapshot` is the (id, visitor_id, name)
+      // of every row the merge moved, which is what makes it undoable: the merge rewrites
+      // visitor_id in place, and once two visitors' rows share an id nothing else in the schema
+      // remembers which of them a row came from. undone_at marks a merge that has been rolled back
+      // rather than deleting the record of it.
+      `CREATE TABLE IF NOT EXISTS merge_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, keep_visitor TEXT, from_visitor TEXT,
+        rows INTEGER, snapshot TEXT, renamed TEXT, by_who TEXT, undone_at INTEGER)`,
+      // crown is set per-run (behind OWNER_KEY), not per-browser, so the same visitor_id can end
+      // up with a mix of crowned and un-crowned rows — the owner's own crown toggle was off for
+      // some of their plays. That isn't two players (mergeVisitors refuses a same-id "merge"); it's
+      // one visitor's flag needing correcting across their history. `crowned` is the direction
+      // (1 = crowned, 0 = un-crowned), so the same audit trail covers either.
+      `CREATE TABLE IF NOT EXISTS crown_audit (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER, visitor_id TEXT, crowned INTEGER,
+        rows INTEGER, by_who TEXT)`,
       // Reachability, written by scripts/probe.js from OUTSIDE this process (see the uptime
       // workflow). It is the one table this server never writes to itself, and deliberately so:
       // a dashboard running inside the app can report anything except that the app was gone.
@@ -73,7 +97,11 @@ async function init() {
       // Challenge Race additions: format (bo3/bo5/endless) + sudden-death flag + player count on `games`;
       // tie/tiebreaker flags on `rounds` (duel rows just leave these 0/NULL).
       ["games", "format TEXT"], ["games", "sudden_death INTEGER DEFAULT 0"], ["games", "player_count INTEGER"],
-      ["rounds", "tie INTEGER DEFAULT 0"], ["rounds", "tiebreaker INTEGER DEFAULT 0"]]) { // gid→guesses; times[]=speed; mode=solo/daily/link (keeps solo boards separate); verdict=ok/miss/dup
+      ["rounds", "tie INTEGER DEFAULT 0"], ["rounds", "tiebreaker INTEGER DEFAULT 0"],
+      // merge_audit gained a second kind of merge (by display name, not by visitor). `kind` tells
+      // them apart and the two labels are what the history shows — a name merge's "sides" are names,
+      // and keep_visitor/from_visitor can't hold those meaningfully.
+      ["merge_audit", "kind TEXT DEFAULT 'visitor'"], ["merge_audit", "keep_label TEXT"], ["merge_audit", "from_label TEXT"]]) { // gid→guesses; times[]=speed; mode=solo/daily/link (keeps solo boards separate); verdict=ok/miss/dup
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
     // one-time backfill: tag pre-`mode` challenge_results so old solo scores stay on the geography boards.
@@ -378,26 +406,53 @@ async function sessionsList(limit = 300) {
             FROM sessions ORDER BY id DESC LIMIT ?`, [limit]);
 }
 
-// The creator's display name (from any crowned run, anywhere) — used to merge all their same-named
-// entries into one crowned entry even on boards where they have no crowned run.
+// The creator's display NAME, from the newest crowned run. Display only — it decides what the
+// merged crowned entry is labelled when several crowned rows disagree, and nothing else. It must
+// never decide WHICH rows are the creator's: see the note on isCreator below.
 async function getCreatorName() {
   const r = await one(`SELECT name FROM challenge_results WHERE crown=1 ORDER BY id DESC LIMIT 1`);
   return r ? r.name : null;
 }
+// The name half of a board grouping key. Trimmed and lowercased so "jayden" and "Jayden " from one
+// device are still one entry — this is a grouping key, NOT an identity check: a shared name confers
+// nothing on its own (see isCreator below), it only has to stop trivial spacing/case differences
+// from splitting a real player in two.
+const nameKey = (s) => String(s == null ? "" : s).trim().toLowerCase();
+
 // Collapse rows [{name, visitor_id, score, at, crown, ...}] into a ranked board: one entry per
-// visitor; ALL crowned rows AND any row sharing the creator's name merge into a single crowned entry.
+// visitor+name, with every crowned row merged into a single crowned entry.
 function collapseBoard(rows, limit = 50, forcedName) {
-  const nn = (s) => String(s || "").trim().toLowerCase();
   const crownRow = rows.find((r) => r.crown);
-  const creatorName = crownRow ? nn(crownRow.name) : (forcedName ? nn(forcedName) : null);
   const creatorDisplay = crownRow ? crownRow.name : (forcedName || null);
   const tv = (t) => (t == null || !(t > 0)) ? Infinity : Number(t); // no full-clear time → ranks last on a score tie
   const beats = (a, b) => a.score !== b.score ? a.score > b.score : tv(a.time) < tv(b.time); // higher score, else faster clear
   const best = {};
   for (const r of rows) {
     if (!(Number(r.score) > 0)) continue;
-    const isCreator = !!r.crown || (creatorName && nn(r.name) === creatorName);
-    const key = isCreator ? "__creator__" : (r.visitor_id || ("name:" + r.name));
+    // crown=1 ONLY. This used to also treat any row whose display name equalled the creator's as
+    // the creator's own, which made a free-text field into a privilege: posting a keyless score
+    // under that name rendered it with the 👑 and, being merged into __creator__, replaced the
+    // creator's entry when it scored higher. crown is set only behind OWNER_KEY; a name is typed
+    // by anyone. lib/leaderboard.js does the same on the client — these two must not drift, or a
+    // board disagrees with itself about who someone is.
+    const isCreator = !!r.crown;
+    // visitor_id AND name, not visitor_id alone. Grouping on the id by itself made an injected row
+    // REPLACE a real player rather than sit beside them: POST /challenge/:id/result takes visitorId
+    // straight from the body and cannot verify it, and this loop keeps the best row per group along
+    // with THAT row's name — so one submission under someone else's id, scoring higher, became their
+    // public entry, under the submitter's chosen text. Their own score vanished from the board.
+    //
+    // Every board published visitor_id for every row until it was removed, so those ids are already
+    // copied and cannot be rotated (they live in each player's localStorage). Not trusting the id on
+    // write is the real answer and needs a per-device secret this game has nowhere to keep; until
+    // then, this bounds the damage to "a stranger can add a row", which an endpoint with no accounts
+    // can't prevent anyway.
+    //
+    // A legitimate player's rows always agree on name: renameResults rewrites every row a visitor
+    // owns in one statement, so a rename keeps them grouped. The cost is that someone who typed a
+    // different name on a later run without renaming shows as two entries instead of one — visible,
+    // honest, and fixable from /admin/merge either way round.
+    const key = isCreator ? "__creator__" : `${r.visitor_id || ""} ${nameKey(r.name)}`;
     const cand = { name: isCreator ? (creatorDisplay || r.name) : r.name, visitor_id: r.visitor_id, score: Number(r.score), time: (r.time != null && r.time > 0) ? Number(r.time) : null, at: Number(r.at), crown: isCreator ? 1 : 0, challenge_id: r.challenge_id };
     if (!best[key] || beats(cand, best[key])) best[key] = cand;
   }
@@ -518,16 +573,18 @@ async function geoGoat(limit = 50) {
   for (const c of chs) { try { roundsById[c.id] = JSON.parse(c.rounds || "[]"); } catch (e) { roundsById[c.id] = []; } timerById[c.id] = c.timer; }
   // Same solo+link (recommended-timer-only) eligibility as categoryLeaderboard() above.
   const results = await q(`SELECT challenge_id, name, visitor_id, scores, times, crown, mode FROM challenge_results WHERE mode='solo' OR mode='link'`);
-  const creator = (await getCreatorName()) || null; // merge the creator's rows/devices like the other boards
-  const creatorNN = creator ? String(creator).trim().toLowerCase() : null;
+  const creator = (await getCreatorName()) || null; // what to LABEL the merged crowned entry — not who it is
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
   const players = new Map(); // key → { name, visitor_id, crown, best: Map<cat, points> }
   for (const r of results) {
     if (r.mode === "link" && timerById[r.challenge_id] !== 0) continue; // not the recommended-time setting
     const rounds = roundsById[r.challenge_id]; if (!rounds || !rounds.length) continue;
     let scores = [], times = []; try { scores = JSON.parse(r.scores || "[]"); } catch (e) {} try { times = JSON.parse(r.times || "[]"); } catch (e) {}
-    const isCreator = !!r.crown || (creatorNN && String(r.name || "").trim().toLowerCase() === creatorNN);
-    const key = isCreator ? "__creator__" : (r.visitor_id || ("name:" + r.name));
+    const isCreator = !!r.crown; // crown=1 only — see the note in collapseBoard()
+    // visitor_id + name, matching collapseBoard — an injected row must not be able to replace a real
+    // player's entry here either. GOAT is the board where it would matter most: it aggregates a
+    // visitor's best per category across their whole history, so a takeover inherits all of it.
+    const key = isCreator ? "__creator__" : `${r.visitor_id || ""} ${nameKey(r.name)}`;
     let p = players.get(key);
     if (!p) { p = { name: isCreator ? (creator || r.name) : r.name, visitor_id: isCreator ? null : r.visitor_id, crown: isCreator ? 1 : 0, best: new Map() }; players.set(key, p); }
     rounds.forEach((cat, i) => {
@@ -555,9 +612,27 @@ async function recentResults(limit = 300) {
             FROM challenge_results cr LEFT JOIN challenges c ON c.id = cr.challenge_id
             ORDER BY cr.id DESC LIMIT ?`, [limit]);
 }
+// Does this run id belong to this visitor? The rename below rewrites every row a visitor owns, so
+// something has to prove the caller IS that visitor — and `visitor_id` cannot be that proof,
+// because every public leaderboard response publishes it for every row (see getChallengeResults,
+// dailyAllTime, categoryLeaderboard, geoGoat). Anyone could read a board and rename a stranger.
+//
+// `gid` is the run id the client mints per run. It is never included in any player-facing
+// response, so possessing one is evidence of having actually played a run as that visitor. Weaker
+// than a real account, which this game deliberately doesn't have — but it is a secret rather than
+// a public label, which is the property that matters here.
+async function gidOwnedBy(gid, visitorId) {
+  if (!client || !gid || !visitorId) return false;
+  const r = await one(`SELECT 1 ok FROM challenge_results WHERE gid=? AND visitor_id=? LIMIT 1`, [gid, visitorId]);
+  return !!r;
+}
+
 // Rename a player's leaderboard entries everywhere (across all challenges/days). Renames the
 // visitor's rows; when crownAll is set (verified owner key) also renames every crowned row, so the
 // creator's name stays consistent across devices.
+//
+// Callers must have established ownership first — see gidOwnedBy and the route in
+// routes/challenge.js. This function trusts what it is handed.
 async function renameResults({ name, visitorId, crownAll }) {
   if (!client) return 0;
   let n = 0;
@@ -567,6 +642,266 @@ async function renameResults({ name, visitorId, crownAll }) {
   } catch (e) { console.error("📊 rename:", e.message); }
   return n;
 }
+// ---- owner-side rename (admin moderation) ----
+// Distinct from renameResults above, which is the *player's* own "update my name" path and is gated
+// on proving they own the identity (gidOwnedBy). This one is gated on OWNER_KEY at the route and can
+// therefore rewrite anybody's entry — so it is the one that has to leave a record, and it writes the
+// audit row itself rather than trusting a caller to remember.
+//
+// scope is a deliberate choice at the call site, not an inference:
+//   "row"     → this one entry
+//   "visitor" → every entry that visitor ever submitted, on every board
+// A "rename every row that happens to share this display name" scope is intentionally absent: two
+// unrelated players can pick the same name, and that scope would silently rewrite the innocent one.
+async function adminRename({ rowId, scope = "row", name, by = null }) {
+  if (!client) return { ok: false, rows: 0, reason: "off" };
+  const id = parseInt(rowId, 10);
+  if (!id) return { ok: false, rows: 0, reason: "no-row" };
+  const to = String(name == null ? "" : name).trim();
+  if (!to) return { ok: false, rows: 0, reason: "no-name" };
+  const row = await one(`SELECT id, name, visitor_id FROM challenge_results WHERE id=?`, [id]);
+  if (!row) return { ok: false, rows: 0, reason: "not-found" };
+  // Read the old name BEFORE the update, or the audit row records the new name as the old one.
+  const from = row.name == null ? "" : String(row.name);
+  const visitorId = row.visitor_id ? String(row.visitor_id) : null;
+  // Fall back to the single row when the entry has no visitor_id at all (rows predating the column,
+  // and anonymous submissions): a visitor-wide rename keyed on NULL would match every such row.
+  const wide = scope === "visitor" && !!visitorId;
+  const rows = await (async () => {
+    const sql = wide
+      ? `UPDATE challenge_results SET name=? WHERE visitor_id=?`
+      : `UPDATE challenge_results SET name=? WHERE id=?`;
+    try {
+      const r = await client.execute({ sql, args: [to, wide ? visitorId : id] });
+      return Number(r.rowsAffected) || 0;
+    } catch (e) {
+      console.error("📊 admin rename:", e.message);
+      return null; // distinct from 0: the write failed, rather than matching nothing
+    }
+  })();
+  if (rows == null) return { ok: false, rows: 0, reason: "write-failed" };
+  // Awaited, not fire()'d: the whole point is that the old name survives the update, and a
+  // fire-and-forget insert can lose the race with a process restart.
+  try {
+    await client.execute({
+      sql: `INSERT INTO name_audit (at, scope, row_id, visitor_id, old_name, new_name, rows, by_who) VALUES (?,?,?,?,?,?,?,?)`,
+      args: [Date.now(), wide ? "visitor" : "row", id, visitorId, from, to, rows, by ? String(by).slice(0, 60) : null],
+    });
+  } catch (e) { console.error("📊 rename audit:", e.message); }
+  return { ok: true, rows, from, to, scope: wide ? "visitor" : "row", visitorId };
+}
+
+// ---- merging two visitors into one ----
+// There are no accounts in this game: a player's identity on the boards is `visitor_id`, minted in
+// localStorage per browser (lib/browser/storage.js). So the same person playing on their phone and
+// their laptop is two "players", and clearing site data makes a third. Merging is reassigning one
+// visitor's leaderboard rows to another, which is exactly what collapseBoard()/geoGoat group by —
+// so after a merge the boards show one entry instead of two.
+//
+// Renaming cannot do this. Since the crown fix, two rows sharing a display name confer nothing on
+// each other; they stay two entries. visitor_id is the only thing that joins rows into a player.
+//
+// Deliberately limited to `challenge_results`. `sessions` also carries visitor_id, and rewriting it
+// there would tidy /admin/visitors — but those rows are the record of who actually visited from
+// where and when, and rewriting history to make a report look neater is how a report stops being
+// evidence. The boards are the thing being merged; the visit log is left alone.
+const MERGE_ROW_CAP = 2000; // refuse rather than write an unbounded snapshot blob
+
+// Every visitor with at least one leaderboard entry, for the admin merge picker. Grouped from
+// challenge_results rather than sessions: these are the identities that actually appear on a board.
+async function resultVisitors(limit = 200) {
+  return q(`SELECT visitor_id,
+      COUNT(*) entries, MAX(total) best, MIN(at) first_at, MAX(at) last_at,
+      MAX(crown) crown, GROUP_CONCAT(DISTINCT name) names
+    FROM challenge_results WHERE visitor_id IS NOT NULL AND visitor_id <> ''
+    GROUP BY visitor_id ORDER BY entries DESC, last_at DESC LIMIT ?`,
+  [Math.max(1, Math.min(1000, parseInt(limit, 10) || 200))]);
+}
+
+// Fold `from`'s entries into `keep`. `name`, if given, is applied to the moved rows as well, since
+// merging two identities that display different names and leaving both on one entry's history is
+// rarely what the owner meant.
+async function mergeVisitors({ keep, from, name = null, by = null }) {
+  if (!client) return { ok: false, rows: 0, reason: "off" };
+  const to = String(keep || "").trim();
+  const src = String(from || "").trim();
+  if (!to || !src) return { ok: false, rows: 0, reason: "missing" };
+  // Not a no-op — a self-merge with a rename would silently become a bulk rename, which is a
+  // different operation with a different audit trail.
+  if (to === src) return { ok: false, rows: 0, reason: "same" };
+  const newName = name == null ? null : String(name).trim() || null;
+  // Snapshot BEFORE the update: once both sides share one visitor_id, which rows came from `src`
+  // is unrecoverable, so this is the only chance to record it.
+  const moving = await q(`SELECT id, visitor_id, name FROM challenge_results WHERE visitor_id=?`, [src]);
+  if (!moving.length) return { ok: false, rows: 0, reason: "nothing-to-merge" };
+  if (moving.length > MERGE_ROW_CAP) return { ok: false, rows: 0, reason: "too-many", found: moving.length };
+  const snapshot = JSON.stringify(moving.map((r) => ({ i: Number(r.id), v: r.visitor_id, n: r.name })));
+  const rows = await (async () => {
+    try {
+      const r = newName
+        ? await client.execute({ sql: `UPDATE challenge_results SET visitor_id=?, name=? WHERE visitor_id=?`, args: [to, newName, src] })
+        : await client.execute({ sql: `UPDATE challenge_results SET visitor_id=? WHERE visitor_id=?`, args: [to, src] });
+      return Number(r.rowsAffected) || 0;
+    } catch (e) {
+      console.error("📊 merge visitors:", e.message);
+      return null;
+    }
+  })();
+  if (rows == null) return { ok: false, rows: 0, reason: "write-failed" };
+  try {
+    await client.execute({
+      sql: `INSERT INTO merge_audit (at, kind, keep_visitor, from_visitor, keep_label, from_label, rows, snapshot, renamed, by_who, undone_at) VALUES (?,'visitor',?,?,?,?,?,?,?,?,NULL)`,
+      args: [Date.now(), to, src, to, src, rows, snapshot, newName, by ? String(by).slice(0, 60) : null],
+    });
+  } catch (e) { console.error("📊 merge audit:", e.message); }
+  return { ok: true, rows, keep: to, from: src, renamed: newName };
+}
+
+// ---- fixing a split crown ----
+// Crown is decided per-submission (whether OWNER_KEY was live in the browser at the moment that
+// run finished), not per-visitor, so the owner's own device can end up with a mix of crowned and
+// un-crowned rows — mergeVisitors can't fix this, since both sides are already the same
+// visitor_id. This just corrects the flag across everything one visitor has ever played.
+async function crownVisitorRows({ visitorId, on = true, by = null }) {
+  if (!client) return { ok: false, rows: 0, reason: "off" };
+  const vid = String(visitorId || "").trim();
+  if (!vid) return { ok: false, rows: 0, reason: "missing" };
+  const want = on ? 1 : 0;
+  const rows = await (async () => {
+    try {
+      const r = await client.execute({ sql: `UPDATE challenge_results SET crown=? WHERE visitor_id=? AND crown=?`, args: [want, vid, want ? 0 : 1] });
+      return Number(r.rowsAffected) || 0;
+    } catch (e) {
+      console.error("📊 crown visitor:", e.message);
+      return null;
+    }
+  })();
+  if (rows == null) return { ok: false, rows: 0, reason: "write-failed" };
+  if (rows === 0) return { ok: false, rows: 0, reason: "nothing-to-crown" };
+  try {
+    await client.execute({
+      sql: `INSERT INTO crown_audit (at, visitor_id, crowned, rows, by_who) VALUES (?,?,?,?,?)`,
+      args: [Date.now(), vid, want, rows, by ? String(by).slice(0, 60) : null],
+    });
+  } catch (e) { console.error("📊 crown audit:", e.message); }
+  return { ok: true, rows, visitorId: vid, crowned: !!want };
+}
+async function crownAuditList(limit = 25) {
+  return q(`SELECT id, at, visitor_id, crowned, rows, by_who FROM crown_audit ORDER BY id DESC LIMIT ?`,
+    [Math.max(1, Math.min(200, parseInt(limit, 10) || 25))]);
+}
+
+// ---- merging two display NAMES into one ----
+// The duplicate an owner actually sees is two names, not two ids: "jayden" and "Jayden" side by side
+// on a board, obviously one person. mergeVisitors can fix that a pair at a time, but a name is not
+// an identity — one name can span several visitor_ids (a phone, a laptop, a cleared cache), and each
+// of those is a separate merge. This does the whole thing in one action.
+//
+// Merging names has to move visitor_id too, not just rewrite `name`. collapseBoard()/geoGoat group by
+// visitor_id, so two rows that merely share a name stay two entries — which is the exact complaint
+// this is meant to fix. So every row under both names ends up on ONE canonical visitor_id.
+//
+// The risk, stated plainly because it cannot be designed away: if two genuinely different people
+// picked the same display name, this fuses them into one player and their scores become one score.
+// Nothing in the data can distinguish that case from the intended one. resultNames() therefore
+// reports how many distinct visitors each name covers, so the picker can show it and the admin page
+// can warn before a name covering several is merged.
+async function resultNames(limit = 300) {
+  return q(`SELECT name,
+      COUNT(*) entries, COUNT(DISTINCT visitor_id) visitors, MAX(total) best,
+      MIN(at) first_at, MAX(at) last_at, MAX(crown) crown
+    FROM challenge_results WHERE name IS NOT NULL AND name <> ''
+    GROUP BY name ORDER BY entries DESC, last_at DESC LIMIT ?`,
+  [Math.max(1, Math.min(1000, parseInt(limit, 10) || 300))]);
+}
+
+async function mergeNames({ keepName, fromName, by = null }) {
+  if (!client) return { ok: false, rows: 0, reason: "off" };
+  const keep = String(keepName || "").trim();
+  const drop = String(fromName || "").trim();
+  if (!keep || !drop) return { ok: false, rows: 0, reason: "missing" };
+  // Compared exactly, not case-insensitively: "jayden" vs "Jayden" being DIFFERENT options is what
+  // makes them mergeable here, so treating them as the same would refuse the commonest case.
+  if (keep === drop) return { ok: false, rows: 0, reason: "same" };
+  // Snapshot both sides before anything moves — the keep side included, because its rows may be
+  // getting a new visitor_id too, and an undo has to put those back as well.
+  const moving = await q(
+    `SELECT id, visitor_id, name FROM challenge_results WHERE name=? OR name=? ORDER BY total DESC, at DESC`,
+    [keep, drop]);
+  if (!moving.length) return { ok: false, rows: 0, reason: "nothing-to-merge" };
+  if (moving.length > MERGE_ROW_CAP) return { ok: false, rows: 0, reason: "too-many", found: moving.length };
+  // Canonical id: prefer one already used by the name being KEPT (its highest-scoring row, since the
+  // query is ordered by total), then any id on either side. Synthesised only if neither side has one
+  // at all — rows predating the visitor_id column. Inventing an id for those is safe precisely
+  // because they never matched a real device: it groups them without taking anything from anyone.
+  const canonical =
+    moving.find((r) => r.name === keep && r.visitor_id)?.visitor_id ||
+    moving.find((r) => r.visitor_id)?.visitor_id ||
+    "m-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8);
+  const snapshot = JSON.stringify(moving.map((r) => ({ i: Number(r.id), v: r.visitor_id, n: r.name })));
+  const rows = await (async () => {
+    try {
+      const r = await client.execute({
+        sql: `UPDATE challenge_results SET visitor_id=?, name=? WHERE name=? OR name=?`,
+        args: [canonical, keep, keep, drop],
+      });
+      return Number(r.rowsAffected) || 0;
+    } catch (e) {
+      console.error("📊 merge names:", e.message);
+      return null;
+    }
+  })();
+  if (rows == null) return { ok: false, rows: 0, reason: "write-failed" };
+  try {
+    await client.execute({
+      sql: `INSERT INTO merge_audit (at, kind, keep_visitor, from_visitor, keep_label, from_label, rows, snapshot, renamed, by_who, undone_at) VALUES (?,'name',?,NULL,?,?,?,?,?,?,NULL)`,
+      args: [Date.now(), canonical, keep, drop, rows, snapshot, keep, by ? String(by).slice(0, 60) : null],
+    });
+  } catch (e) { console.error("📊 merge names audit:", e.message); }
+  return { ok: true, rows, keep, from: drop, visitorId: canonical };
+}
+
+// Put a merge back: every row named in the snapshot returns to the visitor_id and name it had.
+// Row-by-row rather than one UPDATE, because the rows are only identifiable individually now —
+// their visitor_id is the one they were merged INTO, shared with rows that were always there.
+async function undoMerge(auditId, by = null) {
+  if (!client) return { ok: false, rows: 0, reason: "off" };
+  const id = parseInt(auditId, 10);
+  if (!id) return { ok: false, rows: 0, reason: "missing" };
+  const rec = await one(`SELECT id, snapshot, undone_at FROM merge_audit WHERE id=?`, [id]);
+  if (!rec) return { ok: false, rows: 0, reason: "not-found" };
+  if (rec.undone_at) return { ok: false, rows: 0, reason: "already-undone" };
+  const snap = (() => { try { return JSON.parse(rec.snapshot || "[]"); } catch (e) { return []; } })();
+  if (!Array.isArray(snap) || !snap.length) return { ok: false, rows: 0, reason: "no-snapshot" };
+  try {
+    await client.batch(snap.map((r) => ({
+      sql: `UPDATE challenge_results SET visitor_id=?, name=? WHERE id=?`,
+      args: [r.v, r.n, Number(r.i)],
+    })), "write");
+  } catch (e) {
+    console.error("📊 undo merge:", e.message);
+    return { ok: false, rows: 0, reason: "write-failed" };
+  }
+  // Only after the restore actually landed: a merge marked undone that wasn't would hide the one
+  // record able to put it right.
+  try {
+    await client.execute({ sql: `UPDATE merge_audit SET undone_at=?, by_who=COALESCE(?,by_who) WHERE id=?`, args: [Date.now(), by ? String(by).slice(0, 60) : null, id] });
+  } catch (e) { console.error("📊 undo merge mark:", e.message); }
+  return { ok: true, rows: snap.length };
+}
+
+// The merge history, newest first. Carries enough to undo each one (and whether it already was).
+async function mergeAuditList(limit = 25) {
+  return q(`SELECT id, at, kind, keep_visitor, from_visitor, keep_label, from_label, rows, renamed, by_who, undone_at
+            FROM merge_audit ORDER BY id DESC LIMIT ?`, [Math.max(1, Math.min(200, parseInt(limit, 10) || 25))]);
+}
+
+// The rename history, newest first — what makes an owner rename undoable.
+async function nameAuditList(limit = 25) {
+  return q(`SELECT at, scope, row_id, visitor_id, old_name, new_name, rows, by_who
+            FROM name_audit ORDER BY id DESC LIMIT ?`, [Math.max(1, Math.min(200, parseInt(limit, 10) || 25))]);
+}
+
 // Delete a single leaderboard entry by its row id (owner moderation).
 async function deleteResult(rowId) {
   if (!client) return 0;
@@ -623,4 +958,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats };
+module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList, resultVisitors, mergeVisitors, undoMerge, mergeAuditList, resultNames, mergeNames, crownVisitorRows, crownAuditList };

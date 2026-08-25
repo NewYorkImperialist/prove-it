@@ -38,7 +38,9 @@ describe("a failed save is never silent", () => {
 
   test("renameRun reads the server's answer instead of always claiming success", () => {
     const solo = read("hooks/useSolo.js");
-    const fn = solo.slice(solo.indexOf("const renameRun"), solo.indexOf("const renameRun") + 900);
+    // Widened from 900: this reads source rather than behaviour, so any comment added inside the
+    // function can push the assertion out of the window and fail a check that is still true.
+    const fn = solo.slice(solo.indexOf("const renameRun"), solo.indexOf("const renameRun") + 1600);
     assert.match(fn, /const res = await postJSON\("\/challenge\/rename"/,
       "renameRun must keep the POST result");
     assert.match(fn, /if \(!res\.ok\) return \{ ok: false, error:/,

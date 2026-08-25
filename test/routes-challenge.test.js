@@ -750,3 +750,169 @@ describe("POST /challenge/:id/result — the typing ceiling", () => {
     });
   });
 });
+
+// The fourth and only non-heuristic check: the score the SERVER can derive.
+//
+// The three ceilings above bound how absurd a fabricated number may be. They cannot tell a good
+// player from a careful liar, because every input they read comes from the same payload. This one
+// reads something else: the answers the run actually submitted, posted round by round while it was
+// being played, re-matched against the category's real answer list with the same resolver
+// multiplayer scores with. Faking a score now means submitting genuinely correct answers.
+describe("POST /challenge/:id/result — the score the server derives", () => {
+  const analytics = require("../server/stats.js");
+  const post = (app, ip, body) => request(app).post("/challenge/d-1/result").set("fly-client-ip", ip).send(body);
+
+  function withRun({ challenge, guesses }, run) {
+    const saved = { enabled: analytics.enabled, getChallenge: analytics.getChallenge, addChallengeResult: analytics.addChallengeResult, runGuesses: analytics.runGuesses };
+    const written = [];
+    analytics.enabled = () => true;
+    analytics.getChallenge = async () => challenge;
+    analytics.runGuesses = async () => guesses;
+    analytics.addChallengeResult = async (row) => { written.push(row); return true; };
+    return Promise.resolve(run(written)).finally(() => Object.assign(analytics, saved));
+  }
+  const GREEK = { id: "d-1", rounds: ["Greek Gods"], timer: 30 };
+  const g = (display, category = "Greek Gods") => ({ category, display });
+
+  test("a claimed score is cut to the answers the run actually got right", async () => {
+    // Three real answers logged, 51 claimed, and a wpm high enough that no other ceiling binds.
+    await withRun({ challenge: GREEK, guesses: [g("Zeus"), g("Hera"), g("Poseidon")] }, async (written) => {
+      await post(buildApp(() => false), "5.5.5.1", { name: "x", scores: [51], wpms: [300], gid: "s-1" });
+      assert.equal(written[0].scores[0], 3);
+    });
+  });
+
+  test("wrong answers in the log earn nothing — the client's own verdict is not trusted", async () => {
+    // recordSoloGuesses stores whatever verdict the client sent. Reading that back would just move
+    // the same unverified number one field left, so each display is re-matched here instead.
+    await withRun({ challenge: GREEK, guesses: [g("Zeus"), g("Definitely Not A God"), g("asdfgh")] }, async (written) => {
+      await post(buildApp(() => false), "5.5.5.2", { name: "x", scores: [51], wpms: [300], gid: "s-1" });
+      assert.equal(written[0].scores[0], 1);
+    });
+  });
+
+  test("an honest run is untouched — the derived score is the one they claimed", async () => {
+    await withRun({ challenge: GREEK, guesses: [g("Zeus"), g("Hera"), g("Ares"), g("Apollo")] }, async (written) => {
+      await post(buildApp(() => false), "5.5.5.3", { name: "mark", scores: [4], wpms: [45], gid: "s-1" });
+      assert.equal(written[0].scores[0], 4);
+    });
+  });
+
+  test("aliases and casing count, because the server uses the game's own resolver", async () => {
+    // If this used its own matching, a board would start disagreeing with the client about what
+    // counted — the player would see 4 and the leaderboard would show 2.
+    await withRun({ challenge: GREEK, guesses: [g("zeus"), g("  HERA  ")] }, async (written) => {
+      await post(buildApp(() => false), "5.5.5.4", { name: "x", scores: [2], wpms: [45], gid: "s-1" });
+      assert.equal(written[0].scores[0], 2);
+    });
+  });
+
+  test("the same answer typed twice counts once", async () => {
+    await withRun({ challenge: GREEK, guesses: [g("Zeus"), g("Zeus"), g("zeus")] }, async (written) => {
+      await post(buildApp(() => false), "5.5.5.5", { name: "x", scores: [3], wpms: [45], gid: "s-1" });
+      assert.equal(written[0].scores[0], 1);
+    });
+  });
+
+  test("a round the server has NO guesses for falls back to the ceilings, not to zero", async () => {
+    // The guess POST is fire-and-forget and the last round's insert can still be in flight when the
+    // result lands. Zeroing that round would cost a real player the round they just finished.
+    await withRun({ challenge: GREEK, guesses: [] }, async (written) => {
+      await post(buildApp(() => false), "5.5.5.6", { name: "x", scores: [12], wpms: [60], gid: "s-1" });
+      assert.equal(written[0].scores[0], 12, "kept, because nothing was logged to check it against");
+    });
+  });
+
+  test("each round is checked against its own category's log", async () => {
+    const two = { id: "d-1", rounds: ["Greek Gods", "US States"], timer: 30 };
+    await withRun({ challenge: two, guesses: [g("Zeus"), g("Hera"), g("Texas", "US States")] }, async (written) => {
+      await post(buildApp(() => false), "5.5.5.7", { name: "x", scores: [50, 50], wpms: [300, 300], gid: "s-1" });
+      assert.deepEqual(written[0].scores, [2, 1]);
+    });
+  });
+
+  test("a submission with no gid can't be checked, and is left to the ceilings", async () => {
+    // Nothing to look up. The ceilings still apply, which is what bounds it.
+    await withRun({ challenge: GREEK, guesses: [g("Zeus")] }, async (written) => {
+      await post(buildApp(() => false), "5.5.5.8", { name: "x", scores: [51], wpms: [300] });
+      assert.ok(written[0].scores[0] > 1, "not derived…");
+      assert.ok(written[0].scores[0] <= 51, "…but still capped");
+    });
+  });
+
+  test("the reported attack gets nothing at all once a gid is supplied with no matching answers", async () => {
+    await withRun({ challenge: GREEK, guesses: [] }, async (written) => {
+      await post(buildApp(() => false), "5.5.5.9", { name: "THE INEVITABLE", scores: [999], wpms: [0], times: [], gid: "s-mt2asi7yj26vsz" });
+      assert.equal(written[0].scores[0], 6, "the typing ceiling's allowance, and nothing more");
+    });
+  });
+
+  test("a genuine full clear is still a full clear", async () => {
+    const { CAT_ITEMS } = require("../lib/category-data.js");
+    const all = CAT_ITEMS["Greek Gods"].map((it) => g(String(Array.isArray(it) ? it[0] : it)));
+    await withRun({ challenge: { id: "d-1", rounds: ["Greek Gods"], timer: 300 }, guesses: all }, async (written) => {
+      await post(buildApp(() => false), "5.5.5.10", { name: "x", scores: [all.length], wpms: [120], gid: "s-1" });
+      assert.equal(written[0].scores[0], all.length);
+    });
+  });
+
+  test("a database error reading the log doesn't zero the run", async () => {
+    const saved = { enabled: analytics.enabled, getChallenge: analytics.getChallenge, addChallengeResult: analytics.addChallengeResult, runGuesses: analytics.runGuesses };
+    const written = [];
+    analytics.enabled = () => true;
+    analytics.getChallenge = async () => GREEK;
+    analytics.runGuesses = async () => { throw new Error("connection reset"); };
+    analytics.addChallengeResult = async (row) => { written.push(row); return true; };
+    try {
+      await post(buildApp(() => false), "5.5.5.11", { name: "x", scores: [10], wpms: [60], gid: "s-1" });
+      assert.equal(written[0].scores[0], 10);
+    } finally { Object.assign(analytics, saved); }
+  });
+});
+
+// The public boards are readable by anyone — they have to be, the browser fetches them and any
+// token gating them would ship to that browser. What can be bounded is the RATE, because these are
+// the largest responses the app serves and the cost guard pauses the whole site on egress.
+describe("the public leaderboard reads are rate-limited", () => {
+  const analytics = require("../server/stats.js");
+  const READS = ["/challenge/abc/results", "/daily", "/category-leaderboard?cat=Greek%20Gods", "/daily/alltime", "/geo-goat"];
+
+  test("a scraper is cut off, and told so in a shape the client understands", async () => {
+    const app = buildApp(() => false);
+    let limited = null;
+    for (let i = 0; i < 200 && !limited; i++) {
+      const res = await request(app).get("/daily/alltime").set("fly-client-ip", "9.9.9.1");
+      if (res.status === 429) limited = res;
+    }
+    assert.ok(limited, "should have been limited well within 200 requests");
+    assert.equal(limited.body.ok, false);
+    assert.match(limited.body.error, /too many/i);
+  });
+
+  test("every public read is covered, not just one", async () => {
+    const app = buildApp(() => false);
+    for (const path of READS) {
+      let sawLimit = false;
+      for (let i = 0; i < 200 && !sawLimit; i++) {
+        const res = await request(app).get(path).set("fly-client-ip", `9.9.9.${path.length}`);
+        if (res.status === 429) sawLimit = true;
+      }
+      assert.ok(sawLimit, `${path} is not rate-limited`);
+    }
+  });
+
+  test("the reads have their own budget, so a scraper can't lock a player out of saving a run", async () => {
+    // Separate buckets per purpose. A shared counter would turn a nuisance into an outage.
+    const app = buildApp(() => false);
+    for (let i = 0; i < 200; i++) await request(app).get("/daily/alltime").set("fly-client-ip", "9.9.9.7");
+    const saved = { enabled: analytics.enabled, getChallenge: analytics.getChallenge, addChallengeResult: analytics.addChallengeResult, runGuesses: analytics.runGuesses };
+    analytics.enabled = () => true;
+    analytics.getChallenge = async () => ({ id: "d-1", rounds: ["Greek Gods"], timer: 30 });
+    analytics.runGuesses = async () => [];
+    analytics.addChallengeResult = async () => true;
+    try {
+      const res = await request(app).post("/challenge/d-1/result").set("fly-client-ip", "9.9.9.7").send({ name: "x", scores: [3], wpms: [45] });
+      assert.equal(res.status, 200, "the write bucket must be untouched by the read flood");
+    } finally { Object.assign(analytics, saved); }
+  });
+});

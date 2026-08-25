@@ -121,6 +121,7 @@ const adminHead = ({ k, title = "", css = "", refresh = 0 }) => `<!doctype html>
 <title>${title ? `${esc(title)} · ${DASH.title}` : DASH.title}</title>
 <link rel="manifest" href="/admin/manifest.webmanifest?key=${k}">
 <meta name="theme-color" content="${DASH.themeColor}">
+<link rel="icon" href="/admin-icon-192.png">
 <link rel="apple-touch-icon" href="/admin-apple-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="${SITE.pwaAdmin.shortName}">

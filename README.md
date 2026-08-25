@@ -103,7 +103,8 @@ just switch themselves off.
 | variable | effect when set |
 | --- | --- |
 | `TURSO_URL`, `TURSO_TOKEN` | turns on persistence: challenge links, the daily, every leaderboard. Without them those endpoints answer "not configured". |
-| `OWNER_KEY` | unlocks the owner-only `/admin` dashboard (including the "Where visitors come from" referral panel) and the 👑 crown on your own scores. |
+| `OWNER_KEY` | unlocks the owner-only `/admin` dashboard: every visitor's IP and location, all chat, the session log, and the tools that rename, merge and delete leaderboard entries. **Server-side only** — it must never end up in a browser. |
+| `CROWN_KEY` | earns the cosmetic 👑 on your own scores, and nothing else. This is the one the browser holds (`localStorage.ownerKey`, sent with every result), so it is deliberately a *different* secret from `OWNER_KEY`. Unset, the crown falls back to `OWNER_KEY` — which is how it used to work, so nothing breaks until you set this. **Set it, then clear `localStorage.ownerKey` on any device you have crowned on and re-enter the new value**; that is what stops the dashboard key living in a browser. |
 | `FLY_API_TOKEN` | lets the cost guard scale the machine down by itself (see above). |
 | `NEXT_PUBLIC_CF_BEACON_TOKEN` | loads the Cloudflare Web Analytics beacon. **Unset, no analytics script is served at all** — so a fork reports nothing to anybody. It's read at build time (Next inlines `NEXT_PUBLIC_*`), so it belongs in the build environment, not in `fly secrets`. |
 | `PORT` | the port to listen on (default 3000). |

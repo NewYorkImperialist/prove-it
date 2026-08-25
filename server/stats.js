@@ -104,6 +104,9 @@ async function init() {
       ["merge_audit", "kind TEXT DEFAULT 'visitor'"], ["merge_audit", "keep_label TEXT"], ["merge_audit", "from_label TEXT"]]) { // gid→guesses; times[]=speed; mode=solo/daily/link (keeps solo boards separate); verdict=ok/miss/dup
       try { await client.execute(`ALTER TABLE ${t} ADD COLUMN ${c}`); } catch (e) { /* column already exists */ }
     }
+    // The result endpoint now reads a run's own guesses back to verify the score it claims, keyed on
+    // gid, on every submission. Without an index that is a full scan of every answer ever typed.
+    try { await client.execute(`CREATE INDEX IF NOT EXISTS idx_answers_gid ON answers(gid)`); } catch (e) {}
     // one-time backfill: tag pre-`mode` challenge_results so old solo scores stay on the geography boards.
     // daily rows (`d-%`) → 'daily'; everything else untagged → 'solo'. Idempotent (only touches NULL).
     try { await client.execute(`UPDATE challenge_results SET mode='daily' WHERE mode IS NULL AND challenge_id LIKE 'd-%'`); } catch (e) {}
@@ -940,6 +943,19 @@ function recordSoloGuesses(d) {
       [d.challengeId || null, d.category || null, null, String(g.display || "").slice(0, 80), 0, Number(g.at) || Date.now(), d.mode || "solo", d.gid || null, d.name || null, g.verdict || null]);
   }
 }
+// Every DISTINCT answer a run actually submitted, per category. This is what lets the result
+// endpoint score a run server-side instead of believing the number the client sends: the guesses
+// were posted round by round while the run was being played, so a claimed score can be checked
+// against the answers that were typed to earn it.
+//
+// `verdict` is deliberately NOT read. The client decides ok/miss/dup, so trusting it here would
+// just move the same unverified number one field to the left — routes/challenge.js re-matches each
+// display against the category's real answer list itself.
+async function runGuesses(gid) {
+  if (!gid) return [];
+  return q(`SELECT DISTINCT category, display FROM answers WHERE gid=?`, [String(gid).slice(0, 40)]);
+}
+
 // Recent solo/daily runs (one row per finished run) with its challenge meta + gid for drill-in.
 async function soloRunsList(limit = 120) {
   return q(`SELECT cr.id, cr.gid, cr.challenge_id, cr.name, cr.visitor_id, cr.scores, cr.total, cr.at, c.type, c.genre, c.rounds
@@ -958,4 +974,4 @@ async function getChallengeResults(id) {
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList, resultVisitors, mergeVisitors, undoMerge, mergeAuditList, resultNames, mergeNames, crownVisitorRows, crownAuditList };
+module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, runGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList, resultVisitors, mergeVisitors, undoMerge, mergeAuditList, resultNames, mergeNames, crownVisitorRows, crownAuditList };

@@ -12,6 +12,11 @@ const { CATEGORY_GROUPS, CAT_SIZES, CAT_ITEMS, ALL_ROUND_NAMES } = require("../l
 const { cleanName, isBlocked } = require("../lib/name-filter.js");
 const { MODES, allBoards } = require("../lib/geo-boards.js");
 const { recommendedTime } = require("../lib/solo-catalog.js"); // per-category round length, for the pace cap
+// The SAME resolver multiplayer scores with. Solo and multiplayer share category names and
+// leaderboards, so an answer that counts in one has to count in the other — and a second copy of
+// the matching rules here would be the thing that eventually disagreed with the client.
+const { buildCategory, resolve } = require("../lib/answer-matching.js");
+const { crownOk, ownerKeyOk } = require("../lib/owner-auth.js");
 
 const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char url-safe id
 
@@ -36,7 +41,14 @@ const SUBMIT_WINDOW_MS = 60_000;
 // Separate buckets per endpoint rather than one shared counter: a shared one lets a flood against
 // the cheapest endpoint lock a real player out of saving their run, which would turn a nuisance
 // into an outage.
-const LIMITS = { result: 20, rename: 20, create: 20, guesses: 60 };
+//
+// `read` covers the public leaderboard GETs. They are not writes and cannot corrupt anything, but
+// they are the biggest responses the app serves, so an unbounded scraper is a bandwidth bill (the
+// cost guard watches egress, and tier two pauses the whole site) rather than a data problem. There
+// is no way to stop a determined reader — the boards are public, the browser fetches them, and any
+// token that gated them would have to ship to that browser — so this bounds the rate, not the
+// access. A player opening the leaderboard modal repeatedly is nowhere near 120/min.
+const LIMITS = { result: 20, rename: 20, create: 20, guesses: 60, read: 120 };
 const buckets = new Map(); // "purpose|ip" → { count, resetAt }
 
 // Fly terminates TLS and forwards the caller in fly-client-ip; x-forwarded-for is the generic
@@ -58,6 +70,13 @@ function submitAllowed(req, purpose = "result") {
   }
   e.count += 1;
   return e.count <= (LIMITS[purpose] || 20);
+}
+
+// Shared guard for the public read endpoints. Returns true when it has already answered the request.
+function readLimited(req, res) {
+  if (submitAllowed(req, "read")) return false;
+  res.status(429).json({ ok: false, error: "Too many requests — try again in a minute." });
+  return true;
 }
 
 // The most a human could type in `seconds`, generously. A four-letter answer plus Enter is about
@@ -110,6 +129,25 @@ const typedCeiling = (wpm, seconds, category) => {
   const chars = Math.max(0, Math.min(MAX_HUMAN_WPM, wpm)) * 5 * Math.max(1, seconds) / 60;
   return Math.floor(chars / (CAT_MIN_CHARS[category] || FALLBACK_CHARS)) + FREE_ANSWERS;
 };
+
+// A category by name, with its aliases resolved, for scoring a run's submitted answers server-side.
+// Built on demand and cached: there are 282 categories and a submission touches at most a handful,
+// so building them all at boot would be wasted work on every deploy.
+//
+// Returns null for a name with no plain item list — the flag and border quizzes are synthesised
+// rather than being categories.js entries (see lib/flags.js / lib/borders.js), so there is nothing
+// to check an answer against and verification is skipped for them.
+const builtCats = new Map();
+function builtCategory(name) {
+  if (builtCats.has(name)) return builtCats.get(name);
+  let built = null;
+  for (const [key, grp] of Object.entries(CATEGORY_GROUPS)) {
+    const c = (grp.cats || []).find((x) => x.name === name);
+    if (c && Array.isArray(c.items) && c.items.length) { built = buildCategory(c, key, grp.emoji); break; }
+  }
+  builtCats.set(name, built);
+  return built;
+}
 
 // Every board used to hand each row's real `visitor_id` to every client. That turned a private
 // handle into a public one, and /challenge/rename trusted it as proof of ownership — so reading a
@@ -258,6 +296,33 @@ function createChallengeRouter({ isLockdown }) {
     const c = await analytics.getChallenge(id).catch(() => null);
     if (!c) return res.json({ ok: false });
     const b = req.body || {};
+    const gid = String(b.gid || "").slice(0, 40); // links this run to its captured guesses
+    // ── The score the server can prove ────────────────────────────────────────────────────────────
+    // Every other ceiling below bounds how absurd a fabricated number may be. This one asks a
+    // different question: which answers did this run actually submit?
+    //
+    // The client posts its guesses round by round while the run is being played
+    // (hooks/useSolo.js), so by the time the result arrives the server already holds the answers
+    // that were typed. Re-matching those against the category's real answer list with the same
+    // resolver multiplayer uses gives a score the server derived rather than one it was handed —
+    // so faking a score now means submitting genuinely correct answers, which is playing the game.
+    //
+    // Applied only per category the server HAS guesses for. The guess POST is fire-and-forget and
+    // the last round's insert can still be in flight when the result lands, so a missing category
+    // falls through to the ceilings below rather than zeroing a real player's round. A run whose
+    // guesses were logged is capped at exactly the score those guesses earn, which for an honest
+    // player is the score they already claimed.
+    const provenPerCat = new Map(); // category name → Set of entry ids genuinely answered
+    if (gid) {
+      for (const g of await analytics.runGuesses(gid).catch(() => [])) {
+        const cat = builtCategory(g.category);
+        if (!cat) continue; // flag/border quizzes aren't plain categories — no list to check against
+        const hit = resolve(cat, g.display);
+        if (!hit) continue;
+        if (!provenPerCat.has(g.category)) provenPerCat.set(g.category, new Set());
+        provenPerCat.get(g.category).add(hit.id);
+      }
+    }
     // Two independent ceilings, and a round's score has to clear both.
     //
     // 1. It cannot exceed the number of answers the category actually has. The old cap was a flat
@@ -284,7 +349,11 @@ function createChallengeRouter({ isLockdown }) {
       const byPace = Math.ceil(Math.max(1, seconds) * PACE_PER_SECOND);
       const bySize = Number.isFinite(size) && size > 0 ? size : 999;
       const byTyping = typedCeiling(wpms[i] || 0, seconds, name);
-      return Math.min(bySize, byPace, byTyping);
+      // The proven score, where there is one, is not a "ceiling" in the same sense as the other
+      // three — it is the answer. It only appears as a Math.min term because a category the server
+      // has no guesses for must not be capped at zero.
+      const proven = provenPerCat.has(name) ? provenPerCat.get(name).size : Infinity;
+      return Math.min(bySize, byPace, byTyping, proven);
     };
     // Slice before mapping so each score still lines up with its own round — mapping first and
     // slicing after would cap score[i] against the wrong category on an over-long payload.
@@ -293,8 +362,7 @@ function createChallengeRouter({ isLockdown }) {
     // seconds-to-complete per round (null when not fully completed) — for speed ranking on maxed boards
     const times = (Array.isArray(b.times) ? b.times : []).map((n) => { const t = parseInt(n, 10); return t > 0 ? Math.min(3600, t) : null; }).slice(0, c.rounds.length);
     const total = scores.reduce((a, n) => a + n, 0);
-    const crown = !!(process.env.OWNER_KEY && b.ownerKey === process.env.OWNER_KEY); // creator crown (server-validated)
-    const gid = String(b.gid || "").slice(0, 40); // links this run to its captured guesses
+    const crown = crownOk(b.ownerKey); // creator crown (server-validated) — see lib/owner-auth.js
     // play origin — keeps the solo-map geography boards separate from daily/shared-link plays.
     const mode = id.startsWith("d-") ? "daily" : (["solo", "link"].includes(b.mode) ? b.mode : "solo");
     // Report what the write actually did. Hardcoding ok:true here made the client's whole
@@ -327,7 +395,11 @@ function createChallengeRouter({ isLockdown }) {
     const name = cleanName(rawName);
     const visitorId = String(b.visitorId || "").slice(0, 40) || null;
     const gid = String(b.gid || "").slice(0, 40) || null;
-    const crownAll = !!(process.env.OWNER_KEY && b.ownerKey === process.env.OWNER_KEY);
+    // OWNER_KEY, not the crown key: this branch rewrites the name on EVERY crowned row at once, so
+    // it is a bulk write rather than a badge, and the crown key lives in a browser. A client sending
+    // its crown key simply doesn't get this branch — the visitorId path below still renames their own
+    // rows, and /admin/leaderboards covers the cross-device case deliberately.
+    const crownAll = ownerKeyOk(b.ownerKey);
     if (!visitorId && !crownAll) return res.json({ ok: false });
     // The owner key stands on its own; everyone else has to prove the rows are theirs.
     if (visitorId && !crownAll && !(await analytics.gidOwnedBy(gid, visitorId).catch(() => false))) {
@@ -356,6 +428,7 @@ function createChallengeRouter({ isLockdown }) {
     res.json({ ok: true });
   });
   router.get("/challenge/:id/results", async (req, res) => {
+    if (readLimited(req, res)) return;
     if (!analytics.enabled()) return res.json({ ok: false });
     const id = String(req.params.id).slice(0, 12);
     const c = await analytics.getChallenge(id).catch(() => null);
@@ -365,6 +438,7 @@ function createChallengeRouter({ isLockdown }) {
   });
 
   router.get("/daily", async (req, res) => {
+    if (readLimited(req, res)) return;
     if (!analytics.enabled()) return res.json({ ok: false, error: "Daily needs persistence (not configured)." });
     const date = easternDay(Date.now());
     const id = dailyId(date);
@@ -379,6 +453,7 @@ function createChallengeRouter({ isLockdown }) {
   });
   // Public per-category leaderboard (each geography "question" gets its own board).
   router.get("/category-leaderboard", async (req, res) => {
+    if (readLimited(req, res)) return;
     if (!analytics.enabled()) return res.json({ ok: false });
     const name = String(req.query.name || "").slice(0, 60);
     if (!ALL_ROUND_NAMES.has(name)) return res.json({ ok: false });
@@ -387,12 +462,14 @@ function createChallengeRouter({ isLockdown }) {
   });
   // All-time daily high scores (across every day's puzzle).
   router.get("/daily/alltime", async (req, res) => {
+    if (readLimited(req, res)) return;
     if (!analytics.enabled()) return res.json({ ok: false });
     const rows = await analytics.dailyAllTime(50).catch(() => []);
     res.json({ ok: true, results: publicRows(rows, callerId(req)) });
   });
   // GOAT board — one overall geography ranking (points blend volume + speed across every category).
   router.get("/geo-goat", async (req, res) => {
+    if (readLimited(req, res)) return;
     if (!analytics.enabled()) return res.json({ ok: false });
     const rows = await analytics.geoGoat(50).catch(() => []);
     res.json({ ok: true, results: publicRows(rows, callerId(req)) });

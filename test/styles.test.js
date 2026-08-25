@@ -141,21 +141,27 @@ describe("the brand mark is filled amber in the browser and dark-plated once ins
     assert.match(FAVICON, /x='8' y='8' width='84' height='84' rx='20'/, "and the same plate");
   });
 
-  test("the in-app badge matches the favicon, and needs no border because it is filled", () => {
+  test("the in-app badge is the amber plate with the dark glyph, and needs no border", () => {
     const badge = LOGO.slice(LOGO.indexOf("export function LogoBadge"), LOGO.indexOf("// select-none for the same reason"));
     assert.match(badge, /bg-\[linear-gradient\(140deg,#f5a623,#e0801a\)\]/);
-    assert.match(badge, /stroke="#241500"/);
+    assert.match(badge, /text-markfg/);
+    assert.match(badge, /\[-webkit-text-stroke:\.9px_#241500\]/, "the stroke that gives the glyph its weight");
+    assert.match(badge, /◎/);
     assert.equal(/\bborder\b/.test(badge), false, "a filled plate is its own edge");
   });
 
-  test("the logo is not text, so it cannot be selected, copied or dragged out", () => {
+  test("the logo is not selectable, which is a cosmetic choice and nothing more", () => {
+    // Dragging a selection across the page painted a highlight box over the logo, which reads as a
+    // mistake. That is the whole reason — the mark is still a text glyph, still in the document, and
+    // user-select:none only excludes it from a selection.
     const badge = LOGO.slice(LOGO.indexOf("export function LogoBadge"), LOGO.indexOf("// select-none for the same reason"));
-    assert.match(badge, /<svg/, "an inline svg has nothing to select and no image to save");
-    assert.equal(/>\s*◎\s*</.test(badge), false, "the glyph must not be back in the markup");
     assert.match(badge, /select-none/);
-    assert.match(badge, /aria-hidden/, "the Wordmark beside it already says the name");
-    // The wordmark too: selecting the header on the way somewhere else used to sweep the brand
-    // name into the selection.
+    // Deliberately NOT here: the drag and pointer-events defences a previous pass added. They were
+    // answering a threat model this isn't, and pointer-events-none on the mark meant a click had to
+    // pass through it to reach the top bar's logo button.
+    assert.equal(/-webkit-user-drag/.test(badge), false);
+    assert.equal(/pointer-events-none/.test(badge), false);
+    // The wordmark too: selecting the header on the way somewhere else used to sweep the brand name in.
     const word = LOGO.slice(LOGO.indexOf("export function Wordmark"));
     assert.match(word.slice(0, 400), /select-none/);
   });

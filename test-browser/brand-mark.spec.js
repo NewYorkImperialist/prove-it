@@ -77,16 +77,12 @@ test.describe("the favicon", () => {
   });
 });
 
-test.describe("the logo cannot be copied", () => {
-  test("there is no text in the badge to select", async ({ page }) => {
-    await page.goto("/");
-    const badge = page.locator("h1 span").first();
-    expect(await badge.evaluate((el) => el.textContent)).toBe("");
-    expect(await badge.locator("svg").count(), "an inline svg, so no image to right-click and save").toBe(1);
-  });
-
-  test("selecting the header picks up nothing", async ({ page }) => {
-    // What a triple-click or a drag across the title does. It used to yield "◎ prove it!".
+test.describe("the logo is not selectable", () => {
+  // Aesthetic, not protective. Dragging a selection across the page painted a highlight box over the
+  // logo; that is the whole problem being solved. The mark is a text glyph again — an earlier pass
+  // made it an inline SVG so there would be nothing to select at all, which also changed how it
+  // looked, because the glyph carries a -webkit-text-stroke that a stroked circle doesn't reproduce.
+  test("selecting the header highlights nothing", async ({ page }) => {
     await page.goto("/");
     const selected = await page.evaluate(() => {
       const h = document.querySelector("h1");
@@ -97,53 +93,41 @@ test.describe("the logo cannot be copied", () => {
       s.addRange(r);
       return String(s);
     });
+    // user-select:none excludes both the glyph and the wordmark from a selection, so a drag across
+    // the title picks up nothing rather than "◎ prove it!".
     expect(selected.trim()).toBe("");
   });
 
-  test("the mark is hidden from assistive tech, since the wordmark says the name", async ({ page }) => {
-    await page.goto("/");
-    await expect(page.locator("h1 span").first()).toHaveAttribute("aria-hidden", "true");
-  });
-
-  test("the mark cannot be dragged out of the page as an image", async ({ page }) => {
-    // select-none was not enough, and this test is why: it governs text selection only. Both the
-    // span and the svg computed `-webkit-user-drag: auto` and a dragstart fired unprevented, so the
-    // logo could be dragged straight onto a desktop even with nothing selectable in it.
-    await page.goto("/");
-    const s = await page.locator("h1 span").first().evaluate((el) => {
-      const svg = el.querySelector("svg");
-      const drag = (n) => getComputedStyle(n).webkitUserDrag || "(unset)";
-      return {
-        spanDrag: drag(el),
-        svgDrag: drag(svg),
-        spanDraggable: el.draggable,
-        // SVGElement has no `draggable` IDL property (that is HTMLElement), so the attribute is
-        // what has to be checked here — and the attribute is what Firefox reads anyway.
-        svgDraggableAttr: svg.getAttribute("draggable"),
-        // A right-click landing on the <svg> is what offers "Copy image"; the plate should be the
-        // hit target instead.
-        svgPointerEvents: getComputedStyle(svg).pointerEvents,
-      };
-    });
-    expect(s.spanDrag).toBe("none");
-    expect(s.svgDrag).toBe("none");
-    expect(s.spanDraggable).toBe(false);
-    expect(s.svgDraggableAttr).toBe("false");
-    expect(s.svgPointerEvents).toBe("none");
-  });
-
-  test("the logo is still clickable, so nothing above was bought with a dead control", async ({ page }) => {
-    // pointer-events-none on the drawing means clicks have to pass through to the plate and to
-    // whatever wraps it — the multiplayer top bar's logo is a button.
+  test("both halves of the logo are user-select:none", async ({ page }) => {
     await page.goto("/");
     const badge = page.locator("h1 span").first();
-    const box = await badge.boundingBox();
+    expect(await badge.evaluate((el) => getComputedStyle(el).userSelect)).toBe("none");
+    const word = page.locator("h1 span").nth(1);
+    expect(await word.evaluate((el) => getComputedStyle(el).userSelect)).toBe("none");
+  });
+
+  test("the mark is the glyph, drawn with the stroke that gives it its weight", async ({ page }) => {
+    await page.goto("/");
+    const badge = page.locator("h1 span").first();
+    expect((await badge.evaluate((el) => el.textContent)).trim()).toBe("◎");
+    const s = await badge.evaluate((el) => {
+      const c = getComputedStyle(el);
+      return { color: c.color, stroke: c.webkitTextStrokeWidth, bg: c.backgroundImage };
+    });
+    expect(s.color).toBe("rgb(36, 21, 0)");
+    expect(s.stroke).toBe("0.9px");
+    expect(s.bg).toContain("245, 166, 35");
+  });
+
+  test("the logo is still clickable — nothing here should cost a control", async ({ page }) => {
+    // A previous pass put pointer-events-none on the mark, which meant clicks had to pass through it
+    // to reach the top bar's logo button. Nothing does that now, so the mark itself is the hit target.
+    await page.goto("/");
+    const box = await page.locator("h1 span").first().boundingBox();
     expect(box).not.toBeNull();
-    const hit = await page.evaluate(([x, y]) => {
-      const el = document.elementFromPoint(x, y);
-      return { tag: el?.tagName?.toLowerCase(), isSvgPart: ["svg", "circle"].includes(el?.tagName?.toLowerCase()) };
-    }, [box.x + box.width / 2, box.y + box.height / 2]);
-    expect(hit.isSvgPart, `a click lands on <${hit.tag}>, which must not be the drawing`).toBe(false);
+    const tag = await page.evaluate(([x, y]) => document.elementFromPoint(x, y)?.tagName?.toLowerCase(),
+      [box.x + box.width / 2, box.y + box.height / 2]);
+    expect(tag).toBe("span");
   });
 
   test("the badge still looks like a badge — square, filled, no border", async ({ page }) => {
@@ -152,7 +136,8 @@ test.describe("the logo cannot be copied", () => {
     await page.goto("/");
     const s = await page.locator("h1 span").first().evaluate((el) => {
       const c = getComputedStyle(el);
-      return { bg: c.backgroundImage, border: c.borderTopWidth, w: el.getBoundingClientRect().width, h: el.getBoundingClientRect().height };
+      const r = el.getBoundingClientRect();
+      return { bg: c.backgroundImage, border: c.borderTopWidth, w: r.width, h: r.height };
     });
     expect(s.bg).toContain("245, 166, 35");
     expect(s.border).toBe("0px");

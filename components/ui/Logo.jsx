@@ -18,21 +18,40 @@ import { cx } from "@/lib/browser/cx";
 // SHAPE, unchanged, so the badge, the favicon and the installed icons are one mark at one set of
 // proportions instead of three things that happen to look alike.
 //
-// And it isn't text, so it cannot be selected, copied or dragged out. A glyph in a <span> was part of
-// the document: dragging across the header, or triple-clicking it, picked up "◎ prove it!" and put
-// the logo on the clipboard as a character anyone could paste. aria-hidden because the Wordmark
-// beside it already says the name — a screen reader announcing "bullseye prove it!" was never useful.
+// And it isn't text, so it cannot be selected or copied. A glyph in a <span> was part of the
+// document: dragging across the header, or triple-clicking it, picked up "◎ prove it!" and put the
+// logo on the clipboard as a character anyone could paste. aria-hidden because the Wordmark beside it
+// already says the name — a screen reader announcing "bullseye prove it!" was never useful.
+//
+// select-none alone was not enough, which a browser probe showed rather than reasoning: it stops
+// TEXT SELECTION and nothing else. The span and the svg both still computed `-webkit-user-drag: auto`
+// and a dragstart fired unprevented, so the mark could be dragged straight out of the page as an
+// image even with nothing selectable in it. Hence all three of:
+//
+//   • [-webkit-user-drag:none] — the property that actually governs dragging an element out (Chrome,
+//     Safari). There is no standard equivalent; Firefox reads the draggable attribute instead.
+//   • draggable={false} — the attribute half of the same thing, for Firefox.
+//   • pointer-events-none on the svg — so the hit target is the plate, not the drawing. A right-click
+//     that lands on an <svg> is what offers "Copy image" in the first place. Clicks still work: they
+//     pass through to the span and to whatever wraps it (the top bar's logo is a button).
 export function LogoBadge({ className }) {
   return (
     <span
       className={cx(
         "inline-grid shrink-0 place-items-center rounded-lg bg-[linear-gradient(140deg,#f5a623,#e0801a)] leading-none",
-        "h-[30px] w-[30px] text-base select-none",
+        "h-[30px] w-[30px] text-base select-none [-webkit-user-drag:none]",
         className,
       )}
       aria-hidden="true"
+      draggable={false}
     >
-      <svg viewBox="0 0 100 100" className="h-[62%] w-[62%] overflow-visible" focusable="false" aria-hidden="true">
+      <svg
+        viewBox="0 0 100 100"
+        className="pointer-events-none h-[62%] w-[62%] overflow-visible select-none [-webkit-user-drag:none]"
+        focusable="false"
+        aria-hidden="true"
+        draggable={false}
+      >
         {/* Same numbers as the favicon and the PNG icons: ring outer 31 / inner 23.5 drawn as a
             stroke on the midline, dot r 11.5. The plate is the parent span's background. */}
         <circle cx="50" cy="50" r="27.25" fill="none" stroke="#241500" strokeWidth="7.5" />
@@ -43,7 +62,8 @@ export function LogoBadge({ className }) {
 }
 
 // select-none for the same reason as the badge: this is a logo, not prose. Selecting the header on
-// the way to selecting something else used to sweep the brand name into the selection.
+// the way to selecting something else used to sweep the brand name into the selection. Text is only
+// draggable once it is selected, so select-none covers the drag case here on its own.
 export function Wordmark({ children = "prove it!", className }) {
   return <span className={cx("font-display font-bold tracking-[-.3px] select-none", className)}>{children}</span>;
 }

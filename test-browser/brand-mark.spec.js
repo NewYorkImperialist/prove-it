@@ -105,6 +105,47 @@ test.describe("the logo cannot be copied", () => {
     await expect(page.locator("h1 span").first()).toHaveAttribute("aria-hidden", "true");
   });
 
+  test("the mark cannot be dragged out of the page as an image", async ({ page }) => {
+    // select-none was not enough, and this test is why: it governs text selection only. Both the
+    // span and the svg computed `-webkit-user-drag: auto` and a dragstart fired unprevented, so the
+    // logo could be dragged straight onto a desktop even with nothing selectable in it.
+    await page.goto("/");
+    const s = await page.locator("h1 span").first().evaluate((el) => {
+      const svg = el.querySelector("svg");
+      const drag = (n) => getComputedStyle(n).webkitUserDrag || "(unset)";
+      return {
+        spanDrag: drag(el),
+        svgDrag: drag(svg),
+        spanDraggable: el.draggable,
+        // SVGElement has no `draggable` IDL property (that is HTMLElement), so the attribute is
+        // what has to be checked here — and the attribute is what Firefox reads anyway.
+        svgDraggableAttr: svg.getAttribute("draggable"),
+        // A right-click landing on the <svg> is what offers "Copy image"; the plate should be the
+        // hit target instead.
+        svgPointerEvents: getComputedStyle(svg).pointerEvents,
+      };
+    });
+    expect(s.spanDrag).toBe("none");
+    expect(s.svgDrag).toBe("none");
+    expect(s.spanDraggable).toBe(false);
+    expect(s.svgDraggableAttr).toBe("false");
+    expect(s.svgPointerEvents).toBe("none");
+  });
+
+  test("the logo is still clickable, so nothing above was bought with a dead control", async ({ page }) => {
+    // pointer-events-none on the drawing means clicks have to pass through to the plate and to
+    // whatever wraps it — the multiplayer top bar's logo is a button.
+    await page.goto("/");
+    const badge = page.locator("h1 span").first();
+    const box = await badge.boundingBox();
+    expect(box).not.toBeNull();
+    const hit = await page.evaluate(([x, y]) => {
+      const el = document.elementFromPoint(x, y);
+      return { tag: el?.tagName?.toLowerCase(), isSvgPart: ["svg", "circle"].includes(el?.tagName?.toLowerCase()) };
+    }, [box.x + box.width / 2, box.y + box.height / 2]);
+    expect(hit.isSvgPart, `a click lands on <${hit.tag}>, which must not be the drawing`).toBe(false);
+  });
+
   test("the badge still looks like a badge — square, filled, no border", async ({ page }) => {
     // The point of the filled plate: on this app's near-black panels a dark plate would vanish and
     // leave the mark floating, which is why the amber-on-black version needed a border.

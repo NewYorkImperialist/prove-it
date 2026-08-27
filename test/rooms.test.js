@@ -256,6 +256,51 @@ describe("rooms.js — lobby lifecycle", () => {
     });
   });
 
+  // A 4-char code from a 31-char alphabet is 923,521 possibilities, and these two handlers answer
+  // instantly, so a single socket swept the whole keyspace in ~52 seconds (measured ~17,000/sec on
+  // loopback) and could walk into any live game. Two budgets: 30 per socket, 300 per address.
+  describe("guessing room codes has a budget", () => {
+    const CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+    const randCode = () => Array.from({ length: 4 }, () => CHARS[Math.floor(Math.random() * 31)]).join("");
+
+    test("a sweeping socket stops learning anything — including about a real code", async () => {
+      const host = await connect();
+      const created = await emit(host, "createRoom", { name: "Host" });
+      const sweeper = await connect();
+      for (let i = 0; i < 40; i++) await emit(sweeper, "spectateRoom", { code: randCode(), name: "X" });
+      // The block has to cover CORRECT codes too. A refusal that only applies to wrong ones tells
+      // the caller which guess was right, which is the entire oracle.
+      const real = await emit(sweeper, "spectateRoom", { code: created.code, name: "X" });
+      assert.equal(real.ok, false);
+      assert.equal(real.error, "No room with that code.");
+      const alsoJoin = await emit(sweeper, "joinRoom", { code: created.code, name: "X" });
+      assert.equal(alsoJoin.ok, false, "joinRoom is the same oracle and shares the budget");
+    });
+
+    test("a guest on the SAME address is not collateral", async () => {
+      // The per-address-only version of this failed exactly here: sweeping from one machine locked
+      // out a legitimate guest sharing the address, which is a household, an office or a school.
+      // Verified on loopback, where every socket shares one address.
+      const host = await connect();
+      const created = await emit(host, "createRoom", { name: "Host" });
+      const sweeper = await connect();
+      for (let i = 0; i < 40; i++) await emit(sweeper, "spectateRoom", { code: randCode(), name: "X" });
+      const guest = await connect();
+      const invited = await emit(guest, "spectateRoom", { code: created.code, name: "Invited" });
+      assert.equal(invited.ok, true, "someone who was given the code must still get in");
+    });
+
+    test("a correct code never spends budget", async () => {
+      const host = await connect();
+      const created = await emit(host, "createRoom", { name: "Host" });
+      const watcher = await connect();
+      for (let i = 0; i < 35; i++) {
+        const r = await emit(watcher, "spectateRoom", { code: created.code, name: "Loyal" });
+        assert.equal(r.ok, true, `attempt ${i} on a code they actually have`);
+      }
+    });
+  });
+
   test("a bogus playerId can't become a key on the round's score objects", async () => {
     // `deadlines["__proto__"] = <number>` silently does nothing — the prototype setter discards
     // primitives — so the read keeps returning Object.prototype and the clock never expires. The

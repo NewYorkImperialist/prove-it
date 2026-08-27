@@ -173,19 +173,42 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
   // any game that happens to be running. Codes are four characters because people read them aloud
   // to each other; this budget is what makes a short code safe, instead of making it longer.
   //
-  // Only FAILURES count, so nobody who was given a code ever meets it. Keyed per address rather
-  // than per socket because reconnecting is free, and per address rather than globally because one
-  // guesser must not be able to stop everyone else joining.
-  const CODE_PROBE_MAX = 30;
+  // Only FAILURES count, so nobody who was given a code ever meets it.
+  //
+  // TWO budgets, and the reason is a real one I measured rather than a hypothetical. A per-address
+  // budget on its own is the obvious design — a socket can reconnect for free, an address is harder
+  // to change — but it means an address is a shared fate: sweeping from one machine locked a
+  // legitimate guest on the SAME address out of a room they had been invited to. Verified on
+  // loopback, where every socket shares an address, which is exactly the shape of a household, an
+  // office or a school. This app already refuses to make that trade elsewhere (see the note on
+  // MAX_SOCKETS_PER_IP).
+  //
+  // So: a tight per-socket budget, which has no collateral at all because a real guest has their
+  // own socket, plus a much looser per-address one to cover the attacker who churns sockets to
+  // reset the tight one. 30/socket and 300/address per minute puts a full sweep of the 923,521
+  // codes at roughly two days, from 52 seconds — and 300 wrong codes a minute out of one house is
+  // not a person typing.
+  const CODE_PROBE_MAX = 30;         // per socket
+  const CODE_PROBE_MAX_IP = 300;     // per address, across all its sockets
   const CODE_PROBE_WINDOW_MS = 60_000;
-  const codeProbes = new Map(); // bucket → { count, resetAt }
+  const codeProbes = new Map(); // address → { count, resetAt }
   function noteCodeProbe(socket) {
-    const id = socketBucket(socket);
     const now = Date.now();
+    const d = socket.data;
+    if (!d.probeResetAt || now > d.probeResetAt) { d.probeResetAt = now + CODE_PROBE_WINDOW_MS; d.probeCount = 0; }
+    d.probeCount = (d.probeCount || 0) + 1;
+    const id = socketBucket(socket);
     const e = codeProbes.get(id);
     if (!e || now > e.resetAt) codeProbes.set(id, { count: 1, resetAt: now + CODE_PROBE_WINDOW_MS });
     else e.count += 1;
     if (codeProbes.size > 5000) for (const [k, v] of codeProbes) if (now > v.resetAt) codeProbes.delete(k);
+  }
+  function overProbeBudget(socket) {
+    const now = Date.now();
+    const d = socket.data;
+    if (d.probeResetAt && now <= d.probeResetAt && (d.probeCount || 0) > CODE_PROBE_MAX) return true;
+    const e = codeProbes.get(socketBucket(socket));
+    return !!e && now <= e.resetAt && e.count > CODE_PROBE_MAX_IP;
   }
   // One room lookup with the budget applied. Returns null when the caller should be told there is
   // no such room — which, once they are over budget, is the answer whether or not the code is real.
@@ -193,8 +216,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
   // cover the right ones too. A correct code never spends budget, so being given one and using it
   // costs nothing.
   function findRoom(socket, code) {
-    const e = codeProbes.get(socketBucket(socket));
-    if (e && Date.now() <= e.resetAt && e.count > CODE_PROBE_MAX) return null;
+    if (overProbeBudget(socket)) return null;
     const room = rooms.get(code);
     if (!room) noteCodeProbe(socket);
     return room || null;

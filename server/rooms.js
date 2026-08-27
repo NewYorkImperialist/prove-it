@@ -9,6 +9,14 @@ const crypto = require("node:crypto");
 const { createMatchmaking } = require("./matchmaking.js");
 const { newSeatToken, seatTokenOk } = require("../lib/seat-token.js");
 const { crownOk, ownerKeyOk } = require("../lib/owner-auth.js");
+// The throttle bucket for the two socket handlers that check a key. Same idea as callerIp on the
+// HTTP side and the same caveat — a caller can influence it — but without it every socket in the
+// world would share one budget, and one person guessing would lock the owner out of ghostWatch.
+const socketBucket = (socket) =>
+  socket?.handshake?.headers?.["fly-client-ip"]
+  || String(socket?.handshake?.headers?.["x-forwarded-for"] || "").split(",")[0].trim()
+  || socket?.handshake?.address
+  || "socket";
 const { isBlocked } = require("../lib/name-filter.js");
 const { sourceOf, safeReferrer } = require("../lib/referral.js");
 
@@ -396,7 +404,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     // 👻 Owner-only INVISIBLE watch: joins the room's broadcast feed without ever appearing
     // in the players/spectators list, the online count, chat, or typing. Gated by OWNER_KEY.
     socket.on("ghostWatch", ({ code, key } = {}, ack) => {
-      if (!ownerKeyOk(key)) return ack?.({ ok: false, error: "Not authorized." });
+      if (!ownerKeyOk(key, socketBucket(socket))) return ack?.({ ok: false, error: "Not authorized." });
       code = String(code || "").toUpperCase().trim();
       const room = rooms.get(code);
       if (!room) return ack?.({ ok: false, error: "No room with that code." });
@@ -429,7 +437,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       const room = rooms.get(socket.data.roomCode);
       const p = room?.players.get(socket.data.playerId);
       if (!p) return;
-      if (!crownOk(key)) return; // wrong/absent key → ignored
+      if (!crownOk(key, socketBucket(socket))) return; // wrong/absent key → ignored
       p.crown = !!on;
       broadcast(room);
       engineFor(room).resync(io, room); // refresh in-game name labels too

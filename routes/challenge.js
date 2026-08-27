@@ -16,7 +16,10 @@ const { recommendedTime } = require("../lib/solo-catalog.js"); // per-category r
 // leaderboards, so an answer that counts in one has to count in the other — and a second copy of
 // the matching rules here would be the thing that eventually disagreed with the client.
 const { buildCategory, resolve } = require("../lib/answer-matching.js");
-const { crownOk, ownerKeyOk } = require("../lib/owner-auth.js");
+const { crownOk } = require("../lib/owner-auth.js");
+// One notion of "the caller", shared with the admin gate's failed-attempt throttle — two subtly
+// different ones would mean a limit that looks enforced and isn't. See lib/caller-ip.js.
+const { callerIp } = require("../lib/caller-ip.js");
 
 const newChallengeId = () => Math.random().toString(36).slice(2, 9); // 7-char url-safe id
 
@@ -50,13 +53,6 @@ const SUBMIT_WINDOW_MS = 60_000;
 // access. A player opening the leaderboard modal repeatedly is nowhere near 120/min.
 const LIMITS = { result: 20, rename: 20, create: 20, guesses: 60, read: 120 };
 const buckets = new Map(); // "purpose|ip" → { count, resetAt }
-
-// Fly terminates TLS and forwards the caller in fly-client-ip; x-forwarded-for is the generic
-// fallback. Both are attacker-controlled, so this is a speed bump against a script rather than a
-// security boundary — the real fix is the score cap below, which no header can get around.
-function callerIp(req) {
-  return req.get("fly-client-ip") || String(req.get("x-forwarded-for") || "").split(",")[0].trim() || req.ip || "unknown";
-}
 
 function submitAllowed(req, purpose = "result") {
   const key = `${purpose}|${callerIp(req)}`;
@@ -362,7 +358,7 @@ function createChallengeRouter({ isLockdown }) {
     // seconds-to-complete per round (null when not fully completed) — for speed ranking on maxed boards
     const times = (Array.isArray(b.times) ? b.times : []).map((n) => { const t = parseInt(n, 10); return t > 0 ? Math.min(3600, t) : null; }).slice(0, c.rounds.length);
     const total = scores.reduce((a, n) => a + n, 0);
-    const crown = crownOk(b.ownerKey); // creator crown (server-validated) — see lib/owner-auth.js
+    const crown = crownOk(b.ownerKey, callerIp(req)); // creator crown (server-validated) — see lib/owner-auth.js
     // play origin — keeps the solo-map geography boards separate from daily/shared-link plays.
     const mode = id.startsWith("d-") ? "daily" : (["solo", "link"].includes(b.mode) ? b.mode : "solo");
     // Report what the write actually did. Hardcoding ok:true here made the client's whole
@@ -395,17 +391,26 @@ function createChallengeRouter({ isLockdown }) {
     const name = cleanName(rawName);
     const visitorId = String(b.visitorId || "").slice(0, 40) || null;
     const gid = String(b.gid || "").slice(0, 40) || null;
-    // OWNER_KEY, not the crown key: this branch rewrites the name on EVERY crowned row at once, so
-    // it is a bulk write rather than a badge, and the crown key lives in a browser. A client sending
-    // its crown key simply doesn't get this branch — the visitorId path below still renames their own
-    // rows, and /admin/leaderboards covers the cross-device case deliberately.
-    const crownAll = ownerKeyOk(b.ownerKey);
-    if (!visitorId && !crownAll) return res.json({ ok: false });
-    // The owner key stands on its own; everyone else has to prove the rows are theirs.
-    if (visitorId && !crownAll && !(await analytics.gidOwnedBy(gid, visitorId).catch(() => false))) {
+    // This endpoint does NOT accept an owner key, and that removal is the point.
+    //
+    // It used to take one, to offer the owner a "rename every crowned row at once" branch. Which
+    // meant this unauthenticated, public endpoint answered a yes/no question about OWNER_KEY: post
+    // `{name:"x", ownerKey:GUESS}` with no visitorId and a wrong key returned {ok:false} while the
+    // right key returned {ok:true}. That is a clean boolean oracle for the admin secret — and it
+    // sidestepped the failed-attempt throttle in lib/owner-auth.js entirely, because that throttle
+    // hangs off ownerOk(req) and this called the request-less ownerKeyOk(). The only thing in its way
+    // was a 20/min limit keyed on fly-client-ip, a header the caller sets.
+    //
+    // Throttling it harder would have made guessing slower. Deleting the branch makes the question
+    // unaskable, which is the difference between a speed bump and a fix. The capability is not lost:
+    // /admin/leaderboards has a rename with a visitor-wide scope, behind the real gate, with an audit
+    // trail this never had.
+    if (!visitorId) return res.json({ ok: false });
+    // Everyone has to prove the rows are theirs. There is no longer an exception.
+    if (!(await analytics.gidOwnedBy(gid, visitorId).catch(() => false))) {
       return res.status(403).json({ ok: false, error: "Couldn't verify that run — play a round on this device first." });
     }
-    const updated = await analytics.renameResults({ name, visitorId, crownAll }).catch(() => 0);
+    const updated = await analytics.renameResults({ name, visitorId, crownAll: false }).catch(() => 0);
     res.json({ ok: true, updated });
   });
   // Exact guesses for one round of a solo/daily run (every Enter press: ok / miss / dup).

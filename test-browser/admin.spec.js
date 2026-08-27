@@ -15,6 +15,21 @@ const PAGES = ["/admin", "/admin/health", "/admin/games", "/admin/chat", "/admin
 
 const url = (p) => `${p}?key=${K}`;
 
+// The admin gate throttles failed key attempts per caller (lib/owner-auth.js), and every request in
+// this file comes from one address. The "an unauthenticated visitor sees nothing" test deliberately
+// makes ten unkeyed requests, which is over the budget — so without a per-test address the tests
+// that run after it are refused for being throttled rather than passing on their own merits, and a
+// real regression in the gate would hide behind that.
+//
+// A distinct fly-client-ip per test is the honest fix: it does not weaken the gate (production is
+// behind Fly, which sets this header itself and overwrites what a client sends), it just stops the
+// suite looking like one very persistent attacker.
+let bucket = 0;
+test.beforeEach(async ({ page }) => {
+  bucket += 1;
+  await page.setExtraHTTPHeaders({ "fly-client-ip": `10.7.0.${bucket % 250}` });
+});
+
 test.describe("the owner dashboard", () => {
   test("no page scrolls sideways at any viewport", async ({ page }) => {
     for (const p of PAGES) {

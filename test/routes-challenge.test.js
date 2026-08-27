@@ -410,16 +410,35 @@ describe("POST /challenge/rename — proving the rows are yours", () => {
     });
   });
 
-  test("the owner key stands on its own, with no run id", async () => {
+  test("the owner key buys NOTHING here — the branch that answered questions about it is gone", async () => {
+    // This endpoint used to take an ownerKey and, with the right one and no visitorId, rename every
+    // crowned row. Which made a public, unauthenticated endpoint into a boolean oracle for the admin
+    // secret: {ok:false} for a wrong key, {ok:true} for the right one, as fast as you cared to ask.
+    // It also sidestepped the failed-attempt throttle, because that hangs off ownerOk(req) and this
+    // called the request-less variant.
+    //
+    // The correct key now gets exactly what a wrong one gets, because the parameter is not read.
     const realKey = process.env.OWNER_KEY;
     process.env.OWNER_KEY = "test-owner-key";
     try {
       await withOwnership([], async (renamed) => {
-        const res = await post(buildApp(() => false), "2.2.2.4", { name: "Jayden", ownerKey: "test-owner-key" });
-        assert.equal(res.body.ok, true);
-        assert.equal(renamed[0].crownAll, true);
+        const right = await post(buildApp(() => false), "2.2.2.4", { name: "Jayden", ownerKey: "test-owner-key" });
+        const wrong = await post(buildApp(() => false), "2.2.2.9", { name: "Jayden", ownerKey: "definitely-not-it" });
+        assert.equal(right.body.ok, false, "the real key is no longer a way in");
+        assert.deepEqual(right.body, wrong.body, "and is indistinguishable from a wrong one");
+        assert.equal(right.status, wrong.status);
+        assert.equal(renamed.length, 0, "nothing was renamed either way");
       });
     } finally { process.env.OWNER_KEY = realKey; }
+  });
+
+  test("the owner's cross-device rename lives behind the real gate instead", async () => {
+    // The capability is not lost, it moved: /admin/leaderboards has a rename with a visitor-wide
+    // scope, behind ownerOk, with an audit trail the public endpoint never had.
+    const { readCode } = require("./helpers/source.js");
+    const admin = readCode("routes/admin.js");
+    assert.match(admin, /router\.get\("\/admin\/result-rename"/);
+    assert.match(admin, /analytics\.adminRename\(/);
   });
 
   test("a wrong owner key gets no crown privileges and still needs to prove ownership", async () => {

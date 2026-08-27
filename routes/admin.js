@@ -6,7 +6,7 @@
 const express = require("express");
 const analytics = require("../server/stats"); // persistent game history (Turso)
 const SITE = require("../lib/site-config");
-const { ownerOk } = require("../lib/owner-auth.js");
+const { ownerOk, adminAuthFailures } = require("../lib/owner-auth.js");
 const { FLY_COST, projectCost } = require("../lib/cost-guard.js");
 const { esc, easternHour, easternTime, easternFull, easternDay, fmtHour12, fmtDur, fmtMs, bar, tbl } = require("../lib/html.js");
 const { CAT_SIZES, CAT_ITEMS, CAT_GROUP } = require("../lib/category-data.js");
@@ -211,6 +211,24 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
   // Reachability, as measured from outside this process by scripts/probe.js. Everything else on
   // this dashboard is the server describing itself, which means it can never account for the one
   // period you most want explained afterwards — the stretch when it wasn't running.
+  // Failed attempts on the admin key. The throttle in lib/owner-auth.js stops a guessing run; this
+  // is so the owner can SEE one, because a block nobody hears about is still an incident. Silent
+  // when there is nothing to report — a permanently-visible "0 attacks" panel trains you to skip it.
+  function authHtml(auth) {
+    if (!auth || !auth.total) return "";
+    const recent = auth.recent.slice(-8).reverse();
+    const alarm = auth.blockedNow > 0;
+    return `<div class="announce" style="border-color:${alarm ? "#e5484d" : "#ffb454"}">
+      <span class="lbl">🔑 Admin key attempts:</span>
+      <b style="color:${alarm ? "#ff9b9b" : "#ffb454"}">${Number(auth.total) || 0}</b> failed since restart${
+      auth.blockedNow ? ` · <b style="color:#ff9b9b">${Number(auth.blockedNow)} caller${auth.blockedNow === 1 ? "" : "s"} blocked right now</b>` : ""}
+      <span class="dim">(${Number(auth.max)} wrong tries per ${Number(auth.windowMinutes)} min, per address)</span>
+      <div class="tw" style="margin-top:8px"><table><tr><th>When (ET)</th><th>From</th><th></th></tr>${
+      recent.map((r) => `<tr><td class="dim">${easternTime(Number(r.at) || 0)}</td><td>${esc(r.ip)}</td><td>${
+        r.blocked ? '<span class="rm">blocked</span>' : '<span class="dim">refused</span>'}</td></tr>`).join("")}</table></div>
+    </div>`;
+  }
+
   function uptimeHtml(up, now) {
     if (!up) return "";
     if (!up.last) {
@@ -468,6 +486,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       <h1>${SITE.adminDashboard.heading}</h1>
       <p class="sub">🟢 <b style="color:#3ecf8e">${getOnline()}</b> online · ${list.length} room${list.length === 1 ? "" : "s"} · ${playing} in a game · auto-refreshes every 60s · ${easternFull(now)}</p>
       ${siteHealthHtml(dbPing, now, k)}
+      ${authHtml(adminAuthFailures())}
       ${uptimeHtml(up, now)}
       <p class="stats">Since restart (${fmtDur(now - serverStartedAt)} ago): <b>${stats.roomsCreated}</b> rooms created · <b>${stats.gamesStarted}</b> games started · peak <b>${stats.peakRooms}</b> concurrent rooms</p>
       ${costHtml(bw, now, k)}

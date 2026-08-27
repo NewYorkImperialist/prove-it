@@ -1,5 +1,5 @@
 "use strict";
-const { test, describe, before, after } = require("node:test");
+const { test, describe, before, after, beforeEach } = require("node:test");
 const assert = require("node:assert/strict");
 const express = require("express");
 const request = require("supertest");
@@ -16,6 +16,13 @@ process.env.OWNER_KEY = "test-owner-key";
 let realLog;
 before(() => { realLog = console.log; console.log = () => {}; });
 after(() => { console.log = realLog; });
+
+// The admin gate throttles failed key attempts per caller (lib/owner-auth.js), and supertest sends
+// every request from the same address. The suite deliberately makes a dozen wrong-key requests to
+// prove the 404s, which is more than the budget — so without this reset the FIRST correct-key test
+// after them is refused, exactly as a real attacker would be. Each test starts from a clean slate.
+const { resetAdminThrottle } = require("../lib/owner-auth.js");
+beforeEach(() => resetAdminThrottle());
 
 // analytics.enabled() is false throughout (no TURSO_URL in the test environment) — these tests
 // cover routing + owner-key auth gating, not the Turso-backed report content.

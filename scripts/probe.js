@@ -39,10 +39,23 @@ async function attempt() {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
   try {
-    const res = await fetch(`${base}/admin/ping?key=${encodeURIComponent(key)}`, {
+    // The key goes in a HEADER, never the query string, and that is a security fix rather than a
+    // style choice. This runs on a schedule in a PUBLIC repository, so its logs are world-readable,
+    // and three separate things put a URL into a log:
+    //
+    //   • GitHub masks `${{ secrets.X }}` in logs by exact string match. `encodeURIComponent(key)`
+    //     is a DIFFERENT string the moment the key contains +, /, =, or a space — which generated
+    //     keys routinely do — so an encoded key in a URL sails straight past the masking.
+    //   • A fetch failure's message can carry the request URL, and that message is printed on the
+    //     failure path below and annotated with ::warning::.
+    //   • Fly's own HTTP access log records path and query for every request, so a keyed URL is
+    //     sitting in the platform logs of the very server it protects.
+    //
+    // lib/owner-auth.js has always accepted x-owner-key, so nothing on the server had to change.
+    const res = await fetch(`${base}/admin/ping`, {
       signal: ctl.signal,
       redirect: "manual",
-      headers: { "user-agent": "proveit-uptime-probe" },
+      headers: { "user-agent": "proveit-uptime-probe", "x-owner-key": key },
     });
     const ms = Date.now() - started;
     const text = await res.text().catch(() => "");

@@ -10,13 +10,16 @@
 // owner's own address bar.
 const { test, describe, beforeEach, afterEach } = require("node:test");
 const assert = require("node:assert/strict");
-const { ownerOk, crownOk, ownerKeyOk } = require("../lib/owner-auth.js");
+const { ownerOk, crownOk, ownerKeyOk, resetAdminThrottle } = require("../lib/owner-auth.js");
 
 const req = (key) => ({ query: key === undefined ? {} : { key }, get: () => undefined });
 const header = (key) => ({ query: {}, get: (h) => (h === "x-owner-key" ? key : undefined) });
 
 let savedOwner, savedCrown;
-beforeEach(() => { savedOwner = process.env.OWNER_KEY; savedCrown = process.env.CROWN_KEY; });
+// Every key check is throttled per caller now (see test/admin-throttle.test.js), and these tests
+// share one address while deliberately making wrong guesses — so without a reset the later ones are
+// refused for being over budget rather than for the reason they are testing.
+beforeEach(() => { savedOwner = process.env.OWNER_KEY; savedCrown = process.env.CROWN_KEY; resetAdminThrottle(); });
 afterEach(() => {
   if (savedOwner === undefined) delete process.env.OWNER_KEY; else process.env.OWNER_KEY = savedOwner;
   if (savedCrown === undefined) delete process.env.CROWN_KEY; else process.env.CROWN_KEY = savedCrown;
@@ -94,10 +97,9 @@ describe("lib/owner-auth.js — the dashboard key and the crown key are separate
 });
 
 describe("lib/owner-auth.js — which capabilities sit behind which key", () => {
-  const fs = require("fs");
-  const path = require("path");
-  const ROOT = path.join(__dirname, "..");
-  const read = (p) => fs.readFileSync(path.join(ROOT, p), "utf8");
+  // readCode strips comments first. Three separate assertions in this repo have matched the comment
+  // explaining why something was removed, passing when the code was wrong. See test/helpers/source.js.
+  const { readCode: read } = require("./helpers/source.js");
 
   test("every /admin route is behind ownerOk, and none of them accept the crown key", () => {
     const src = read("routes/admin.js");
@@ -107,18 +109,36 @@ describe("lib/owner-auth.js — which capabilities sit behind which key", () => 
 
   test("the cosmetic crown is the only thing the browser-resident key buys", () => {
     // setCrown (a badge on a scoreboard) and the result POST's crown flag. Nothing else.
-    assert.match(read("server/rooms.js"), /if \(!crownOk\(key\)\) return;/);
-    assert.match(read("routes/challenge.js"), /const crown = crownOk\(b\.ownerKey\)/);
+    assert.match(read("server/rooms.js"), /if \(!crownOk\(key, socketBucket\(socket\)\)\) return;/);
+    assert.match(read("routes/challenge.js"), /const crown = crownOk\(b\.ownerKey, callerIp\(req\)\)/);
   });
 
   test("ghostWatch stays on the admin key — invisible surveillance is not a badge", () => {
-    assert.match(read("server/rooms.js"), /if \(!ownerKeyOk\(key\)\) return ack\?\.\(\{ ok: false/);
+    assert.match(read("server/rooms.js"), /if \(!ownerKeyOk\(key, socketBucket\(socket\)\)\)/);
   });
 
-  test("renaming EVERY crowned row stays on the admin key too", () => {
-    // A bulk write across rows, not a badge. A client sending its crown key simply doesn't get this
-    // branch; its own rows are still renameable through the visitorId path.
-    assert.match(read("routes/challenge.js"), /const crownAll = ownerKeyOk\(b\.ownerKey\)/);
+  test("every key check passes a caller bucket, so none of them is unthrottled", () => {
+    // The whole point of routing them through one function: a check with no bucket would share a
+    // single global budget, and a check that skipped the function entirely would be a free oracle —
+    // which is exactly what the public rename endpoint used to be.
+    const src = read("lib/owner-auth.js");
+    assert.match(src, /function verifyKey\(want, given, bucket\)/);
+    for (const fn of ["ownerOk", "crownOk", "ownerKeyOk"]) {
+      const body = src.slice(src.indexOf(`function ${fn}(`));
+      assert.match(body.slice(0, 260), /verifyKey\(/, `${fn} must go through verifyKey`);
+    }
+  });
+
+  test("the public rename endpoint no longer accepts an owner key at all", () => {
+    // It used to, which made an unauthenticated endpoint answer yes/no about OWNER_KEY: a wrong key
+    // returned {ok:false} and the right one {ok:true}. Throttling that would have made guessing
+    // slower; removing the branch makes the question unaskable.
+    const src = read("routes/challenge.js");
+    const rename = src.slice(src.indexOf('router.post("/challenge/rename"'), src.indexOf('router.post("/challenge/:id/guesses"'));
+    assert.ok(rename.length > 100, "found the rename route");
+    assert.equal(/ownerKeyOk/.test(rename), false, "no owner-key check on a public endpoint");
+    assert.equal(/crownAll = /.test(rename), false, "and no branch that depends on one");
+    assert.match(rename, /if \(!visitorId\) return res\.json\(\{ ok: false \}\)/, "identity is the only way in");
   });
 
   test("no key of either kind is baked into the client bundle", () => {

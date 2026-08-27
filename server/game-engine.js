@@ -12,6 +12,19 @@ const JUDGE_MS_PER = 5_000;   // forced end-of-round ruling: seconds per remaini
 const ANSWER_COOLDOWN_MS = 350; // min gap between a prover's submissions (anti-spam)
 const MAX_PENDING = 6;          // max off-list answers awaiting a ruling at once
 const MAX_OFFLIST = 15;         // max off-list answers a prover can queue per round
+// A prove clock can never grow past this × the round's own timer, however many correct answers the
+// increment rewards. The race engine has had this since it was written; the duel had no ceiling of
+// any kind, which is what made the mid-proof settings change below worth doing.
+const MAX_CLOCK_FACTOR = 2;
+// One refusal for every over-sized bid, in every category.
+//
+// The snapshot deliberately omits `size` because "how many are there really" is the exact question
+// a claim is a bluff about — and then the two bid rejections gave it away anyway. An `exact`
+// category printed the number outright ("There are only 47 …"), and even the vague wording was a
+// clean binary oracle: neither branch mutates state or touches the clock, and nothing rate-limits
+// open/raise, so a scripted client can binary-search the true count inside the 20-second opening
+// window and know precisely how far it can bluff. Same string either way, and now it says nothing.
+const TOO_MANY = "That's too many · try a smaller number.";
 const DEFAULTS = { timer: 30, target: 5, autoAdvance: true, increment: 0 }; // prove seconds, points to win, auto next round, bonus seconds per correct answer
 
 // Optional analytics hook · server.js sets this to persist game/round events. No-op by default.
@@ -37,7 +50,13 @@ function setTimer(room, ms, fn, { deadline = true } = {}) {
 function extendTimer(room, ms) {
   const g = room.game;
   if (!g.timeout || g.deadline == null) return; // no live countdown to extend
-  setTimer(room, Math.max(0, g.deadline - Date.now()) + ms, g.timerFn);
+  // Never past this round's ceiling, and never backwards. Without a ceiling `increment` had no
+  // upper bound at all — and because it was read live on every correct answer, a host who was
+  // losing could raise it to 30 mid-proof, add half a minute per answer to a 15-second clock for as
+  // long as they liked, and set it back to 0 before their opponent's turn to prove.
+  const wanted = Math.min(g.deadline + ms, g.clockCeiling ?? Infinity);
+  if (wanted <= g.deadline) return; // already at the ceiling — the clock stands
+  setTimer(room, wanted - Date.now(), g.timerFn);
 }
 
 // Freeze the clock when a player drops; resume re-arms it with the time that was left.
@@ -50,6 +69,9 @@ function pauseGame(io, room) {
   } else {
     g.pausedRemaining = null;
   }
+  // The ceiling is an absolute time, so it has to ride out the outage with the clock it caps —
+  // otherwise a long pause silently eats the prover's remaining bonus.
+  g.pausedCeiling = g.clockCeiling == null ? null : Math.max(0, g.clockCeiling - Date.now());
   g.deadline = null; g.paused = true;
   emit(io, room);
 }
@@ -58,6 +80,7 @@ function resumeGame(io, room) {
   if (!g) return;
   if (g.paused) {
     g.paused = false;
+    if (g.pausedCeiling != null) { g.clockCeiling = Date.now() + g.pausedCeiling; g.pausedCeiling = null; }
     // don't re-arm the clock if the players intentionally paused between rounds
     if (g.timerFn && !g.intermission) setTimer(room, g.pausedRemaining ?? g.timerMs ?? 2000, g.timerFn, { deadline: g.timerDeadline !== false });
   }
@@ -151,7 +174,11 @@ function snapshot(room) {
     granted: g.granted ? g.granted.map((gr) => ({ id: gr.id, text: gr.text })) : [],
     judgeActive: g.judgeActive ? { id: g.judgeActive.id, text: g.judgeActive.text } : null,
     judgeRemaining: g.judgeQueue ? g.judgeQueue.length : 0,
-    scores: g.scores, target: g.target === Infinity ? null : g.target, timer: g.timer, increment: g.increment || 0,
+    // The round's OWN timer/increment while one is running, not the room's — those two can now
+    // differ (see beginRound), and showing the pending value next to a clock that isn't using it
+    // would just be a lie in the other direction.
+    scores: g.scores, target: g.target === Infinity ? null : g.target,
+    timer: g.roundTimer ?? g.timer, increment: (g.roundIncrement ?? g.increment) || 0,
     players: g.order.map((id) => ({ id, name: g.names[id], crown: !!room.players.get(id)?.crown })),
     spectators: room.spectators ? room.spectators.size : 0,
     lastResult: g.lastResult || null,
@@ -210,6 +237,13 @@ function beginRound(io, room) {
   g.usedNames.push(c.name); g.lastCatName = c.name; g.current = c;
   g.claim = 0; g.holderId = null; g.proven = []; g.lastResult = null; g.challengerId = null;
   g.intermission = false; g.skipVotes = new Set(); g.endVotes = new Set();
+  // The round plays under the settings it STARTED with. Both of these used to be read live —
+  // g.timer when the prove clock was armed, g.increment on every correct answer — so a host could
+  // sit in the bidding phase, raise the timer, get called on their claim and prove against the
+  // longer clock. Changes still land: they take effect from the next round, exactly like setGroups.
+  g.roundTimer = g.timer;
+  g.roundIncrement = g.increment || 0;
+  g.clockCeiling = null; g.pausedCeiling = null; // armed when the prove clock starts
 
   const opener = g.order[(g.round - 1) % 2];
   g.turnId = opener; g.phase = "opening";
@@ -224,7 +258,7 @@ function handleOpen(io, room, socket, n, ack) {
   if (!g || g.phase !== "opening" || socket.data.playerId !== g.turnId) return ack?.({ ok: false });
   const size = g.current.entries.length;
   if (!Number.isInteger(n) || n < 1) return ack?.({ ok: false, error: "Enter a whole number ≥ 1." });
-  if (n > size) return ack?.({ ok: false, error: g.current.exact ? `There are only ${size} ${g.current.name}.` : `That's too many · try a smaller number.` });
+  if (n > size) return ack?.({ ok: false, error: TOO_MANY });
   g.claim = n; g.holderId = socket.data.playerId;
   log(io, room, socket.data.playerId, g.names[socket.data.playerId], `I can name ${n}.`);
   passBidTurn(io, room, other(g, socket.data.playerId));
@@ -237,7 +271,7 @@ function handleRaise(io, room, socket, toN, ack) {
   const size = g.current.entries.length;
   const next = Number.isInteger(toN) ? toN : g.claim + 1;
   if (next <= g.claim) return ack?.({ ok: false, error: `You have to go higher than ${g.claim}.` });
-  if (next > size) return ack?.({ ok: false, error: g.current.exact ? `There are only ${size} ${g.current.name}.` : `That's too many · try a smaller number.` });
+  if (next > size) return ack?.({ ok: false, error: TOO_MANY });
   g.claim = next; g.holderId = socket.data.playerId;
   log(io, room, socket.data.playerId, g.names[socket.data.playerId], `Make it ${next}.`);
   passBidTurn(io, room, other(g, socket.data.playerId));
@@ -270,7 +304,9 @@ function startProving(io, room, challengerId) {
   // actually taken over it.
   g.wpmChars = 0; g.wpmStart = Date.now(); g.wpm = 0;
   log(io, room, challengerId, g.names[challengerId], `Prove it! ${g.names[proverId]}, name ${g.claim}.`);
-  setTimer(room, g.timer * 1000, () => onProveTimeout(io, room));
+  const seconds = g.roundTimer ?? g.timer;
+  g.clockCeiling = Date.now() + seconds * 1000 * MAX_CLOCK_FACTOR;
+  setTimer(room, seconds * 1000, () => onProveTimeout(io, room));
   emit(io, room);
 }
 
@@ -346,7 +382,7 @@ function handleAnswer(io, room, socket, text, ack) {
       bumpWpm(g, text);
       log(io, room, socket.data.playerId, me, `${entry.display} ✓ (${total(g)}/${g.claim})`, "ok");
       report(room, "answer", { category: g.current.name, grp: g.current.group, display: entry.display, offList: false, player: me });
-      if (g.increment) extendTimer(room, g.increment * 1000); // chess-clock bonus for a correct answer
+      if (g.roundIncrement) extendTimer(room, g.roundIncrement * 1000); // chess-clock bonus for a correct answer
       // 🛢️ Strait of Hormuz → rain oil barrels (no points, just chaos).
       if (g.current.name === "Seas and Oceans" && entry.display === "Strait of Hormuz") {
         io.to(room.code).emit("easterEgg", { name: me, phrase: entry.display, fx: "oil" });
@@ -443,7 +479,7 @@ function applyRuling(io, room, p, accept) {
     log(io, room, g.challengerId, g.names[g.challengerId], `accepted "${p.text}" ✓ (${total(g)}/${g.claim})`, "ok");
     report(room, "answer", { category: g.current.name, grp: g.current.group, display: p.text, offList: true, player: g.names[g.holderId] });
     // only extend the live prove-timer, not the (unrelated) forced end-of-round judging clock
-    if (g.increment && g.phase === "proving") extendTimer(room, g.increment * 1000);
+    if (g.roundIncrement && g.phase === "proving") extendTimer(room, g.roundIncrement * 1000);
   } else {
     log(io, room, g.challengerId, g.names[g.challengerId], `rejected "${p.text}"`, "bad");
     report(room, "event", { type: "rejected", detail: `${p.text} (by ${g.names[g.challengerId]})` });
@@ -530,9 +566,14 @@ function applyLiveSettings(io, room, { timer, target, autoAdvance, increment } =
   // g.order that met the target, and g.order[0] is the room creator. So a host on 3 beat a guest on
   // 4 by lowering the target to 3, and the trailing player won by changing a setting. The highest
   // score wins it now, whoever asked for the change.
+  // …and a TIE at the new target ends nothing. The reduce below used a strict `>`, so when both
+  // players were level it kept the accumulator — g.order[0], which is the room creator, normally
+  // the host. A host tied 3-3 could set the target to 3 and be declared the winner. Nobody has won
+  // a match that is level, so the setting change simply doesn't resolve it.
   if (g.phase !== "matchover" && g.target !== Infinity) {
-    const leader = g.order.reduce((a, b) => ((g.scores[b] || 0) > (g.scores[a] || 0) ? b : a), g.order[0]);
-    if (leader && (g.scores[leader] || 0) >= g.target) return matchOver(io, room, leader, "target-changed");
+    const best = Math.max(...g.order.map((id) => g.scores[id] || 0));
+    const atBest = g.order.filter((id) => (g.scores[id] || 0) === best);
+    if (atBest.length === 1 && best >= g.target) return matchOver(io, room, atBest[0], "target-changed");
   }
   emit(io, room);
 }

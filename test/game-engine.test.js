@@ -59,6 +59,12 @@ function makeRoom(gameOverrides = {}, roomOverrides = {}) {
     startedAt: Date.now(), gid: "g-test",
     ...gameOverrides,
   };
+  // beginRound() pins the round's own timer/increment so a mid-round settings change can't reach
+  // the live clock. These rooms bypass beginRound, so they have to do the same thing or every
+  // increment test would be asserting against a value the engine no longer reads. Applied after
+  // the overrides, since that is where a test's `increment: 5` arrives.
+  room.game.roundTimer ??= room.game.timer;
+  room.game.roundIncrement ??= room.game.increment || 0;
   return room;
 }
 
@@ -92,13 +98,35 @@ describe("handleOpen", () => {
     const io = makeIO(); const room = makeRoom();
     let ack; engine.handleOpen(io, room, sock("p1"), 10, (r) => (ack = r));
     assert.equal(ack.ok, false);
-    assert.match(ack.error, /too many|only 3/);
+    assert.match(ack.error, /too many/);
   });
 
-  test("an exact category names the exact remaining count in its error", () => {
-    const io = makeIO(); const room = makeRoom({ current: testCategory({ exact: true }) });
-    let ack; engine.handleOpen(io, room, sock("p1"), 10, (r) => (ack = r));
-    assert.match(ack.error, /only 3 Test Cat/);
+  // This used to assert the opposite — that an `exact` category answered "There are only 3 Test
+  // Cat." The snapshot deliberately withholds the answer count because it is the thing a claim is
+  // a bluff about, and this refusal handed it straight back. Worse, both branches were a clean
+  // binary oracle: neither mutates state or resets the clock, and open/raise have no rate limit,
+  // so a script could binary-search the true size inside the opening window and bluff to exactly
+  // one below it. Every over-sized bid gets the same words now.
+  test("the refusal never reveals the category size, exact or not", () => {
+    const io = makeIO();
+    const asked = [];
+    for (const exact of [true, false]) {
+      const room = makeRoom({ current: testCategory({ exact }) });
+      for (const n of [4, 10, 999]) {
+        let ack; engine.handleOpen(io, room, sock("p1"), n, (r) => (ack = r));
+        assert.equal(ack.ok, false);
+        assert.doesNotMatch(ack.error, /\d/, `a size-bearing refusal for exact=${exact}, n=${n}`);
+        asked.push(ack.error);
+      }
+    }
+    assert.equal(new Set(asked).size, 1, "every over-sized bid must get the identical string");
+  });
+
+  test("a raise past the size is refused with that same string", () => {
+    const io = makeIO(); const room = makeRoom({ phase: "bidding", turnId: "p1", claim: 1, holderId: "p2" });
+    let open; engine.handleOpen(io, makeRoom(), sock("p1"), 10, (r) => (open = r));
+    let ack; engine.handleRaise(io, room, sock("p1"), 10, (r) => (ack = r));
+    assert.equal(ack.error, open.error);
   });
 
   test("a valid open records the claim and passes the turn to the opponent", () => {
@@ -779,6 +807,72 @@ describe("applyLiveSettings — a target change can't hand the match to the wron
     engine.applyLiveSettings(io, room, { target: 6 });
     assert.equal(room.game.phase, "roundover");
     assert.equal(room.game.target, 6);
+  });
+
+  // The fix above compared with a strict `>` seeded at g.order[0], so a TIE kept the accumulator —
+  // and g.order[0] is the room creator, normally the host. A host level at 3-3 set the target to 3
+  // and was declared the winner of a match nobody had won.
+  test("a tie at the new target ends nothing, whoever asked for it", () => {
+    const io = makeIO();
+    const room = makeRoom({ phase: "roundover", scores: { p1: 3, p2: 3 }, target: 10 });
+    engine.applyLiveSettings(io, room, { target: 3 });
+    assert.equal(room.game.phase, "roundover", "a level match is not over");
+    assert.equal(room.game.matchWinnerId, null);
+    assert.equal(room.game.target, 3, "the setting still takes effect — the next point decides it");
+  });
+});
+
+// `increment` was read live on every correct answer and `timer` when the prove clock was armed, so
+// the host could raise either one mid-round and play the round they were already losing under
+// different rules. Both are pinned when the round begins now, and the prove clock has a ceiling.
+describe("the round plays under the settings it started with", () => {
+  const liveRound = (over = {}) => makeRoom({
+    phase: "proving", claim: 2, holderId: "p1", turnId: "p1", challengerId: "p2",
+    proven: [], granted: [], pending: new Map(), answerSeq: 0, lastAnswerAt: 0,
+    offListCount: 0, judgeQueue: [], judgeActive: null, bonus: 0,
+    ...over,
+  });
+  // What startProving() arms: a live countdown plus the ceiling that caps it.
+  function armTimer(room, seconds = 10) {
+    const g = room.game;
+    g.timerFn = () => { g.timedOut = true; };
+    g.timeout = setTimeout(g.timerFn, 999999);
+    g.deadline = Date.now() + seconds * 1000;
+    g.clockCeiling = Date.now() + seconds * 1000 * 2; // MAX_CLOCK_FACTOR
+  }
+
+  test("raising the increment mid-proof does not lengthen the round being played", () => {
+    const io = makeIO(); const room = liveRound({ increment: 0 });
+    armTimer(room);
+    engine.applyLiveSettings(io, room, { increment: 30 });
+    const before = room.game.deadline;
+    engine.handleAnswer(io, room, sock("p1"), "alpha", () => {});
+    assert.equal(room.game.deadline, before, "the clock must not move");
+    assert.equal(room.game.increment, 30, "…but the setting is stored for the next round");
+  });
+
+  test("the prove clock can never grow past twice the round's timer", () => {
+    // claim 5, not the helper's 2 — the round would otherwise close on the second answer.
+    const io = makeIO(); const room = liveRound({ increment: 30, roundIncrement: 30, claim: 5 });
+    armTimer(room, 10);
+    const ceiling = room.game.clockCeiling;
+    for (const word of ["alpha", "beta", "gamma"]) {
+      room.game.lastAnswerAt = 0; // ANSWER_COOLDOWN_MS would eat two of three back-to-back answers
+      engine.handleAnswer(io, room, sock("p1"), word, () => {});
+    }
+    assert.equal(room.game.proven.length, 3, "all three answers counted");
+    assert.ok(room.game.deadline <= ceiling, `deadline ${room.game.deadline} passed ceiling ${ceiling}`);
+  });
+
+  test("a pause carries the ceiling with the clock instead of eating it", () => {
+    const io = makeIO(); const room = liveRound({ increment: 5, roundIncrement: 5 });
+    armTimer(room, 10);
+    const headroom = room.game.clockCeiling - Date.now();
+    engine.pauseGame(io, room);
+    assert.equal(room.game.paused, true);
+    engine.resumeGame(io, room);
+    const after = room.game.clockCeiling - Date.now();
+    assert.ok(Math.abs(after - headroom) < 100, `ceiling headroom drifted: ${headroom} → ${after}`);
   });
 });
 

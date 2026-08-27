@@ -112,17 +112,69 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
   let online = 0; // live count of connected clients (people with the site open)
   function broadcastPresence() { io.emit("presence", { online }); }
 
+  // Math.random() was wrong here for a reason that isn't obvious: V8 seeds it with xorshift128+,
+  // whose entire internal state is recoverable from a handful of observed outputs. A room code is
+  // the only thing standing between a stranger and a live game, and anyone who has seen a few codes
+  // could predict the next ones. crypto.randomInt costs nothing and removes the question.
   function makeCode() {
     const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
     let code;
     do {
-      code = Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+      code = Array.from({ length: 4 }, () => chars[crypto.randomInt(chars.length)]).join("");
     } while (rooms.has(code));
     return code;
   }
   function genId() {
     return crypto.randomBytes(9).toString("base64url");
   }
+
+  // A playerId that arrives from a client, or null.
+  //
+  // genId() emits base64url, so this is that alphabet and nothing else. The check is not
+  // cosmetic: the id becomes a KEY on the plain objects race-engine.js builds per round
+  // (deadlines, liveScores, misses, answers), and `deadlines["__proto__"] = <number>` silently
+  // does nothing — the Object.prototype setter discards primitives — so the read keeps returning
+  // Object.prototype. `(deadlines[pid] ?? 0) < Date.now()` is then permanently false: that
+  // player's round clock never expires, the retire sweep never finishes them, allClocksDone()
+  // never becomes true, and the round runs forever for everyone in the room. Math.max over the
+  // scores goes NaN with it, so nobody wins. One 24-character string, unauthenticated.
+  const cleanPid = (v) => (typeof v === "string" && /^[A-Za-z0-9_-]{1,32}$/.test(v) ? v : null);
+
+  // Wrong room codes, per address.
+  //
+  // A 4-char code from a 31-char alphabet is 923,521 possibilities, and joinRoom/spectateRoom
+  // answer "No room with that code." instantly with no cost — so one socket can sweep the entire
+  // keyspace in under a minute (measured at ~17,000 probes/sec on a loopback server) and walk into
+  // any game that happens to be running. Codes are four characters because people read them aloud
+  // to each other; this budget is what makes a short code safe, instead of making it longer.
+  //
+  // Only FAILURES count, so nobody who was given a code ever meets it. Keyed per address rather
+  // than per socket because reconnecting is free, and per address rather than globally because one
+  // guesser must not be able to stop everyone else joining.
+  const CODE_PROBE_MAX = 30;
+  const CODE_PROBE_WINDOW_MS = 60_000;
+  const codeProbes = new Map(); // bucket → { count, resetAt }
+  function noteCodeProbe(socket) {
+    const id = socketBucket(socket);
+    const now = Date.now();
+    const e = codeProbes.get(id);
+    if (!e || now > e.resetAt) codeProbes.set(id, { count: 1, resetAt: now + CODE_PROBE_WINDOW_MS });
+    else e.count += 1;
+    if (codeProbes.size > 5000) for (const [k, v] of codeProbes) if (now > v.resetAt) codeProbes.delete(k);
+  }
+  // One room lookup with the budget applied. Returns null when the caller should be told there is
+  // no such room — which, once they are over budget, is the answer whether or not the code is real.
+  // A refusal that only applies to WRONG codes is still a perfectly good oracle, so the block has to
+  // cover the right ones too. A correct code never spends budget, so being given one and using it
+  // costs nothing.
+  function findRoom(socket, code) {
+    const e = codeProbes.get(socketBucket(socket));
+    if (e && Date.now() <= e.resetAt && e.count > CODE_PROBE_MAX) return null;
+    const room = rooms.get(code);
+    if (!room) noteCodeProbe(socket);
+    return room || null;
+  }
+  const NO_SUCH_ROOM = "No room with that code.";
 
   // Trim + cap; a blank name gets the house joke name.
   function cleanName(name) {
@@ -189,6 +241,10 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     socket.join(room.code);
     socket.data.roomCode = room.code;
     socket.data.playerId = playerId;
+    // Taking a seat stops you being a watcher. Without this a socket that spectated and then
+    // resumed a real seat kept the flag, and the owner's live connection list — which renders this
+    // field as the connection's role — said "spectator" about someone who was playing.
+    socket.data.spectator = false;
     if (socket.data.session) { socket.data.session.joined = true; socket.data.session.name = p.name; }
   }
 
@@ -315,7 +371,7 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       const bad = nameRejected(name);
       if (bad) return ack?.({ ok: false, error: bad }); // checked BEFORE leaving the current room, so a refusal costs them nothing
       leaveCurrentRoom(socket);
-      const pid = playerId || genId();
+      const pid = cleanPid(playerId) || genId();
       const isRace = mode === "race";
       const settings = isRace ? {
         groups: (raceSettings?.groups?.length ? raceSettings.groups.filter((k) => CATEGORY_GROUPS[k]) : null) || [...DEFAULT_GROUPS],
@@ -335,9 +391,9 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     socket.on("joinRoom", ({ code, name, playerId, seat } = {}, ack) => {
       if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
       code = String(code || "").toUpperCase().trim();
-      const room = rooms.get(code);
-      if (!room) return ack?.({ ok: false, error: "No room with that code." });
-      let pid = playerId || genId();
+      const room = findRoom(socket, code);
+      if (!room) return ack?.({ ok: false, error: NO_SUCH_ROOM });
+      let pid = cleanPid(playerId) || genId();
       // Rejoining your own slot — but only with the seat token for it. Without the token we do NOT
       // refuse: fall through and seat them fresh, since the honest case (a client that lost its
       // token) should still get into the room rather than being locked out of a code it can see.
@@ -371,20 +427,40 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     socket.on("spectateRoom", ({ code, name, playerId, seat } = {}, ack) => {
       if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
       code = String(code || "").toUpperCase().trim();
-      const room = rooms.get(code);
-      if (!room) return ack?.({ ok: false, error: "No room with that code." });
-      let pid = playerId || genId();
+      const room = findRoom(socket, code);
+      if (!room) return ack?.({ ok: false, error: NO_SUCH_ROOM });
       // A spectator claiming a seated id gets that seat only with its token; otherwise they watch.
-      if (room.players.has(pid)) {
-        if (seatTokenOk(room.players.get(pid), seat)) return doResume(room, pid, ack);
-        pid = genId();
+      const claimed = cleanPid(playerId);
+      if (claimed && room.players.has(claimed) && seatTokenOk(room.players.get(claimed), seat)) {
+        return doResume(room, claimed, ack);
       }
       const badSpec = nameRejected(name);
       if (badSpec) return ack?.({ ok: false, error: badSpec }); // a spectator's name shows in the roster and in chat too
       if (!room.spectators) room.spectators = new Map();
+      // The watcher's id is minted HERE and never taken from the payload, which is the whole
+      // difference between this and what it used to be. Spectator ids are broadcast to the entire
+      // room in roomState, and this handler used to accept one back as though it meant something —
+      // so re-registering under an id you had just read off the wire bought four separate things:
+      //
+      //   • an invisible watch. Register a published id on two sockets, disconnect one: the
+      //     disconnect deletes the shared roster entry while the other socket stays joined to the
+      //     channel. Verified — spectators:[] in the roster and still receiving every gameState,
+      //     log and chat frame. That is exactly the capability ghostWatch gates behind OWNER_KEY.
+      //   • the cap, bypassed. `!room.spectators.has(pid)` skipped the check for a reused id, so
+      //     26 sockets sat in a room whose spectator count read 20 — every one of them receiving
+      //     every broadcast, which is the egress amplifier the cap exists to prevent.
+      //   • the chat limiter, bypassed. lastChatAt lived on the spectator object, so re-registering
+      //     replaced the object and reset the clock: 25 of 25 messages accepted, each one broadcast
+      //     room-wide and written to the database.
+      //   • the roster, hijacked. Re-register under a watcher's id with a different name and their
+      //     row now shows yours; disconnect and THEY are delisted while still receiving traffic.
+      //
+      // A fresh id per registration makes all four unaskable, and costs nothing: the client is told
+      // its id in the ack, and no honest caller ever needed to choose one.
+      const pid = genId();
       // Checked BEFORE leaving the room they're in, so a refusal costs them nothing — same reason
       // the name check sits where it does.
-      if (room.spectators.size >= MAX_SPECTATORS && !room.spectators.has(pid)) {
+      if (room.spectators.size >= MAX_SPECTATORS) {
         return ack?.({ ok: false, error: "That room already has the maximum number of watchers." });
       }
       leaveCurrentRoom(socket);
@@ -509,6 +585,10 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
     socket.on("startMatch", (_payload, ack) => {
       const room = rooms.get(socket.data.roomCode);
       if (!room) return ack?.({ ok: false, error: "You're not in a room." });
+      // createRoom, joinRoom, quickMatchJoin and rematch all check this; startMatch was the one
+      // that didn't, so flipping the maintenance switch stopped new rooms forming and let every
+      // room that already had two players seated keep starting fresh games right through it.
+      if (lockdown) return ack?.({ ok: false, error: "The game is down for maintenance — check back soon." });
       if (room.hostId !== socket.data.playerId) return ack?.({ ok: false, error: "Only the host can start." });
       if (room.players.size < minFor(room)) return ack?.({ ok: false, error: room.mode === "race" ? "Need at least 2 players to start." : "Need 2 players to start." });
       // A match already in progress is not restartable: starting over would throw away everyone's
@@ -587,14 +667,18 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
       // ever going to see meant a blank submit ate the next real one.
       if (!msg) return ack?.({ ok: false, error: "Nothing to send." });
       const now = Date.now();
-      if (p.lastChatAt && now - p.lastChatAt < CHAT_MIN_GAP_MS) {
+      // The clock lives on the SOCKET, not on the player/spectator object. It used to live on the
+      // object, and a spectator could replace their own object at will by re-registering — so the
+      // gap was reset on demand and the limit did nothing for the one caller it most applied to.
+      // A socket is the thing a caller has to actually pay for.
+      if (socket.data.lastChatAt && now - socket.data.lastChatAt < CHAT_MIN_GAP_MS) {
         // …and a dropped message is now announced. Dropping it silently looked exactly like the
         // room having gone deaf: the input cleared and the message reached nobody. The `log`
         // event goes to this socket only and already renders in their feed (with a buzz).
         socket.emit("log", { by: "system", text: "Slow down — that message wasn't sent.", kind: "bad" });
         return ack?.({ ok: false, error: "You're sending messages too fast." });
       }
-      p.lastChatAt = now; // only an ACCEPTED message resets the limiter
+      socket.data.lastChatAt = now; // only an ACCEPTED message resets the limiter
       const spectator = !room.players.has(p.id);
       io.to(room.code).emit("chat", { id: p.id, name: p.name, text: msg, spectator });
       analytics.recordChat({ gid: room.game?.gid, code: room.code, name: p.name, text: msg, at: Date.now(), spectator, mode: "mp" });

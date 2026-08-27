@@ -223,6 +223,7 @@ function beginRound(io, room, opts = {}) {
   const c = avail[Math.floor(Math.random() * avail.length)];
   g.usedNames.push(c.name); g.lastCatName = c.name; g.current = c;
   g.answers = {}; g.liveScores = {}; g.misses = {}; g.missSeq = 0;
+  g.approvalsGiven = new Map(); // per-round budget, see handleApproveMiss
   g.endVotes = new Set(); // votes are a per-round intent check, not sticky across rounds
   g.skipVotes = new Set();
   g.deadlines = {}; g.doneIds = new Set(); g.pausedClocks = null;
@@ -251,7 +252,9 @@ function startLiveRound(io, room) {
 // Who can actually win this round: everyone, or — in a sudden-death round — only the players who
 // were tied for the top spot when it was called (v1 simplification, see the plan).
 function scoringPool(g) {
-  return (g.isTiebreaker && g.tiebreakerCandidates)
+  // `.size`, not truthiness: an EMPTY Set is truthy, so a candidate list everyone had left was
+  // read as "only these players can win" and nobody could. See playerLeftMatch.
+  return (g.isTiebreaker && g.tiebreakerCandidates?.size)
     ? [...g.tiebreakerCandidates].filter((id) => g.activeIds.has(id))
     : [...g.activeIds];
 }
@@ -308,10 +311,29 @@ function handleApproveMiss(io, room, socket, targetId, missId) {
   const approverId = socket.data.playerId;
   if (!approverId || approverId === targetId) return "You can't approve your own answer.";
   if (!g.activeIds.has(approverId) || !g.activeIds.has(targetId)) return "Only players in the match can approve answers.";
+  // How many misses one player may wave through for one other player in a single round.
+  //
+  // `approverId === targetId` only catches the naive version of self-approval. Seats are capped per
+  // ROOM and never per person, so one human can open two tabs, take two seats in the same race, and
+  // use the second to approve the first's deliberate garbage: verified at +5 from five approvals,
+  // with a per-round ceiling of MAX_MISSES = 25, which wins any round outright.
+  //
+  // Same-address matching would catch that and also catch two people on one home network, who are
+  // exactly the audience this game has — so the honest fix is to bound the volume instead. Reviewing
+  // a genuine typo is one or two answers; twenty-five is not review. This does not make collusion
+  // impossible (nothing server-side can, and in a two-player race your only judge is your opponent
+  // by design), it makes it worth about as much as being right would have been.
+  const APPROVALS_PER_PAIR = 3;
+  if (!g.approvalsGiven) g.approvalsGiven = new Map();
+  const pair = `${approverId}>${targetId}`;
+  if ((g.approvalsGiven.get(pair) || 0) >= APPROVALS_PER_PAIR) {
+    return `You've already approved ${APPROVALS_PER_PAIR} of ${g.names[targetId]}'s answers this round.`;
+  }
   const list = g.misses[targetId] || [];
   const idx = list.findIndex((m) => m.id === missId);
   if (idx === -1) return "That answer has already been ruled on.";
   const [miss] = list.splice(idx, 1);
+  g.approvalsGiven.set(pair, (g.approvalsGiven.get(pair) || 0) + 1); // only an ACCEPTED approval counts
   const mine = g.answers[targetId] || (g.answers[targetId] = new Map());
   mine.set(`approved:${miss.id}`, { display: miss.text, at: Date.now() }); // string key — never collides with a real entry id
   g.liveScores[targetId] = (g.liveScores[targetId] || 0) + 1;
@@ -512,7 +534,16 @@ function playerLeftMatch(io, room, leaverId) {
   g.activeIds.delete(leaverId);
   if (!g.leftPlayers) g.leftPlayers = new Set();
   g.leftPlayers.add(leaverId);
-  if (g.tiebreakerCandidates) g.tiebreakerCandidates.delete(leaverId);
+  if (g.tiebreakerCandidates) {
+    g.tiebreakerCandidates.delete(leaverId);
+    // A sudden-death round only the LEAVERS were eligible for can never resolve. scoringPool
+    // treats an empty Set as "these are the candidates", so finalizeRound found nobody to score,
+    // called it a tie, re-armed sudden death with the same empty Set, and the remaining players
+    // looped through rounds that could not be won — verified over four rounds with every roundWin
+    // still zero and no way out but leaving. Dropping to one candidate has the same problem in
+    // reverse: they win by default without playing, so hand the tiebreaker back to the room.
+    if (g.tiebreakerCandidates.size < 2) g.tiebreakerCandidates = null;
+  }
   // Someone who left can't be part of a unanimous vote. Dropping their ballot keeps a skip from
   // passing on behalf of a player who never agreed, and stops the count reading "3/3" forever
   // once the room shrank under it — nobody can vote twice, so a stale tally deadlocks the vote.

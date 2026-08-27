@@ -10,6 +10,11 @@
 // Required rather than injected: a caller who forgot to pass it would mint seats with no token,
 // which is a seat nobody can ever reclaim after a dropped connection.
 const { newSeatToken } = require("../lib/seat-token.js");
+// Same reasoning for the seat id, and the same alphabet rooms.js's genId uses. It was two
+// Math.random() strings concatenated, which is neither unpredictable nor collision-free — and this
+// module is now the only thing that decides a quick-match id, so it has to be both.
+const crypto = require("node:crypto");
+const genId = () => crypto.randomBytes(9).toString("base64url");
 
 const MIN_TO_START = 2;
 const MAX_TO_START = 6;
@@ -73,7 +78,20 @@ function createMatchmaking({ newRoom, attach, broadcast, cleanName, uniqueName, 
   function join(socket, { name, playerId } = {}, ack) {
     const bad = nameRejected(name);
     if (bad) return ack?.({ ok: false, error: bad }); // before leave(), so a refusal can't drop them out of the queue they're already in
-    const pid = playerId || (Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 6));
+    // The seat id is minted here and the payload's `playerId` is ignored outright.
+    //
+    // It used to be taken from the payload with no validation and no collision check, and popBatch
+    // below does `room.players.set(e.playerId, …)` — so two queue entries carrying the same id
+    // silently collapsed into ONE seat. Verified: a 2-person batch produced room.players.size === 1,
+    // both sockets were acked the *same* seat token, and startMatch then refused the room forever
+    // with "Need at least 2 players to start."
+    //
+    // As an attack it is worse than a wedge. Every player's id is published in roomState, and the
+    // client's id is stable per tab, so someone who saw a victim's id in an earlier room could queue
+    // with it: landing in the same batch hands them the victim's seat and its token, and their
+    // leaveRoom then forfeits the victim's match. Nothing about quick-match needs a caller-chosen
+    // id — the ack tells them what they got.
+    const pid = genId();
     leave(socket); // no duplicate queue entries for the same socket
     queue.push({ playerId: pid, socket, name: cleanName(name) });
     ack?.({ ok: true, queued: true, you: pid });

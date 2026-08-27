@@ -84,3 +84,49 @@ describe("the cost guard needs real bytes, not just a projection", () => {
     assert.ok(p.projTotal < FLY_COST.coldThreshold);
   });
 });
+
+// fly.toml declares the machine's idle behaviour at deploy time; setColdStart() overwrites it at
+// runtime through the Fly API. If the two disagree, the guard silently undoes the deploy config the
+// first time it trips and clears — one new billing month and the machine is back on the clock with
+// nothing in the log to say why. This is a pair of files that has to be edited together.
+describe("fly.toml and the cost guard agree on the idle mode", () => {
+  const fs = require("fs");
+  const path = require("path");
+  const ROOT = path.join(__dirname, "..");
+  const toml = fs.readFileSync(path.join(ROOT, "fly.toml"), "utf8");
+  // Comments in fly.toml describe the OTHER mode as well, so read the real key/value lines only.
+  const setting = (key) => {
+    const m = toml.split("\n")
+      .filter((l) => !l.trim().startsWith("#"))
+      .map((l) => l.match(new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*$`)))
+      .find(Boolean);
+    return m ? m[1].replace(/^"|"$/g, "") : null;
+  };
+  const { readCode } = require("./helpers/source.js");
+  const guard = readCode("lib/cost-guard.js");
+  const branch = guard.slice(guard.indexOf("svc.autostop ="), guard.indexOf("svc.autostop =") + 200);
+
+  test("fly.toml autosuspends idle machines", () => {
+    assert.equal(setting("auto_stop_machines"), "suspend");
+    assert.equal(setting("auto_start_machines"), "true");
+    // Fly keeps this many machines up regardless of autostop, so a 1 here means the single machine
+    // never suspends and the setting above does nothing at all.
+    assert.equal(setting("min_machines_running"), "0", "a non-zero minimum cancels autosuspend");
+  });
+
+  test("the guard's normal branch restores what fly.toml declares", () => {
+    assert.match(branch, /svc\.autostop = cold \? "stop" : "suspend"/,
+      "the not-tripped branch must put back fly.toml's auto_stop_machines");
+    assert.match(branch, /svc\.min_machines_running = 0/,
+      "and must not raise min_machines_running above fly.toml's value");
+  });
+
+  test("the tripped branch is still strictly cheaper than the normal one", () => {
+    // Tier 1 has to mean something. stop drops the suspended machine's RAM snapshot; if both
+    // branches said "suspend" the tier would be a no-op that still restarts the machine to apply.
+    const [, tripped, normal] = branch.match(/cold \? "(\w+)" : "(\w+)"/) || [];
+    assert.equal(tripped, "stop");
+    assert.equal(normal, "suspend");
+    assert.notEqual(tripped, normal);
+  });
+});

@@ -92,6 +92,13 @@ The running server wants that same token as a *Fly* secret too — that's what l
 scale the machine down; see the note in `fly.toml`. The dollar thresholds and the projection maths
 live in **`lib/cost-guard.js`** (`FLY_COST`) — `server/index.js` only wires the guard up.
 
+Idle machines **autosuspend** (`fly.toml`), so compute is billed only while somebody is actually
+using the site. Suspend rather than stop, because a suspend snapshots and restores the machine's
+RAM — which is where every live multiplayer room lives, so a sleeping server wakes up with its
+games intact instead of dropping them. Waking costs a fraction of a second, not the 1–3s of a cold
+boot. The `uptime.yml` probe pokes the site every five minutes, so in practice it cycles at about
+that rate; widen that cron if you want longer idle stretches.
+
 ```bash
 fly deploy      # or deploy straight from your machine, bypassing CI
 ```

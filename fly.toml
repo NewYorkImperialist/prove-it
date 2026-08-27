@@ -12,15 +12,36 @@ primary_region = "ewr"
 [http_service]
   internal_port = 3000
   force_https = true
-  # always-on (no cold start) — the machine stays up so the admin board & first player don't wait on a boot.
-  # to go back to scale-to-zero (~free, ~1-3s cold start), set auto_stop_machines = "stop" and min_machines_running = 0.
-  # NOTE: the server's automatic cost guard flips these two settings itself at runtime via the Fly Machines
-  # API once projected spend crosses $4/mo — the thresholds and the projection are FLY_COST in
-  # lib/cost-guard.js (server/index.js only wires the guard up). Requires the FLY_API_TOKEN secret
-  # (fly secrets set FLY_API_TOKEN=$(fly tokens create deploy)); the values below are just the deploy-time default.
-  auto_stop_machines = "off"
+  # AUTOSUSPEND. Idle machines suspend instead of staying up; the next request wakes them.
+  #
+  # "suspend" rather than "stop": suspend snapshots the machine's RAM and restores it, so the wake is
+  # far faster than a boot AND the in-memory state survives it. That second part matters here more
+  # than it would in most apps — every live room, its players, its seat tokens and its round state
+  # live only in the `rooms` Map in server/rooms.js, and a "stop" throws all of it away.
+  #
+  # min_machines_running MUST be 0. Fly keeps `min_machines_running` machines up regardless of
+  # autostop, so leaving it at 1 on a single-machine app means the one machine never suspends and
+  # this whole block does nothing.
+  #
+  # Two things worth knowing about how this behaves in practice:
+  #   • An open WebSocket is an active connection, so a machine with anyone connected does not go
+  #     idle. Suspending mid-game is therefore not a case that arises — which is just as well, since
+  #     round deadlines are absolute timestamps and would all read as expired on the far side of a
+  #     long suspend.
+  #   • .github/workflows/uptime.yml probes /admin/ping every 5 minutes, and each probe wakes the
+  #     machine. So expect it to cycle at roughly that interval rather than stay suspended for
+  #     hours. Widen that cron if you want longer stretches of genuine idle.
+  #
+  # NOTE: the server's automatic cost guard flips these settings itself at runtime via the Fly
+  # Machines API once projected spend crosses $4/mo — the thresholds and the projection are FLY_COST
+  # in lib/cost-guard.js (server/index.js only wires the guard up). Requires the FLY_API_TOKEN secret
+  # (fly secrets set FLY_API_TOKEN=$(fly tokens create deploy)). Its "normal" mode mirrors the values
+  # below, so the two agree; its cost-tripped mode is a plain "stop", which drops the RAM snapshot
+  # too. To go back to always-on, set auto_stop_machines = "off" and min_machines_running = 1 — and
+  # change setColdStart's normal branch in lib/cost-guard.js to match, or the guard will undo it.
+  auto_stop_machines = "suspend"
   auto_start_machines = true
-  min_machines_running = 1
+  min_machines_running = 0
 
 [[vm]]
   size = "shared-cpu-1x"

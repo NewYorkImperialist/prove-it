@@ -318,25 +318,25 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const dayMax = Math.max(1, ...bw.perDay.map((r) => Number(r.bytes) || 0));
     const dayRows = bw.perDay.map((r) => `<tr><td>${esc(r.day)}</td><td>${bar(Number(r.bytes) || 0, dayMax)} ${fmtGB((Number(r.bytes) || 0) / 1e9)}</td><td>${Number(r.reqs) || 0}</td></tr>`).join("");
     const overridden = costOverrideMonth === p.month;
-    const overrideLink = `<a class="preset" style="background:#1d3a26;color:#8ef0b4" href="/admin/cost-override?key=${k}&on=1" onclick="return confirm('Keep the game fully LIVE (always-on, no traffic pause) for the rest of this billing cycle and accept going over \\$${FLY_COST.stopThreshold}? The auto caps won\\'t fire again until next month.')">▶ Override — keep live this cycle</a>`;
+    const overrideLink = `<a class="preset" style="background:#1d3a26;color:#8ef0b4" href="/admin/cost-override?key=${k}&on=1" onclick="return confirm('Keep the game fully LIVE (no traffic pause, idle machines keep suspending) for the rest of this billing cycle and accept going over \\$${FLY_COST.stopThreshold}? The auto caps won\\'t fire again until next month.')">▶ Override — keep live this cycle</a>`;
     const coldErrHtml = coldError ? `<br><span style="color:#e5484d;font-size:12px">⚠ couldn't apply: ${esc(coldError)} — check FLY_API_TOKEN / FLY_APP_NAME</span>` : "";
     const guard = hardTripped
       ? `<div class="announce" style="border-color:#e5484d;background:#2a1618"><b style="color:#e5484d">● AUTO COST-CAP TRIPPED</b> — projected $${p.projTotal.toFixed(2)} ≥ $${FLY_COST.stopThreshold.toFixed(2)}. Heavy traffic is paused (visitors see a "resting for the month" page) to cap egress. Clears next cycle. ${overrideLink}</div>`
       : overridden
       ? `<div class="announce" style="border-color:#ffb454"><b style="color:#ffb454">⚠ Auto cost-cap OVERRIDDEN for ${esc(p.month)}</b> — it won't revert to cold starts or pause the game this cycle even past $${FLY_COST.stopThreshold.toFixed(2)}. <a class="preset" href="/admin/cost-override?key=${k}&on=0">Re-arm the cap</a></div>`
       : coldTripped
-      ? `<div class="announce" style="border-color:#ffb454"><b style="color:#ffb454">● COLD-START MODE</b> — projected $${p.projTotal.toFixed(2)} ≥ $${FLY_COST.coldThreshold.toFixed(2)}. The machine reverted to scale-to-zero to cut compute cost (visitors may see a ~1-3s cold start on the next request after idle). Game stays fully live. Escalates to a full pause at $${FLY_COST.stopThreshold.toFixed(2)}.${coldErrHtml} ${overrideLink}</div>`
-      : `<div class="announce" style="border-color:#2e7d52"><b style="color:#8ef0b4">● Auto cost-cap armed</b> — at $${FLY_COST.coldThreshold.toFixed(2)} projected, the machine reverts to scale-to-zero (cold starts); at $${FLY_COST.stopThreshold.toFixed(2)} it also pauses heavy traffic. Both clear automatically next cycle. No action needed from you.</div>`;
+      ? `<div class="announce" style="border-color:#ffb454"><b style="color:#ffb454">● COLD-START MODE</b> — projected $${p.projTotal.toFixed(2)} ≥ $${FLY_COST.coldThreshold.toFixed(2)}. Idle machines now stop outright instead of suspending, so a wake is a full boot (~1-3s) and live rooms are lost rather than restored. Game stays fully live. Escalates to a full pause at $${FLY_COST.stopThreshold.toFixed(2)}.${coldErrHtml} ${overrideLink}</div>`
+      : `<div class="announce" style="border-color:#2e7d52"><b style="color:#8ef0b4">● Auto cost-cap armed</b> — at $${FLY_COST.coldThreshold.toFixed(2)} projected, idle machines switch from suspending to stopping; at $${FLY_COST.stopThreshold.toFixed(2)} it also pauses heavy traffic. Both clear automatically next cycle. No action needed from you.</div>`;
     return `
       <h2>💸 Cost & bandwidth <span style="font-size:12px;color:#8a92a6;font-weight:400">— projected from this cycle's egress</span></h2>
       ${guard}
       <div class="pills">
         <span class="pill">📈 Projected month-end: <b style="color:${color};font-size:15px">$${p.projTotal.toFixed(2)}</b> <span style="color:#8a92a6">/ $${FLY_COST.coldThreshold.toFixed(2)} cold · $${FLY_COST.stopThreshold.toFixed(2)} stop</span></span>
-        <span class="pill">🖥 Compute (always-on): <b>$${FLY_COST.computePerMo.toFixed(2)}</b>/mo fixed</span>
+        <span class="pill">🖥 Compute (ceiling): <b>$${FLY_COST.computePerMo.toFixed(2)}</b>/mo</span>
         <span class="pill">🌐 Egress this cycle: <b>${fmtGB(p.gb)}</b> → proj <b>${fmtGB(p.projGB)}</b> ≈ <b>$${p.egressProj.toFixed(2)}</b></span>
         <span class="pill">💵 Accrued so far: <b>$${p.soFar.toFixed(2)}</b> · ${bw.monthReqs} reqs</span>
       </div>
-      <p class="stats" style="font-size:12px;color:#6b7382;margin:-6px 0 10px">Estimated rates (shared-cpu-1x 256MB ≈ $${FLY_COST.computePerMo}/mo, egress ≈ $${FLY_COST.egressPerGB}/GB — confirm current Fly pricing). Compute assumes always-on; once in cold-start mode actual compute cost is likely lower than shown. Map atlases load from a CDN, so they don't count. Extra machines / volumes aren't included.</p>
+      <p class="stats" style="font-size:12px;color:#6b7382;margin:-6px 0 10px">Estimated rates (shared-cpu-1x ≈ $${FLY_COST.computePerMo}/mo run continuously, egress ≈ $${FLY_COST.egressPerGB}/GB — confirm current Fly pricing). The compute figure is a CEILING, not a bill: fly.toml autosuspends idle machines, so real compute is billed only while awake and the projection above deliberately over-states it. Map atlases load from a CDN, so they don't count. Extra machines / volumes aren't included.</p>
       <div class="cols"><div><h3>🌐 Egress per day (UTC)</h3>${tbl(["Day", "Bytes sent", "Reqs"], dayRows, 3)}</div></div>`;
   }
   function histHtml(h, k) {

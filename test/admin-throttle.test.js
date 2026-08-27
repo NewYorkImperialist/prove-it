@@ -105,19 +105,76 @@ describe("the throttle is inside the gate, not bolted onto one router", () => {
   const path = require("path");
   const ROOT = path.join(__dirname, "..");
 
-  test("every admin surface funnels through ownerOk, so none of them can miss it", () => {
+  // Two gates now. ownerOk is the key check every admin surface shares; ownerAction is ownerOk plus
+  // "does this request look like a person clicking a link", and only the routes that CHANGE
+  // something use it. Both run the same throttled comparison, so either satisfies this test's
+  // original question — that no admin route can be added without one.
+  const GATE = /owner(Ok\(req\)|Action\(req, res\))/g;
+
+  test("every admin surface funnels through the key check, so none of them can miss it", () => {
     // Express routes, the Next pages' guard, and cost-override — which is registered in
     // server/index.js OUTSIDE the admin router and would have been the one a middleware-based
     // throttle forgot.
     assert.match(fs.readFileSync(path.join(ROOT, "app/admin/guard.js"), "utf8"), /ownerOk/);
-    assert.match(fs.readFileSync(path.join(ROOT, "lib/cost-guard.js"), "utf8"), /ownerOk\(req\)/);
+    assert.match(fs.readFileSync(path.join(ROOT, "lib/cost-guard.js"), "utf8"), GATE);
     const admin = fs.readFileSync(path.join(ROOT, "routes/admin.js"), "utf8");
     const routes = [...admin.matchAll(/router\.get\("(\/admin[^"]*)"/g)].map((m) => m[1]);
     assert.ok(routes.length > 15, `expected the full admin surface, found ${routes.length}`);
-    // Each route body should reach ownerOk before anything else. Cheap structural check: the count
-    // of ownerOk calls should match the count of routes.
-    const gates = (admin.match(/ownerOk\(req\)/g) || []).length;
+    const gates = (admin.match(GATE) || []).length;
     assert.ok(gates >= routes.length, `${routes.length} routes but only ${gates} gate calls`);
+  });
+
+  // The dashboard's write actions are plain links, so they are GET routes — and Express answers
+  // HEAD on a GET route by running the handler and discarding the body. `curl -I /admin/killall`
+  // therefore ended every live game. Same shape for anything that merely FETCHES a keyed URL: a
+  // chat app unfurling a pasted dashboard link, a browser prefetching, a scanner following a
+  // redirect. ownerAction refuses all of those; ownerOk alone does not.
+  test("every route that changes something uses the stricter gate", () => {
+    const admin = fs.readFileSync(path.join(ROOT, "routes/admin.js"), "utf8");
+    const WRITES = ["result-delete", "result-rename", "merge-do", "merge-names", "merge-undo",
+      "crown-visitor", "close", "killall", "lockdown", "announce"];
+    for (const name of WRITES) {
+      const at = admin.indexOf(`router.get("/admin/${name}"`);
+      assert.notEqual(at, -1, `no route for /admin/${name}`);
+      const head = admin.slice(at, at + 220);
+      assert.match(head, /ownerAction\(req, res\)/, `/admin/${name} must use the write gate`);
+    }
+    // …and cost-override, which lives outside this router entirely.
+    assert.match(fs.readFileSync(path.join(ROOT, "lib/cost-guard.js"), "utf8"), /ownerAction\(req, res\)/);
+  });
+
+  test("the write gate refuses HEAD, prefetches and non-navigations", () => {
+    const { ownerAction } = require("../lib/owner-auth.js");
+    const saved = process.env.OWNER_KEY;
+    process.env.OWNER_KEY = "admin-secret";
+    const call = (method, headers = {}) => {
+      resetAdminThrottle();
+      const sent = {};
+      const res = { status(c) { sent.code = c; return this; }, send(b) { sent.body = b; return this; } };
+      const req = { method, path: "/admin/killall", query: { key: "admin-secret" },
+        get: (h) => headers[h.toLowerCase()] };
+      return { allowed: ownerAction(req, res), sent };
+    };
+    try {
+      assert.equal(call("GET").allowed, true, "a plain link click still works");
+      assert.equal(call("GET", { "sec-fetch-mode": "navigate", "sec-fetch-site": "same-origin" }).allowed, true);
+      assert.equal(call("HEAD").allowed, false, "curl -I must not fire the kill switch");
+      assert.equal(call("GET", { "sec-purpose": "prefetch;prerender" }).allowed, false);
+      assert.equal(call("GET", { purpose: "prefetch" }).allowed, false);
+      assert.equal(call("GET", { "x-purpose": "preview" }).allowed, false);
+      assert.equal(call("GET", { "sec-fetch-mode": "no-cors" }).allowed, false, "an unfurler fetch");
+      assert.equal(call("GET", { "sec-fetch-mode": "cors" }).allowed, false);
+      assert.equal(call("GET", { "sec-fetch-mode": "navigate", "sec-fetch-site": "cross-site" }).allowed, false);
+      // A wrong key is still a 404, never a 405 — the refusal must not confirm the path exists.
+      resetAdminThrottle();
+      const sent = {};
+      const res = { status(c) { sent.code = c; return this; }, send(b) { sent.body = b; return this; } };
+      assert.equal(ownerAction({ method: "GET", path: "/admin/killall", query: { key: "nope" }, get: () => undefined }, res), false);
+      assert.equal(sent.code, 404);
+    } finally {
+      if (saved === undefined) delete process.env.OWNER_KEY; else process.env.OWNER_KEY = saved;
+      resetAdminThrottle();
+    }
   });
 
   test("one notion of the caller is shared with the write limiter", () => {

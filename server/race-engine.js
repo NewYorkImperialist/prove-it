@@ -24,6 +24,8 @@ const RESULT_MS = 5_000;      // pause showing the round's final result before t
 const MAX_MISSES = 25;        // per player per round — anti-spam cap on tracked wrong answers
 const MAX_CLOCK_FACTOR = 2;   // a round clock can never grow past this × the room's base timer
 const ANSWER_MIN_GAP_MS = 100; // min gap between one player's submissions (see handleAnswer)
+// A map keyed by player id with no inherited keys to fall through to. See beginRound.
+const blank = () => Object.create(null);
 const DEFAULTS = { timer: 45, format: 5, suddenDeath: false, increment: 0 }; // format: 3|5|null(endless); increment: bonus seconds per correct answer
 
 // Optional analytics hook · server.js sets this to persist match/round events. No-op by default.
@@ -113,7 +115,7 @@ function pauseGame(io, room) {
   if (!g || g.paused) return;
   if (g.phase === "live") {
     // Freeze every clock individually, so nobody loses (or gains) time over the outage.
-    g.pausedClocks = {};
+    g.pausedClocks = blank();
     for (const id of g.activeIds) {
       if (!stillRacing(g, id)) continue;
       g.pausedClocks[id] = Math.max(500, (g.deadlines[id] ?? 0) - Date.now());
@@ -199,13 +201,13 @@ function startMatch(io, room) {
     format, winsNeeded: format == null ? null : Math.ceil(format / 2), // bo3→2, bo5→3, endless→null
     suddenDeath: !!s.suddenDeath, tiebreakerCandidates: null,
     timer: s.timer || 30, increment: Number.isFinite(s.increment) ? Math.max(0, Math.min(30, s.increment)) : 0,
-    roundWins: Object.fromEntries(order.map((id) => [id, 0])),
+    roundWins: Object.assign(blank(), Object.fromEntries(order.map((id) => [id, 0]))),
     round: 0, isTiebreaker: false, usedNames: [], lastCatName: null,
     current: null, phase: "starting", deadline: null, timeout: null,
-    deadlines: {}, doneIds: new Set(), pausedClocks: null, // per-player round clocks
+    deadlines: blank(), doneIds: new Set(), pausedClocks: null, // per-player round clocks
     clockCeiling: null, pausedCeiling: null, // set per round in startLiveRound; caps the increment
     roundClockCap: null, // seconds the ceiling above is worth — what the banner advertises
-    answers: {}, liveScores: {}, misses: {}, missSeq: 0, lastReveal: null, matchWinnerId: null,
+    answers: blank(), liveScores: blank(), misses: blank(), missSeq: 0, lastReveal: null, matchWinnerId: null,
     paused: false, endVotes: new Set(), skipVotes: new Set(),
     startedAt: Date.now(),
     gid: "r-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7),
@@ -223,12 +225,17 @@ function beginRound(io, room, opts = {}) {
   if (!avail.length) { g.usedNames = []; avail = g.pool.filter((c) => c.name !== g.lastCatName); if (!avail.length) avail = g.pool; }
   const c = avail[Math.floor(Math.random() * avail.length)];
   g.usedNames.push(c.name); g.lastCatName = c.name; g.current = c;
-  g.answers = {}; g.liveScores = {}; g.misses = {}; g.missSeq = 0;
+  // Object.create(null), not {}: every one of these is keyed by a player id, and a plain object
+  // inherits the __proto__ accessor — so `deadlines[pid] = <number>` for a pid of "__proto__"
+  // silently does nothing and the read still returns Object.prototype, leaving that player's clock
+  // permanently unexpired and the round unfinishable for everyone. rooms.js refuses that id at the
+  // door; this is the half that holds even if some future entry point forgets to.
+  g.answers = blank(); g.liveScores = blank(); g.misses = blank(); g.missSeq = 0;
   g.approvalsGiven = new Map(); // per-round budget, see handleApproveMiss
-  g.lastMissAt = {}; // per-player clock, started only by a miss — see handleAnswer
+  g.lastMissAt = blank(); // per-player clock, started only by a miss — see handleAnswer
   g.endVotes = new Set(); // votes are a per-round intent check, not sticky across rounds
   g.skipVotes = new Set();
-  g.deadlines = {}; g.doneIds = new Set(); g.pausedClocks = null;
+  g.deadlines = blank(); g.doneIds = new Set(); g.pausedClocks = null;
   g.clockCeiling = null; g.pausedCeiling = null; g.roundClockCap = null;
   for (const id of g.activeIds) { g.answers[id] = new Map(); g.liveScores[id] = 0; g.misses[id] = []; }
   g.phase = "countdown";
@@ -243,7 +250,7 @@ function startLiveRound(io, room) {
   const now = Date.now();
   const start = now + g.timer * 1000;
   g.doneIds = new Set();
-  g.deadlines = Object.fromEntries([...g.activeIds].map((id) => [id, start])); // same start for all
+  g.deadlines = Object.assign(blank(), Object.fromEntries([...g.activeIds].map((id) => [id, start]))); // same start for all
   g.clockCeiling = now + g.timer * 1000 * MAX_CLOCK_FACTOR; // no increment may push a clock past this
   g.roundClockCap = g.timer * MAX_CLOCK_FACTOR; // the same ceiling as a duration, for the banner
   g.pausedCeiling = null;
@@ -287,7 +294,7 @@ function endLiveRound(io, room) {
   const g = room.game;
   // Every clock is spent, so this is the first moment anyone's answers may leave the server.
   for (const id of g.activeIds) g.doneIds.add(id);
-  g.deadlines = {}; g.clockCeiling = null; g.pausedCeiling = null; g.roundClockCap = null;
+  g.deadlines = blank(); g.clockCeiling = null; g.pausedCeiling = null; g.roundClockCap = null;
   g.lastReveal = {
     round: g.round, category: { name: g.current.name, group: g.current.group, emoji: g.current.emoji },
     // tiebreaker: this round was a sudden-death round, so only `eligible` players could win it.

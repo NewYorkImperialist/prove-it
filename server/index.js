@@ -11,7 +11,7 @@ const raceEngine = require("./race-engine"); // the live "Challenge Race" mode (
 const analytics = require("./stats"); // persistent game history (Turso); separate from the in-memory `stats` counters
 const SITE = require("../lib/site-config"); // single source of truth for titles/meta tags/credit link — see that file
 const { CATEGORY_GROUPS, DEFAULT_GROUPS } = require("../lib/category-data.js");
-const { ownerOk } = require("../lib/owner-auth.js");
+const { ownerAction } = require("../lib/owner-auth.js");
 const { createCostGuard } = require("../lib/cost-guard.js");
 const { createChallengeRouter } = require("../routes/challenge.js");
 const { createAdminRouter } = require("../routes/admin.js");
@@ -25,7 +25,7 @@ const server = http.createServer(app);
 const io = new Server(server, PING_OPTIONS); // heartbeat tuned so a silent drop is seen in seconds — see rooms.js
 app.use(express.json({ limit: "16kb" })); // for /challenge and cost-override JSON bodies
 
-const costGuard = createCostGuard({ analytics, SITE, ownerOk });
+const costGuard = createCostGuard({ analytics, SITE, ownerAction });
 app.use(costGuard.egressMiddleware); // tally bytes sent per response, for the admin cost projection
 
 // Two response headers worth having everywhere, and one that matters specifically for /admin.
@@ -38,10 +38,25 @@ app.use(costGuard.egressMiddleware); // tally bytes sent per response, for the a
 // no-referrer on /admin* stops the key leaving the page at all.
 app.use((req, res, next) => {
   res.set("x-content-type-options", "nosniff");
+  // Nothing in this app is ever meant to be framed, so there is no case to weigh. Clickjacking the
+  // dashboard is not reachable today (a frame can't supply the key), but the answer doesn't depend
+  // on that staying true, and DENY is one header.
+  res.set("x-frame-options", "DENY");
+  // The game asks for none of these. Saying so stops an injected script or an embedded third party
+  // asking on the app's behalf and getting the app's origin on the permission prompt.
+  res.set("permissions-policy", "geolocation=(), camera=(), microphone=(), payment=(), usb=(), interest-cohort=()");
+  // Fly already redirects to HTTPS; this is what stops the FIRST request of a session going out in
+  // plaintext on a hostile network. Only sent over TLS, since the header is meaningless otherwise.
+  if (req.secure || req.get("x-forwarded-proto") === "https") {
+    res.set("strict-transport-security", "max-age=31536000; includeSubDomains");
+  }
   if (req.path.startsWith("/admin")) {
     res.set("referrer-policy", "no-referrer");
     // And it must not sit in a shared cache either, for the same reason.
     res.set("cache-control", "private, no-store");
+    // The dashboard's URLs contain the owner key. A crawler that somehow reaches one must not put
+    // it in an index.
+    res.set("x-robots-tag", "noindex, nofollow, noarchive");
   }
   next();
 });

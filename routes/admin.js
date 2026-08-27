@@ -6,7 +6,7 @@
 const express = require("express");
 const analytics = require("../server/stats"); // persistent game history (Turso)
 const SITE = require("../lib/site-config");
-const { ownerOk, adminAuthFailures } = require("../lib/owner-auth.js");
+const { ownerOk, ownerAction, adminAuthFailures } = require("../lib/owner-auth.js");
 const { FLY_COST, projectCost } = require("../lib/cost-guard.js");
 const { esc, easternHour, easternTime, easternFull, easternDay, fmtHour12, fmtDur, fmtMs, bar, tbl } = require("../lib/html.js");
 const { CAT_SIZES, CAT_ITEMS, CAT_GROUP } = require("../lib/category-data.js");
@@ -173,7 +173,8 @@ function racePeek(room) {
 }
 function anyGamePeek(room) { return room.mode === "race" ? racePeek(room) : gamePeek(room); }
 function runLabel(r) {
-  if (String(r.challenge_id || "").startsWith("d-")) return `daily ${String(r.challenge_id).replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3")}`;
+  // The other two branches escape; this one didn't.
+  if (String(r.challenge_id || "").startsWith("d-")) return `daily ${esc(String(r.challenge_id).replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3"))}`;
   let rounds = []; try { rounds = JSON.parse(r.rounds || "[]"); } catch (e) {}
   if (rounds.length === 1) return esc(rounds[0]);
   if (r.type === "genre" && r.genre) return `${esc(r.genre)} · ${rounds.length}r`;
@@ -387,7 +388,9 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     const soloRecent = (solo.recent || []).map((r) => { const cat = (r.rounds && r.rounds.length === 1) ? r.rounds[0] : (r.genre ? r.genre + " · " + (r.rounds || []).length + "r" : (r.rounds || []).length + "r"); return `<tr><td>${easternTime(num(r.at))}</td><td>${esc(r.name || "?")}${r.crown ? " 👑" : ""}</td><td>${esc(cat)}</td><td>${num(r.total)}</td></tr>`; }).join("");
     const soloDay = (solo.perDay || []).map((r) => `<tr><td>${esc(r.day)}</td><td>${num(r.n)}</td></tr>`).join("");
     const soloCats = (solo.topCats || []).map((r) => `<tr><td>${esc(r.cat)}</td><td>${num(r.plays)}</td><td>${num(r.players)}</td><td>${num(r.avg).toFixed(1)}</td><td>${num(r.top)}</td></tr>`).join("");
-    const dDay = (c) => String(c || "").replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3");
+    // esc, like every other DB string on this page. A daily id is server-minted so this is safe
+    // today; being safe because of what a query filter happens to be is not the same as being safe.
+    const dDay = (c) => esc(String(c || "").replace(/^d-/, "").replace(/(\d{4})(\d{2})(\d{2})/, "$1-$2-$3"));
     const dailyDayRows = (daily.perDay || []).map((r) => `<tr><td>${dDay(r.challenge_id)}</td><td>${num(r.plays)}</td><td>${num(r.players)}</td><td>${num(r.avg).toFixed(1)}</td><td><b>${num(r.top)}</b> ${esc(r.name || "?")}</td></tr>`).join("");
     return `
       <h2>All-time history</h2>
@@ -476,7 +479,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
         <div class="hd"><span class="code">${esc(r.code)}</span><span class="badge">${r.status === "playing" ? "🟢 playing" : "🟡 lobby"}</span><span class="badge">${r.mode === "race" ? "🏁 race" : "⚔️ duel"}</span>
           <a class="watch" href="/?ghost=${encodeURIComponent(r.code)}&key=${k}" target="_blank">👻 ghost</a>
           <a class="watch" href="/?spectate=${encodeURIComponent(r.code)}" target="_blank">👀 watch</a>
-          <a class="close" href="/admin/close?key=${k}&code=${encodeURIComponent(r.code)}" onclick="return confirm('Close room ${esc(r.code)}? This kicks everyone out.')">✕ close</a></div>
+          <a class="close" href="/admin/close?key=${k}&code=${encodeURIComponent(r.code)}" data-code="${esc(r.code)}" onclick="return confirm('Close room ' + this.dataset.code + '? This kicks everyone out.')">✕ close</a></div>
         <div class="g players">${ps} &nbsp;·&nbsp; 👀 ${r.spectators}</div>
         <div class="g meta">age ${fmtDur(now - r.createdAt)} · idle ${fmtDur(now - r.lastActivityAt)}</div>
         ${gameHtml}
@@ -519,7 +522,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       ].map(([slug, name, desc]) => `<a href="/admin/${slug}?key=${k}"><b>${name}</b><span>${desc}</span></a>`).join("")}</div>
       <div class="grid">${list.length ? list.map(card).join("") : '<p class="sub">No active rooms right now.</p>'}</div>
       ${(() => { const live = liveSessions(); return `<h2>🌐 Live connections (${live.length})</h2>${tbl(["Connected for", "Name", "Doing", "Device"],
-        live.map((s) => `<tr><td>${fmtDur(now - s.connectedAt)}</td><td>${esc(s.name || "—")}</td><td>${s.role}${s.room ? " · " + esc(s.room) : ""}</td><td>${s.device}</td></tr>`).join(""), 4)}`; })()}
+        live.map((s) => `<tr><td>${fmtDur(now - s.connectedAt)}</td><td>${esc(s.name || "—")}</td><td>${s.role}${s.room ? " · " + esc(s.room) : ""}</td><td>${esc(s.device)}</td></tr>`).join(""), 4)}`; })()}
       ${histHtml(hist, k)}
       </body></html>`);
   });
@@ -535,7 +538,10 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     (await analytics.namedDisplays().catch(() => [])).forEach((r) => { if (!named.has(r.category)) named.set(r.category, new Set()); named.get(r.category).add(r.display); });
     const cat = String(req.query.cat || "");
 
-    if (cat && CAT_ITEMS[cat]) { // single-category drill-down: the never-named list
+    // hasOwnProperty, because CAT_ITEMS is an object literal: `CAT_ITEMS["constructor"]` is truthy
+    // (it's Object), so ?cat=constructor — or toString, valueOf, __proto__ — passed this gate and
+    // then threw on `.filter`, turning the page into a 500.
+    if (cat && Object.prototype.hasOwnProperty.call(CAT_ITEMS, cat)) { // single-category drill-down: the never-named list
       const set = named.get(cat) || new Set();
       const never = CAT_ITEMS[cat].filter((d) => !set.has(d));
       const got = CAT_ITEMS[cat].filter((d) => set.has(d));
@@ -792,7 +798,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       </body>`);
   });
   router.get("/admin/result-delete", async (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
+    if (!ownerAction(req, res)) return;
     const rowId = parseInt(req.query.id, 10);
     if (rowId && analytics.enabled()) await analytics.deleteResult(rowId).catch(() => {});
     res.redirect(`/admin/leaderboards?key=${encodeURIComponent(req.query.key || "")}`);
@@ -801,7 +807,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
   // rename in routes/challenge.js this needs no proof of identity — which is exactly why
   // analytics.adminRename writes an audit row carrying the previous name.
   router.get("/admin/result-rename", async (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
+    if (!ownerAction(req, res)) return;
     const k = encodeURIComponent(req.query.key || "");
     const rowId = parseInt(req.query.id, 10);
     // Same trim/cap/profanity gate a player's own name goes through, so a name typed here can't
@@ -1047,7 +1053,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
       </body>`);
   });
   router.get("/admin/merge-do", async (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
+    if (!ownerAction(req, res)) return;
     const k = encodeURIComponent(req.query.key || "");
     // A blank name means "leave the names alone", so it must not become cleanName()'s "Anon".
     const raw = String(req.query.name || "").slice(0, 24).trim();
@@ -1060,7 +1066,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
   // Merge by display name. Distinct reasons from merge-do's so the page can say which picker was
   // refused — "pick two different players" under the name form would just be confusing.
   router.get("/admin/merge-names", async (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
+    if (!ownerAction(req, res)) return;
     const k = encodeURIComponent(req.query.key || "");
     const out = await analytics.mergeNames({ keepName: req.query.keepName, fromName: req.query.fromName, by: "admin" })
       .catch(() => ({ ok: false, reason: "write-failed", rows: 0 }));
@@ -1069,7 +1075,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
     res.redirect(`/admin/merge?key=${k}&${q2}`);
   });
   router.get("/admin/merge-undo", async (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
+    if (!ownerAction(req, res)) return;
     const k = encodeURIComponent(req.query.key || "");
     const out = await analytics.undoMerge(req.query.id, "admin").catch(() => ({ ok: false, reason: "write-failed", rows: 0 }));
     const q2 = out.ok ? `done=undone&n=${out.rows}` : `done=${encodeURIComponent(out.reason || "")}`;
@@ -1078,7 +1084,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
   // Crowns every un-crowned run a visitor has ever played — see crownVisitorRows()'s comment for
   // why this is a different problem than the merges above (same visitor_id both "sides").
   router.get("/admin/crown-visitor", async (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
+    if (!ownerAction(req, res)) return;
     const k = encodeURIComponent(req.query.key || "");
     const out = await analytics.crownVisitorRows({ visitorId: req.query.visitorId, on: true, by: "admin" })
       .catch(() => ({ ok: false, reason: "write-failed", rows: 0 }));
@@ -1172,7 +1178,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
   });
 
   router.get("/admin/close", (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
+    if (!ownerAction(req, res)) return;
     const code = String(req.query.code || "").toUpperCase().trim();
     closeRoom(code);
     res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));
@@ -1180,7 +1186,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
 
   // Kill switch: end every active game right now (one-shot).
   router.get("/admin/killall", (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
+    if (!ownerAction(req, res)) return;
     const n = closeAllRooms();
     io.emit("announce", { text: "🛑 The server was reset — all games ended." });
     console.log(`🛑 owner ended ALL games (${n} rooms)`);
@@ -1188,7 +1194,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
   });
   // Maintenance mode: take the game fully down (kick everyone, block new games) until toggled back on.
   router.get("/admin/lockdown", (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
+    if (!ownerAction(req, res)) return;
     setLockdown(req.query.on === "1");
     if (isLockdown()) { closeAllRooms(); io.emit("announce", { text: "🔧 The game is down for maintenance — back soon." }); console.log("🔒 LOCKDOWN ON — new games blocked"); }
     else { io.emit("announce", { text: "✅ Back online — the game is up!" }); console.log("🔓 lockdown OFF — game back up"); }
@@ -1204,7 +1210,7 @@ function createAdminRouter({ io, costGuard, rooms, stats, serverStartedAt, getOn
 
   // Owner broadcasts a banner message to EVERY connected client (e.g. a pre-deploy heads-up).
   router.get("/admin/announce", (req, res) => {
-    if (!ownerOk(req)) return res.status(404).send("Not found");
+    if (!ownerAction(req, res)) return;
     const text = String(req.query.msg || "").replace(/\s+/g, " ").trim().slice(0, 200);
     if (text) { io.emit("announce", { text }); console.log(`📢 announce: ${text}`); }
     res.redirect("/admin?key=" + encodeURIComponent(req.query.key || ""));

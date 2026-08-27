@@ -174,6 +174,101 @@ describe("rooms.js — lobby lifecycle", () => {
     assert.equal(room.spectators.size, 1);
   });
 
+  // Spectator ids go out in every roomState, and this handler used to accept one BACK from the
+  // payload — so re-registering under an id read off the wire bought four things at once. All four
+  // are the same defect: an identifier the server published, trusted as proof of who you are.
+  describe("a watcher's id is the server's to give", () => {
+    test("the payload's playerId is ignored — the id comes back minted", async () => {
+      const a = await connect(), spec = await connect();
+      const created = await emit(a, "createRoom", { name: "Alice" });
+      const res = await emit(spec, "spectateRoom", { code: created.code, name: "Watcher", playerId: "I-PICKED-THIS" });
+      assert.equal(res.ok, true);
+      assert.notEqual(res.you, "I-PICKED-THIS");
+      assert.equal(roomsApi.rooms.get(created.code).spectators.has("I-PICKED-THIS"), false);
+    });
+
+    test("two sockets can't share one watcher entry — which is how the invisible watch worked", async () => {
+      // The exploit: register the same id twice, disconnect one socket. That disconnect deleted
+      // the SHARED roster entry while the other socket stayed subscribed to the room — an
+      // unauthenticated equivalent of ghostWatch, which is gated on OWNER_KEY.
+      const a = await connect();
+      const created = await emit(a, "createRoom", { name: "Alice" });
+      const s1 = await connect(), s2 = await connect();
+      const r1 = await emit(s1, "spectateRoom", { code: created.code, name: "One" });
+      const r2 = await emit(s2, "spectateRoom", { code: created.code, name: "Two", playerId: r1.you });
+      assert.notEqual(r2.you, r1.you, "the second watcher must not land on the first one's entry");
+      const room = roomsApi.rooms.get(created.code);
+      assert.equal(room.spectators.size, 2);
+      s2.close();
+      await sleep(80);
+      // s1 is still listed. Before, s2's disconnect deleted the entry they shared.
+      assert.equal(room.spectators.size, 1);
+      assert.equal([...room.spectators.values()][0].id, r1.you);
+    });
+
+    test("the cap counts every watcher, including one reusing a published id", async () => {
+      const a = await connect();
+      const created = await emit(a, "createRoom", { name: "Alice" });
+      const room = roomsApi.rooms.get(created.code);
+      let first = null;
+      for (let i = 0; i < 20; i++) {
+        const s = await connect();
+        const r = await emit(s, "spectateRoom", { code: created.code, name: `W${i}` });
+        assert.equal(r.ok, true, `watcher ${i} should fit under the cap`);
+        first ??= r.you;
+      }
+      assert.equal(room.spectators.size, 20);
+      // This is the one that used to slip through: `!spectators.has(pid)` skipped the cap check
+      // entirely for a reused id, so extra sockets joined the broadcast channel invisibly.
+      const sneak = await connect();
+      const refused = await emit(sneak, "spectateRoom", { code: created.code, name: "Sneak", playerId: first });
+      assert.equal(refused.ok, false);
+      assert.equal(room.spectators.size, 20);
+    });
+
+    test("re-registering doesn't reset the chat limiter", async () => {
+      // lastChatAt lived on the spectator object, and re-registering replaced the object. It lives
+      // on the socket now, which is the thing a caller actually has to pay for.
+      const a = await connect();
+      const created = await emit(a, "createRoom", { name: "Alice" });
+      const spec = await connect();
+      await emit(spec, "spectateRoom", { code: created.code, name: "Spammer" });
+      let accepted = 0;
+      for (let i = 0; i < 8; i++) {
+        await emit(spec, "spectateRoom", { code: created.code, name: "Spammer" }); // the old reset
+        const r = await emit(spec, "chat", { text: `msg ${i}` });
+        if (r?.ok) accepted++;
+      }
+      assert.ok(accepted <= 2, `the gap must survive re-registration — ${accepted} of 8 got through`);
+    });
+
+    test("a seat resume through the spectate path still works, with its token", async () => {
+      const a = await connect(), b = await connect();
+      const created = await emit(a, "createRoom", { name: "Alice" });
+      const joined = await emit(b, "joinRoom", { code: created.code, name: "Bob" });
+      b.close();
+      await sleep(60);
+      const back = await connect();
+      const res = await emit(back, "spectateRoom", { code: created.code, name: "Bob", playerId: joined.you, seat: joined.seat });
+      assert.equal(res.ok, true);
+      assert.equal(res.you, joined.you, "the seat is reclaimed, not re-minted");
+      assert.ok(!res.spectator);
+    });
+  });
+
+  test("a bogus playerId can't become a key on the round's score objects", async () => {
+    // `deadlines["__proto__"] = <number>` silently does nothing — the prototype setter discards
+    // primitives — so the read keeps returning Object.prototype and the clock never expires. The
+    // round then never ends for anyone in the room, and Math.max over the scores goes NaN.
+    const a = await connect();
+    for (const bad of ["__proto__", "constructor", "a".repeat(64), "has space", "semi;colon"]) {
+      const created = await emit(a, "createRoom", { name: "Alice", playerId: bad });
+      assert.notEqual(created.you, bad, `playerId ${JSON.stringify(bad)} must be replaced`);
+      assert.match(created.you, /^[A-Za-z0-9_-]{1,32}$/);
+      roomsApi.closeRoom(created.code);
+    }
+  });
+
   test("startMatch requires two players and only the host may call it", async () => {
     const a = await connect(), b = await connect();
     const created = await emit(a, "createRoom", { name: "Alice" });

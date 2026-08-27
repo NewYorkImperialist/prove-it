@@ -399,8 +399,11 @@ async function gameDetail(gid) {
 async function allChat(limit = 200, search = "") {
   const s = String(search || "").trim();
   if (s) {
-    const like = "%" + s + "%";
-    return q(`SELECT name, text, code, gid, spectator, at, mode FROM chat WHERE text LIKE ? OR name LIKE ? ORDER BY id DESC LIMIT ?`, [like, like, limit]);
+    // The value is bound, so this was never an injection — but % and _ are LIKE wildcards, so
+    // searching for "%" matched every row in the table and "_" matched any single character.
+    // Escape them (and the escape character) and tell SQLite what the escape is.
+    const like = "%" + s.replace(/[%_\\]/g, "\\$&") + "%";
+    return q(`SELECT name, text, code, gid, spectator, at, mode FROM chat WHERE text LIKE ? ESCAPE '\\' OR name LIKE ? ESCAPE '\\' ORDER BY id DESC LIMIT ?`, [like, like, limit]);
   }
   return q(`SELECT name, text, code, gid, spectator, at, mode FROM chat ORDER BY id DESC LIMIT ?`, [limit]);
 }
@@ -511,7 +514,13 @@ async function categoryLeaderboards(topN = 10) {
     let scores; try { scores = JSON.parse(r.scores || "[]"); } catch (e) { scores = []; }
     rounds.forEach((cat, i) => {
       const sc = Number(scores[i]) || 0; if (sc <= 0) return;
-      (byCat[cat] = byCat[cat] || []).push({ name: r.name, visitor_id: r.visitor_id, score: sc, at: Number(r.at) });
+      // `x[k] = x[k] || []` is the trap, not the style: for k === "__proto__" the read returns
+      // Object.prototype, which is truthy, so the expression evaluates to Object.prototype and the
+      // push writes Object.prototype[0] and Object.prototype.length — PROCESS-WIDE. Not reachable
+      // right now (cat comes from a rounds list filtered through ALL_ROUND_NAMES) and one relaxed
+      // filter away from being the worst bug in the file.
+      if (!Object.prototype.hasOwnProperty.call(byCat, cat)) byCat[cat] = [];
+      byCat[cat].push({ name: r.name, visitor_id: r.visitor_id, score: sc, at: Number(r.at) });
     });
   }
   const out = [];

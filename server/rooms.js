@@ -157,7 +157,13 @@ function createRooms({ io, engine, raceEngine, analytics, CATEGORY_GROUPS, DEFAU
   // player's round clock never expires, the retire sweep never finishes them, allClocksDone()
   // never becomes true, and the round runs forever for everyone in the room. Math.max over the
   // scores goes NaN with it, so nobody wins. One 24-character string, unauthenticated.
-  const cleanPid = (v) => (typeof v === "string" && /^[A-Za-z0-9_-]{1,32}$/.test(v) ? v : null);
+  // The charset alone is NOT enough, and that is worth spelling out because it looks like it is:
+  // "__proto__" is entirely letters and underscores, so it passes a base64url test cleanly. The
+  // explicit list is the part that does the work. race-engine.js also builds its per-round maps
+  // with a null prototype now, so neither guard is load-bearing on its own.
+  const RESERVED_PID = new Set(["__proto__", "constructor", "prototype"]);
+  const cleanPid = (v) =>
+    (typeof v === "string" && /^[A-Za-z0-9_-]{1,32}$/.test(v) && !RESERVED_PID.has(v) ? v : null);
 
   // Wrong room codes, per address.
   //

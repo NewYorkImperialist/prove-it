@@ -157,6 +157,25 @@ export function useMultiplayer({ router }) {
   const [raceJoinCode, setRaceJoinCode] = useState("");
   const triedInvite = useRef(false);
 
+  // Take the ghost-watch link's key out of the address bar the moment it has been read.
+  //
+  // The dashboard's ghost link is /?ghost=CODE&key=OWNER_KEY, and that lands on the GAME page —
+  // where the analytics beacon runs and lib/browser/geo-atlas.js loads d3 and topojson from a CDN.
+  // Any script on that page can read window.location.search, so the admin key was sitting in the
+  // one place third-party code can see it, for as long as the tab stayed open. It is also what
+  // ends up in a bookmark, in session restore, and in a screen share.
+  //
+  // Safe to remove: everything above captured it into urlRef on first render and reads it from
+  // there, never from the URL again. ?crown= has been scrubbed like this all along; ?ghost= and
+  // ?key= were simply missed, and ?key= is the one that matters.
+  useEffect(() => {
+    if (typeof window === "undefined" || (!url.ghost && !url.ghostKey)) return;
+    const u = new URL(window.location.href);
+    u.searchParams.delete("ghost");
+    u.searchParams.delete("key");
+    window.history.replaceState({}, "", u.pathname + u.search);
+  }, [url.ghost, url.ghostKey]);
+
   // Become the owner once by visiting ?crown=YOUR_SECRET_KEY (?crown=off revokes it).
   useEffect(() => {
     if (url.crown == null) return;

@@ -917,7 +917,9 @@ export function useSolo({ onExitToMenu }) {
       // gid comes along because the server won't rename on a bare visitorId any more — that value is
       // published on every leaderboard, so it identifies the rows without proving they're yours.
       // The finished run already saved itself under this gid, so it's on record.
-      const res = await postJSON("/challenge/rename", { name: n, visitorId, gid: runGid.current, ownerKey: ownerKeyIfCrowned() });
+      // No ownerKey — the endpoint stopped reading one when that branch was removed for being an
+      // unauthenticated yes/no oracle on OWNER_KEY, so sending it only put the key on the wire.
+      const res = await postJSON("/challenge/rename", { name: n, visitorId, gid: runGid.current });
       if (!res.ok) return { ok: false, error: "Couldn't update your name — check your connection and try again." };
       return { ok: true, name: n };
     },

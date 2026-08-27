@@ -110,7 +110,12 @@ describe("lib/owner-auth.js — which capabilities sit behind which key", () => 
   test("the cosmetic crown is the only thing the browser-resident key buys", () => {
     // setCrown (a badge on a scoreboard) and the result POST's crown flag. Nothing else.
     assert.match(read("server/rooms.js"), /if \(!crownOk\(key, socketBucket\(socket\)\)\) return;/);
-    assert.match(read("routes/challenge.js"), /const crown = crownOk\(b\.ownerKey, callerIp\(req\)\)/);
+    // Still crownOk, still bucketed by caller — but only ASKED when a key was actually sent. It
+    // used to run on every result POST, and almost nobody sends a key, so every ordinary run
+    // registered as a failed key check: the 200-entry attack log filled with players (destroying
+    // the one signal that makes a guessing run visible) and nine crownless runs from one address
+    // put it over FAIL_MAX, which also blocks /admin from there.
+    assert.match(read("routes/challenge.js"), /b\.ownerKey \? crownOk\(b\.ownerKey, callerIp\(req\)\) : false/);
   });
 
   test("ghostWatch stays on the admin key — invisible surveillance is not a badge", () => {

@@ -23,6 +23,7 @@ const REVIEW_MS = 15_000;     // window to approve missed/off-list answers, only
 const RESULT_MS = 5_000;      // pause showing the round's final result before the next round starts
 const MAX_MISSES = 25;        // per player per round — anti-spam cap on tracked wrong answers
 const MAX_CLOCK_FACTOR = 2;   // a round clock can never grow past this × the room's base timer
+const ANSWER_MIN_GAP_MS = 100; // min gap between one player's submissions (see handleAnswer)
 const DEFAULTS = { timer: 45, format: 5, suddenDeath: false, increment: 0 }; // format: 3|5|null(endless); increment: bonus seconds per correct answer
 
 // Optional analytics hook · server.js sets this to persist match/round events. No-op by default.
@@ -224,6 +225,7 @@ function beginRound(io, room, opts = {}) {
   g.usedNames.push(c.name); g.lastCatName = c.name; g.current = c;
   g.answers = {}; g.liveScores = {}; g.misses = {}; g.missSeq = 0;
   g.approvalsGiven = new Map(); // per-round budget, see handleApproveMiss
+  g.lastMissAt = {}; // per-player clock, started only by a miss — see handleAnswer
   g.endVotes = new Set(); // votes are a per-round intent check, not sticky across rounds
   g.skipVotes = new Set();
   g.deadlines = {}; g.doneIds = new Set(); g.pausedClocks = null;
@@ -400,11 +402,25 @@ function handleAnswer(io, room, socket, text, ack) {
   // Your own clock is what gates you — the others may still be racing long after yours is gone.
   if (g.doneIds.has(pid)) return ack?.({ ok: true, accepted: false, outOfTime: true });
   if ((g.deadlines[pid] ?? 0) < Date.now()) return ack?.({ ok: true, accepted: false, outOfTime: true });
+  // A gap between one player's submissions, like the duel's ANSWER_COOLDOWN_MS, which this mode
+  // never had. It applies only after a MISS, and that is the point: a correct answer is already
+  // self-limiting (there are only so many entries and each scores once), while a miss runs the
+  // resolver and then the punctuation fallback that walks every alias — and the MAX_MISSES dedupe
+  // happens after the resolve, so the cap never bounded the work. Two sockets in a room of your own
+  // could emit distinct garbage as fast as the transport allowed.
+  //
+  // Gating misses rather than every submission means somebody typing fast and getting them RIGHT is
+  // never slowed down, which matters in a mode that is entirely about typing fast. Answering
+  // correctly clears the clock; only garbage has to wait, and only for a tenth of a second.
+  const now = Date.now();
+  if (!g.lastMissAt) g.lastMissAt = {};
+  if (now - (g.lastMissAt[pid] || 0) < ANSWER_MIN_GAP_MS) return ack?.({ ok: true, accepted: false });
   const entry = resolve(g.current, text);
   if (!entry) {
     // Not recognized — logged as a miss so it can be approved by someone else after the round
     // ends (e.g. a typo/alternate spelling the category's alias list doesn't cover), rather than
     // silently discarded. Deduped per player so repeated garbage doesn't clutter the review list.
+    g.lastMissAt[pid] = now; // only a miss starts the clock; a correct answer never does
     const q = norm(text);
     if (!q) return ack?.({ ok: true, accepted: false });
     const mine = g.misses[pid] || (g.misses[pid] = []);

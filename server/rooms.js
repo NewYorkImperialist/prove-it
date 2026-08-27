@@ -79,21 +79,40 @@ function clientIp(headers, fallback) {
   const xff = (h["x-forwarded-for"] || "").split(",")[0].trim();
   return (h["fly-client-ip"] || xff || fallback || "").replace(/^::ffff:/, "").trim() || null;
 }
-const geoCache = new Map(); // ip -> "City, Region, Country" (null = looked up, unknown)
+// ip -> "City, Region, Country" (null = looked up, unknown).
+//
+// This was the one long-lived structure in the app with no bound of any kind: no cap, no sweep, no
+// TTL, on a path every raw connection reaches. It is capped and it dedupes in-flight lookups now,
+// and the second of those matters more than the first — `geoCache.set` only ran after the response
+// came back, so N simultaneous connections from one uncached address fired N separate outbound
+// requests to a third-party API. Getting rate-limited or banned there breaks geo for real visitors
+// long before the memory would ever be the problem.
+const GEO_CACHE_MAX = 5000;
+const geoCache = new Map(); // insertion-ordered, so the oldest key is the first one out
+const geoPending = new Map(); // ip → in-flight promise
+async function geoFetch(ip) {
+  let out = null;
+  try {
+    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 2500);
+    try {
+      const r = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, { signal: ctrl.signal });
+      const j = await r.json();
+      if (j && j.success) out = [j.city, j.region, j.country].filter(Boolean).join(", ") || j.country || null;
+    } finally { clearTimeout(t); } // the timer outlived a rejected fetch before, holding the controller alive
+  } catch { /* network/timeout → leave unknown */ }
+  if (geoCache.size >= GEO_CACHE_MAX) geoCache.delete(geoCache.keys().next().value);
+  geoCache.set(ip, out);
+  geoPending.delete(ip);
+  return out;
+}
 async function geoLookup(ip) {
   if (!ip || /^(127\.|10\.|192\.168\.|::1|172\.(1[6-9]|2\d|3[01])\.)/.test(ip)) return null; // skip local/private
   if (geoCache.has(ip)) return geoCache.get(ip);
   if (typeof fetch !== "function") return null;
-  let out = null;
-  try {
-    const ctrl = new AbortController(); const t = setTimeout(() => ctrl.abort(), 2500);
-    const r = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}`, { signal: ctrl.signal });
-    clearTimeout(t);
-    const j = await r.json();
-    if (j && j.success) out = [j.city, j.region, j.country].filter(Boolean).join(", ") || j.country || null;
-  } catch { /* network/timeout → leave unknown */ }
-  geoCache.set(ip, out);
-  return out;
+  if (geoPending.has(ip)) return geoPending.get(ip);
+  const p = geoFetch(ip);
+  geoPending.set(ip, p);
+  return p;
 }
 const deviceOf = (socket) => (/Mobile|Android|iPhone|iPad|iPod/i.test(socket.handshake.headers["user-agent"] || "") ? "mobile" : "desktop");
 

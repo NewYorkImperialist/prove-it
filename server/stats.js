@@ -107,6 +107,18 @@ async function init() {
     // The result endpoint now reads a run's own guesses back to verify the score it claims, keyed on
     // gid, on every submission. Without an index that is a full scan of every answer ever typed.
     try { await client.execute(`CREATE INDEX IF NOT EXISTS idx_answers_gid ON answers(gid)`); } catch (e) {}
+    // …and challenge_results had no index at all, while every public board reads it: the daily,
+    // all-time, per-category and GOAT endpoints all scan the whole table, 120 times a minute each,
+    // and the same table is what an unauthenticated POST grows. Turso bills ROWS READ and the cost
+    // guard only watches egress, so that spend is completely invisible until the bill arrives — and
+    // it gets worse for every real player each time someone adds rows to today's daily.
+    for (const ix of [
+      `CREATE INDEX IF NOT EXISTS idx_results_challenge ON challenge_results(challenge_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_results_mode ON challenge_results(mode)`,
+      `CREATE INDEX IF NOT EXISTS idx_results_visitor ON challenge_results(visitor_id)`,
+      `CREATE INDEX IF NOT EXISTS idx_results_gid ON challenge_results(gid)`,
+      `CREATE INDEX IF NOT EXISTS idx_results_crown ON challenge_results(crown, id)`,
+    ]) { try { await client.execute(ix); } catch (e) { /* index already exists */ } }
     // one-time backfill: tag pre-`mode` challenge_results so old solo scores stay on the geography boards.
     // daily rows (`d-%`) → 'daily'; everything else untagged → 'solo'. Idempotent (only touches NULL).
     try { await client.execute(`UPDATE challenge_results SET mode='daily' WHERE mode IS NULL AND challenge_id LIKE 'd-%'`); } catch (e) {}
@@ -455,7 +467,7 @@ function collapseBoard(rows, limit = 50, forcedName) {
     // owns in one statement, so a rename keeps them grouped. The cost is that someone who typed a
     // different name on a later run without renaming shows as two entries instead of one — visible,
     // honest, and fixable from /admin/merge either way round.
-    const key = isCreator ? "__creator__" : `${r.visitor_id || ""} ${nameKey(r.name)}`;
+    const key = isCreator ? "__creator__" : `${r.visitor_id || ""}\u0000${nameKey(r.name)}`;
     const cand = { name: isCreator ? (creatorDisplay || r.name) : r.name, visitor_id: r.visitor_id, score: Number(r.score), time: (r.time != null && r.time > 0) ? Number(r.time) : null, at: Number(r.at), crown: isCreator ? 1 : 0, challenge_id: r.challenge_id };
     if (!best[key] || beats(cand, best[key])) best[key] = cand;
   }
@@ -936,12 +948,19 @@ async function addChallengeResult(x) {
   } catch (e) { console.error("📊 challenge result:", e.message); return false; }
 }
 // Store the exact guesses from one round of a solo/daily run (every Enter press: ok / miss / dup).
+// ONE round trip, not one per guess. This looped `fire()` over the batch, so a single 16KB request
+// carrying the endpoint's maximum of 200 guesses became 200 separate un-awaited HTTP calls to
+// Turso, with no concurrency ceiling anywhere — a 200× amplifier on an unauthenticated write, and
+// the reason the endpoint was worth flooding at all. client.batch was already used elsewhere in
+// this file; it should always have been used here.
 function recordSoloGuesses(d) {
   if (!client) return;
-  for (const g of (d.guesses || [])) {
-    fire(`INSERT INTO answers (game_code,category,grp,display,off_list,at,mode,gid,player,verdict) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-      [d.challengeId || null, d.category || null, null, String(g.display || "").slice(0, 80), 0, Number(g.at) || Date.now(), d.mode || "solo", d.gid || null, d.name || null, g.verdict || null]);
-  }
+  const rows = (d.guesses || []).map((g) => ({
+    sql: `INSERT INTO answers (game_code,category,grp,display,off_list,at,mode,gid,player,verdict) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    args: [d.challengeId || null, d.category || null, null, String(g.display || "").slice(0, 80), 0, Number(g.at) || Date.now(), d.mode || "solo", d.gid || null, d.name || null, g.verdict || null],
+  }));
+  if (!rows.length) return;
+  client.batch(rows, "write").catch((e) => console.error("📊 solo guesses:", e.message));
 }
 // Every DISTINCT answer a run actually submitted, per category. This is what lets the result
 // endpoint score a run server-side instead of believing the number the client sends: the guesses
@@ -951,9 +970,20 @@ function recordSoloGuesses(d) {
 // `verdict` is deliberately NOT read. The client decides ok/miss/dup, so trusting it here would
 // just move the same unverified number one field to the left — routes/challenge.js re-matches each
 // display against the category's real answer list itself.
+//
+// The LIMIT is load-bearing, not tidiness. `gid` is a free-text field the caller chooses, and the
+// guesses endpoint accepts 200 rows a call at 60 calls a minute — so a stranger can pile hundreds
+// of thousands of rows onto one gid they invented, with distinct `display` values to defeat the
+// DISTINCT, and then post a 200-byte result carrying that gid. This driver buffers a whole result
+// set in memory, and the route re-matches every row against a category; on a 512MB machine that is
+// an out-of-memory kill or a multi-minute CPU stall, 20 times a minute, from one address.
+//
+// 2,000 is far above any honest run (a ten-round challenge is a few hundred Enter presses) and far
+// below anything that costs the process. A run whose guess log is somehow longer than this is
+// scored on the first 2,000, which for a real player is all of them.
 async function runGuesses(gid) {
   if (!gid) return [];
-  return q(`SELECT DISTINCT category, display FROM answers WHERE gid=?`, [String(gid).slice(0, 40)]);
+  return q(`SELECT DISTINCT category, display FROM answers WHERE gid=? LIMIT 2000`, [String(gid).slice(0, 40)]);
 }
 
 // Recent solo/daily runs (one row per finished run) with its challenge meta + gid for drill-in.
@@ -969,9 +999,17 @@ async function soloRunDetail(gid) {
   const answers = await q(`SELECT category, display, verdict, at FROM answers WHERE gid=? ORDER BY at ASC, id ASC`, [gid]);
   return { result, answers };
 }
+// How many people have played a challenge. GET /daily used to answer this with
+// getChallengeResults(id).length — every row of the day's board, parsed out of JSON, to produce one
+// integer, on the one endpoint every visitor hits on arrival. COUNT(*) is the same number for a
+// row of output instead of hundreds, and it gets cheaper rather than more expensive as a day fills.
+async function countChallengeResults(id) {
+  const r = await one(`SELECT COUNT(*) n FROM challenge_results WHERE challenge_id=?`, [id]);
+  return Number(r?.n) || 0;
+}
 async function getChallengeResults(id) {
   const rows = await q(`SELECT name, visitor_id, scores, total, at, wpms, crown, times FROM challenge_results WHERE challenge_id=? ORDER BY total DESC, at ASC`, [id]);
   return rows.map((r) => { try { r.scores = JSON.parse(r.scores || "[]"); } catch { r.scores = []; } try { r.wpms = JSON.parse(r.wpms || "[]"); } catch { r.wpms = []; } try { r.times = JSON.parse(r.times || "[]"); } catch { r.times = []; } return r; });
 }
 
-module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, runGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList, resultVisitors, mergeVisitors, undoMerge, mergeAuditList, resultNames, mergeNames, crownVisitorRows, crownAuditList };
+module.exports = { enabled, ping, recordGame, recordRound, recordAnswer, recordEvent, recordChat, recordSession, recordRacePlayers, summary, namedDisplays, gamesList, gameDetail, allChat, visitors, sessionsList, createChallenge, getChallenge, addChallengeResult, getChallengeResults, countChallengeResults, dailyAllTime, recentResults, deleteResult, categoryLeaderboards, recordSoloGuesses, runGuesses, soloRunsList, soloRunDetail, renameResults, categoryLeaderboard, getCreatorName, geoGoat, addBandwidth, bandwidthStats, kvGet, kvSet, recordProbe, pruneProbes, uptimeStats, gidOwnedBy, adminRename, nameAuditList, resultVisitors, mergeVisitors, undoMerge, mergeAuditList, resultNames, mergeNames, crownVisitorRows, crownAuditList };

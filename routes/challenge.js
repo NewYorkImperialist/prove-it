@@ -53,6 +53,7 @@ const SUBMIT_WINDOW_MS = 60_000;
 // access. A player opening the leaderboard modal repeatedly is nowhere near 120/min.
 const LIMITS = { result: 20, rename: 20, create: 20, guesses: 60, read: 120 };
 const buckets = new Map(); // "purpose|ip" → { count, resetAt }
+const BUCKETS_MAX_KEYS = 5000; // hard ceiling, not just a sweep threshold — see submitAllowed
 
 function submitAllowed(req, purpose = "result") {
   const key = `${purpose}|${callerIp(req)}`;
@@ -60,8 +61,16 @@ function submitAllowed(req, purpose = "result") {
   const e = buckets.get(key);
   if (!e || now > e.resetAt) {
     buckets.set(key, { count: 1, resetAt: now + SUBMIT_WINDOW_MS });
-    // Opportunistic sweep so a long-running process doesn't hold every IP it has ever seen.
-    if (buckets.size > 5000) for (const [k, v] of buckets) if (now > v.resetAt) buckets.delete(k);
+    // Sweep, then a hard ceiling. The sweep alone only drops EXPIRED entries, so with more live
+    // callers than the threshold the map grows without limit and every new key pays an O(size)
+    // walk — and an IPv6 client has a whole /64 of free addresses to spend on making that happen.
+    if (buckets.size > BUCKETS_MAX_KEYS) {
+      for (const [k, v] of buckets) if (now > v.resetAt) buckets.delete(k);
+      if (buckets.size > BUCKETS_MAX_KEYS) {
+        const byExpiry = [...buckets.entries()].sort((a, b) => a[1].resetAt - b[1].resetAt);
+        for (const [k] of byExpiry.slice(0, buckets.size - BUCKETS_MAX_KEYS)) buckets.delete(k);
+      }
+    }
     return true;
   }
   e.count += 1;
@@ -133,9 +142,18 @@ const typedCeiling = (wpm, seconds, category) => {
 // Returns null for a name with no plain item list — the flag and border quizzes are synthesised
 // rather than being categories.js entries (see lib/flags.js / lib/borders.js), so there is nothing
 // to check an answer against and verification is skipped for them.
+//
+// The name is checked against the known set BEFORE anything is cached. It wasn't, and the only
+// caller feeds it `answers.category`, which POST /challenge/:id/guesses writes with a bare
+// .slice(0, 80) — never validated the way POST /challenge validates its rounds. So every novel
+// 80-character string a stranger submitted became a permanent entry in this map AND cost a scan of
+// all 282 categories to discover it was nothing. One rejected key per guess batch, sixty batches a
+// minute, forever. One membership test bounds the map at the 282 real names and bounds the
+// `category` column with it.
 const builtCats = new Map();
 function builtCategory(name) {
   if (builtCats.has(name)) return builtCats.get(name);
+  if (!ALL_ROUND_NAMES.has(name)) return null;
   let built = null;
   for (const [key, grp] of Object.entries(CATEGORY_GROUPS)) {
     const c = (grp.cats || []).find((x) => x.name === name);
@@ -254,8 +272,17 @@ function createChallengeRouter({ isLockdown }) {
 
   // Client-side pre-check so the UI can reject a bad name before submitting it, instead of
   // silently swapping it for "Anon" server-side (that swap still happens as a backstop below).
+  // Bounded and rate-limited, because this was the cheapest denial-of-service in the app. It had no
+  // limiter and — alone among every name path here, which all cap at 20-24 characters — no length
+  // cap either, so `req.query.name` went to the obscenity matcher at whatever size a header would
+  // carry. Measured: 24 chars is 0.045ms, 16,000 chars is 3.97ms, and the matcher is ~250 patterns
+  // run over the whole input. A few dozen 16KB GETs a second from one keep-alive connection eats a
+  // shared-cpu-1x slice, and everything else in the process starves with it — socket heartbeats,
+  // round timers, the Next handler. The budget page wouldn't stop it either; that gate only covers
+  // the HTML and JS.
   router.get("/name-check", (req, res) => {
-    res.json({ ok: !isBlocked(req.query.name) });
+    if (readLimited(req, res)) return;
+    res.json({ ok: !isBlocked(String(req.query.name || "").slice(0, 24)) });
   });
 
   router.post("/challenge", async (req, res) => {
@@ -358,7 +385,15 @@ function createChallengeRouter({ isLockdown }) {
     // seconds-to-complete per round (null when not fully completed) — for speed ranking on maxed boards
     const times = (Array.isArray(b.times) ? b.times : []).map((n) => { const t = parseInt(n, 10); return t > 0 ? Math.min(3600, t) : null; }).slice(0, c.rounds.length);
     const total = scores.reduce((a, n) => a + n, 0);
-    const crown = crownOk(b.ownerKey, callerIp(req)); // creator crown (server-validated) — see lib/owner-auth.js
+    // Only ASK when a key was actually sent. It used to ask unconditionally, and almost nobody
+    // sends one — so every ordinary run counted as a failed key check. Two things broke:
+    //
+    //   • the attack log filled with players. It holds 200 entries and exists so a guessing run is
+    //     something the owner can SEE; at the 20 submissions a minute this endpoint allows, a
+    //     stranger could keep it 100% noise for nothing, and the one detection signal was gone.
+    //   • every player's address accumulated failures, so nine crownless runs inside the window
+    //     put that address over FAIL_MAX — and the block covers /admin from the same address.
+    const crown = b.ownerKey ? crownOk(b.ownerKey, callerIp(req)) : false; // see lib/owner-auth.js
     // play origin — keeps the solo-map geography boards separate from daily/shared-link plays.
     const mode = id.startsWith("d-") ? "daily" : (["solo", "link"].includes(b.mode) ? b.mode : "solo");
     // Report what the write actually did. Hardcoding ok:true here made the client's whole
@@ -453,8 +488,9 @@ function createChallengeRouter({ isLockdown }) {
       c = await analytics.getChallenge(id).catch(() => null);
     }
     if (!c) return res.json({ ok: false, error: "Could not load today's daily." });
-    const results = await analytics.getChallengeResults(id).catch(() => []);
-    res.json({ ok: true, id, date, rounds: c.rounds, timer: c.timer || DAILY_TIMER, players: results.length });
+    // COUNT(*), not the whole board — the only thing this response wants is the number.
+    const players = await analytics.countChallengeResults(id).catch(() => 0);
+    res.json({ ok: true, id, date, rounds: c.rounds, timer: c.timer || DAILY_TIMER, players });
   });
   // Public per-category leaderboard (each geography "question" gets its own board).
   router.get("/category-leaderboard", async (req, res) => {

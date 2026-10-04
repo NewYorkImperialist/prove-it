@@ -23,6 +23,21 @@ const app = express();
 app.disable("x-powered-by");
 const server = http.createServer(app);
 const io = new Server(server, PING_OPTIONS); // heartbeat tuned so a silent drop is seen in seconds — see rooms.js
+
+// The game moved from proveit.fly.dev to its own domain (SITE.url). Old links, bookmarks and
+// installed home-screen apps still arrive at the fly.dev host, so page loads there are sent on.
+// Only GET/HEAD, and never /socket.io/: a tab that was already open on the old host keeps its
+// live connection and its POSTs (results, /track) working until it is next reloaded, rather than
+// failing mid-game on a cross-origin redirect it has no CORS for.
+const LEGACY_HOST = "proveit.fly.dev";
+const CANONICAL_ORIGIN = new URL(SITE.url).origin;
+app.use((req, res, next) => {
+  if (req.hostname !== LEGACY_HOST) return next();
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  if (req.path.startsWith("/socket.io/")) return next();
+  res.redirect(301, CANONICAL_ORIGIN + req.originalUrl);
+});
+
 app.use(express.json({ limit: "16kb" })); // for /challenge and cost-override JSON bodies
 
 const costGuard = createCostGuard({ analytics, SITE, ownerAction });

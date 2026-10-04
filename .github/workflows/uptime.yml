@@ -52,7 +52,7 @@ jobs:
       - name: Probe the site and record the result
         run: node scripts/probe.js
         env:
-          PROBE_URL: https://proveit.fly.dev
+          PROBE_URL: https://proveit.jaydenlin.net
           OWNER_KEY: ${{ secrets.OWNER_KEY }}
           TURSO_URL: ${{ secrets.TURSO_URL }}
           TURSO_TOKEN: ${{ secrets.TURSO_TOKEN }}

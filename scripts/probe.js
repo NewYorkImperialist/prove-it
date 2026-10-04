@@ -20,7 +20,7 @@ const analytics = require("../server/stats.js");
 // the pre-deploy announce step this repo used to have was an unbounded curl, and one stalled
 // connection hung the deploy forever because `|| echo` cannot rescue a process that never exits.
 const cfg = () => ({
-  base: (process.env.PROBE_URL || "https://proveit.fly.dev").replace(/\/+$/, ""),
+  base: (process.env.PROBE_URL || "https://proveit.jaydenlin.net").replace(/\/+$/, ""),
   key: process.env.OWNER_KEY || "",
   timeoutMs: Number(process.env.PROBE_TIMEOUT_MS) || 15000,
 });

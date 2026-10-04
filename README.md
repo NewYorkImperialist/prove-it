@@ -1,6 +1,6 @@
 # 🎯 Prove It!
 
-### ▶ Play now → **https://proveit.fly.dev**
+### ▶ Play now → **https://proveit.jaydenlin.net**
 
 **The bluffing game Scattergories wishes it was.** You get a category — *Football Players, Programming Languages, Famous Mathematicians, Minecraft Mobs, Countries* — and instead of just listing answers, you **brag about how many you can name.** Your opponent doesn't know if you're bluffing. Neither do you, really, until the clock is running and you're sweating out #7.
 
@@ -36,7 +36,7 @@ You trade raises ("I can name 7"… "make it 8") until someone calls **"Prove it
 ## Share it
 This is built to be passed around — drop the link in your group chat, Discord, or subreddit and anyone can click and play instantly:
 
-> **https://proveit.fly.dev**
+> **https://proveit.jaydenlin.net**
 
 To play a friend specifically: open the site, hit **Create a room**, and share the room link/code — or copy a `?room=CODE` invite link straight from the lobby.
 
